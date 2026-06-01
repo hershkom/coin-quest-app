@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>הזמנה התקבלה | החנות שלי</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Heebo:wght@400;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <div class="result-page">
+    <div class="result-card">
+      <div class="result-icon">✅</div>
+      <h1 style="font-size:1.6rem;margin-bottom:.5rem">ההזמנה התקבלה!</h1>
+      <p id="thankYouMsg" style="color:var(--text-muted);margin-bottom:1.5rem">
+        תודה על רכישתך. אישור יישלח לאימייל שלך בקרוב.
+      </p>
+      <a href="index.html" class="btn btn-primary btn-full">חזרה לחנות</a>
+    </div>
+  </div>
+  <script>
+    // Show customer name if passed via query string (PayPal flow)
+    const params = new URLSearchParams(window.location.search);
+    const name = params.get('name');
+    if (name) {
+      document.getElementById('thankYouMsg').textContent =
+        `תודה ${decodeURIComponent(name)} על רכישתך! אישור יישלח לאימייל שלך בקרוב.`;
+    }
+    // Clear cart
+    localStorage.removeItem('cart');
+  </script>
+</body>
+</html>

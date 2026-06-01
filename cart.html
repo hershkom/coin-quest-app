@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="X-Content-Type-Options" content="nosniff">
+  <meta http-equiv="X-Frame-Options" content="DENY">
+  <title>עגלת הקניות | החנות שלי</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Heebo:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+  <!-- Navbar -->
+  <header>
+    <nav class="navbar">
+      <div class="container">
+        <a href="index.html" class="logo">🛍️ החנות שלי</a>
+        <button class="hamburger" aria-label="תפריט">
+          <span></span><span></span><span></span>
+        </button>
+        <div class="nav-links">
+          <a href="index.html">ראשי</a>
+          <a href="index.html#products">מוצרים</a>
+          <a href="cart.html" class="cart-link active">
+            🛒 עגלה
+            <span class="cart-count" id="cartCount">0</span>
+          </a>
+        </div>
+      </div>
+    </nav>
+  </header>
+
+  <main>
+    <div class="container">
+
+      <h1 style="padding: 2rem 0 0; font-size:1.6rem;">🛒 עגלת הקניות</h1>
+
+      <!-- Empty state -->
+      <div id="cartEmpty" style="display:none" class="cart-empty">
+        <div class="icon">🛒</div>
+        <h3>העגלה שלך ריקה</h3>
+        <p style="color:var(--text-muted);margin:.5rem 0 1.5rem">עוד לא הוספת מוצרים לעגלה</p>
+        <a href="index.html" class="btn btn-primary">חזור לחנות</a>
+      </div>
+
+      <div class="cart-layout">
+
+        <!-- Cart items -->
+        <div id="cartTable" style="display:none">
+          <div class="cart-table">
+            <div class="cart-table-header">
+              <span>מוצר</span>
+              <span>כמות</span>
+              <span>סה"כ</span>
+              <span></span>
+            </div>
+            <div id="cartItems"></div>
+          </div>
+
+          <div style="margin-top:1rem">
+            <a href="index.html" class="btn btn-secondary">← המשך לקנות</a>
+          </div>
+        </div>
+
+        <!-- Summary + Checkout -->
+        <aside id="cartSummary" style="display:none">
+          <div class="cart-summary">
+            <h3>סיכום הזמנה</h3>
+            <div class="summary-row">
+              <span>סכום ביניים</span>
+              <span id="subtotal">₪0.00</span>
+            </div>
+            <div class="summary-row">
+              <span>משלוח</span>
+              <span id="shipping">₪30.00</span>
+            </div>
+            <div class="summary-row total">
+              <span>סה"כ לתשלום</span>
+              <span id="totalAmount">₪0.00</span>
+            </div>
+
+            <!-- Customer details -->
+            <div class="customer-form">
+              <h4 style="font-size:.9rem;font-weight:700;margin-bottom:.75rem;color:var(--text)">פרטי לקוח</h4>
+              <div class="form-group">
+                <label for="custName">שם מלא *</label>
+                <input type="text" id="custName" placeholder="ישראל ישראלי" maxlength="100" autocomplete="name">
+              </div>
+              <div class="form-group">
+                <label for="custEmail">אימייל *</label>
+                <input type="email" id="custEmail" placeholder="example@mail.com" maxlength="150" autocomplete="email">
+              </div>
+              <div class="form-group">
+                <label for="custPhone">טלפון *</label>
+                <input type="tel" id="custPhone" placeholder="050-0000000" maxlength="20" autocomplete="tel">
+              </div>
+            </div>
+
+            <!-- Payment buttons -->
+            <div class="payment-section">
+              <h4>בחר אמצעי תשלום</h4>
+
+              <!-- Tranzila (Isracard / Visa / Mastercard) -->
+              <button id="tranzilaBtn" class="btn btn-full tranzila-btn" style="background:#003087;color:#fff;margin-bottom:.75rem">
+                💳 תשלום בכרטיס אשראי (ישראכרט / ויזה / מסטרקארד)
+              </button>
+
+              <div class="payment-divider">או</div>
+
+              <!-- PayPal -->
+              <div id="paypal-button-container"></div>
+            </div>
+
+            <p style="font-size:.75rem;color:var(--text-muted);text-align:center;margin-top:.75rem">
+              🔒 התשלום מאובטח ומוצפן. פרטי הכרטיס שלך לא נשמרים אצלנו.
+            </p>
+          </div>
+        </aside>
+
+      </div>
+    </div>
+  </main>
+
+  <footer class="footer">
+    <div class="container">
+      <p>© <span id="year"></span> החנות שלי | כל הזכויות שמורות</p>
+      <div class="footer-links">
+        <a href="#">מדיניות פרטיות</a>
+        <a href="#">תנאי שימוש</a>
+      </div>
+    </div>
+  </footer>
+
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+  <script>document.getElementById('year').textContent = new Date().getFullYear();</script>
+  <script type="module" src="js/cart.js"></script>
+
+</body>
+</html>

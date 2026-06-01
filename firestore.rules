@@ -1,0 +1,31 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Products: anyone can read, only authenticated admins can write
+    match /products/{productId} {
+      allow read: if true;
+      allow create, update: if request.auth != null
+                            && isValidProduct(request.resource.data);
+      allow delete: if request.auth != null;
+    }
+
+    // Block access to any other collection
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+
+  function isValidProduct(data) {
+    return data.name is string
+        && data.name.size() > 0
+        && data.name.size() <= 120
+        && data.price is number
+        && data.price >= 0
+        && data.stock is int
+        && data.stock >= 0
+        && (!('image' in data) || data.image is string)
+        && (!('description' in data) || data.description is string)
+        && (!('category' in data) || data.category is string);
+  }
+}
