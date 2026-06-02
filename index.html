@@ -3,19 +3,14 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <!-- Security headers (also enforced via _headers / netlify.toml for Netlify) -->
   <meta http-equiv="X-Content-Type-Options" content="nosniff">
   <meta http-equiv="X-Frame-Options" content="DENY">
   <meta name="referrer" content="strict-origin-when-cross-origin">
-
-  <title>החנות שלי</title>
-  <meta name="description" content="ברוכים הבאים לחנות שלי – מוצרים איכותיים במחירים הטובים ביותר">
-
-  <!-- Google Fonts – Heebo (Hebrew-first) -->
+  <title>רומנטק | כשהלב פוגש את הטכנולוגיה</title>
+  <meta name="description" content="רומנטק — מתנות טכנולוגיות שמדברות ישר ללב. כשהלב פוגש את הטכנולוגיה.">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Heebo:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-
   <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
@@ -24,7 +19,14 @@
   <header>
     <nav class="navbar">
       <div class="container">
-        <a href="index.html" class="logo">🛍️ החנות שלי</a>
+
+        <a href="index.html" class="logo">
+          <img src="logo.png" alt="רומנטק לוגו" onerror="this.style.display='none'">
+          <div>
+            <span class="logo-text">רומנ<span>טק</span></span>
+            <span class="logo-tagline">כשהלב פוגש את הטכנולוגיה</span>
+          </div>
+        </a>
 
         <button class="hamburger" aria-label="תפריט">
           <span></span><span></span><span></span>
@@ -44,40 +46,75 @@
 
   <!-- ===== Hero ===== -->
   <section class="hero">
-    <div class="container">
-      <h1>ברוכים הבאים לחנות שלי</h1>
-      <p>מוצרים איכותיים במחירים הטובים ביותר — משלוח לכל הארץ</p>
+    <div class="container hero-inner">
+      <img src="logo.png" alt="רומנטק" class="hero-logo" onerror="this.style.display='none'">
+      <h1>כשהלב פוגש<br><span class="hero-brand">את הטכנולוגיה</span></h1>
+      <p class="hero-slogan">✨ כשהלב פוגש את הטכנולוגיה ✨</p>
+      <p class="hero-sub">מתנות טכנולוגיות יצירתיות שמדברות ישר ללב — לכל אירוע רומנטי</p>
       <div class="hero-btns">
-        <a href="#products" class="btn btn-primary">🛒 קנה עכשיו</a>
-        <a href="cart.html" class="btn btn-secondary">🛍️ צפה בעגלה</a>
+        <a href="#products" class="btn btn-primary">❤️ גלה מתנות</a>
+        <a href="cart.html" class="btn btn-outline">🛒 לעגלה שלי</a>
       </div>
     </div>
   </section>
 
+  <!-- ===== Features strip ===== -->
+  <div class="features-strip">
+    <div class="container">
+      <div class="features-grid">
+        <div class="feature-item">
+          <span class="feature-icon">🚚</span>
+          <div class="feature-text">
+            <strong>משלוח לכל הארץ</strong>
+            <span>עד 3 ימי עסקים</span>
+          </div>
+        </div>
+        <div class="feature-item">
+          <span class="feature-icon">🎁</span>
+          <div class="feature-text">
+            <strong>אריזת מתנה</strong>
+            <span>כולל כרטיס ברכה</span>
+          </div>
+        </div>
+        <div class="feature-item">
+          <span class="feature-icon">🔒</span>
+          <div class="feature-text">
+            <strong>תשלום מאובטח</strong>
+            <span>PayPal | ישראכרט | ויזה</span>
+          </div>
+        </div>
+        <div class="feature-item">
+          <span class="feature-icon">💎</span>
+          <div class="feature-text">
+            <strong>איכות מובטחת</strong>
+            <span>החלפה ללא שאלות</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- ===== Products ===== -->
   <section class="section" id="products">
     <div class="container">
-      <h2 class="section-title">המוצרים שלנו</h2>
+      <div class="section-header">
+        <h2 class="section-title">המתנות שלנו ❤️</h2>
+      </div>
 
-      <!-- Search & filter -->
       <div class="filters">
         <input
-          type="search"
-          id="searchInput"
-          placeholder="🔍 חיפוש מוצרים..."
-          class="search-input"
-          autocomplete="off"
-          maxlength="100"
+          type="search" id="searchInput"
+          placeholder="🔍 חפש מתנה מושלמת..."
+          class="search-input" autocomplete="off" maxlength="100"
         >
         <select id="categoryFilter" class="category-select">
           <option value="">כל הקטגוריות</option>
         </select>
       </div>
 
-      <!-- Grid populated by app.js -->
       <div class="product-grid" id="productGrid" role="list" aria-live="polite">
         <div class="loading">
-          <div class="spinner"></div><br>טוען מוצרים...
+          <div class="spinner"></div><br>טוען מתנות...
         </div>
       </div>
     </div>
@@ -86,21 +123,23 @@
   <!-- ===== Footer ===== -->
   <footer class="footer">
     <div class="container">
-      <p>© <span id="year"></span> החנות שלי | כל הזכויות שמורות</p>
-      <div class="footer-links">
-        <a href="#">מדיניות פרטיות</a>
-        <a href="#">תנאי שימוש</a>
-        <a href="mailto:info@example.com">יצירת קשר</a>
+      <div class="footer-inner">
+        <div class="footer-brand">
+          <img src="logo.png" alt="רומנטק" onerror="this.style.display='none'">
+          <span>רומנ<span style="color:var(--primary)">טק</span></span>
+        </div>
+        <p class="footer-copy">© <span id="year"></span> רומנטק | כל הזכויות שמורות</p>
+        <div class="footer-links">
+          <a href="#">מדיניות פרטיות</a>
+          <a href="#">תנאי שימוש</a>
+          <a href="mailto:info@romantech.co.il">יצירת קשר</a>
+        </div>
       </div>
     </div>
   </footer>
 
-  <!-- Toast notification -->
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
-
   <script>document.getElementById('year').textContent = new Date().getFullYear();</script>
-
-  <!-- Firebase + App (ES modules) -->
   <script type="module" src="js/app.js"></script>
 
 </body>

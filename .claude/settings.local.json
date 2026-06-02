@@ -5,7 +5,18 @@
       "mcp__Claude_Preview__preview_start",
       "Bash(git init *)",
       "Bash(git add *)",
-      "Bash(git commit *)"
+      "Bash(git commit *)",
+      "Bash(git branch *)",
+      "Bash(mkdir \"C:\\\\Claude\\\\store-deploy\")",
+      "Bash(xcopy \"C:\\\\Claude\\\\Code\\\\*\" \"C:\\\\Claude\\\\store-deploy\\\\\" /E /I /Y /EXCLUDE:\"C:\\\\Claude\\\\Code\\\\.claude\" 2>nul; echo Done)",
+      "Read(//c/Claude/**)",
+      "Bash(mkdir -p store-deploy)",
+      "Bash(cp -r Code/index.html Code/cart.html Code/admin.html Code/success.html Code/fail.html Code/css Code/js Code/firestore.rules Code/_headers Code/README.md store-deploy/)",
+      "mcp__Claude_in_Chrome__tabs_context_mcp",
+      "Bash(cp \"C:/Claude/Code/js/firebase-config.js\" \"C:/Claude/store-deploy/js/firebase-config.js\")",
+      "Bash(cp \"C:/Claude/Code/js/cart.js\" \"C:/Claude/store-deploy/js/cart.js\")",
+      "Bash(git remote *)",
+      "Bash(git push *)"
     ]
   }
 }
