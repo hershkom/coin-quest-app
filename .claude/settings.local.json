@@ -16,7 +16,18 @@
       "Bash(cp \"C:/Claude/Code/js/firebase-config.js\" \"C:/Claude/store-deploy/js/firebase-config.js\")",
       "Bash(cp \"C:/Claude/Code/js/cart.js\" \"C:/Claude/store-deploy/js/cart.js\")",
       "Bash(git remote *)",
-      "Bash(git push *)"
+      "Bash(git push *)",
+      "Bash(cp \"C:/Claude/Code/index.html\" \"C:/Claude/Code/cart.html\" \"C:/Claude/Code/success.html\" \"C:/Claude/Code/fail.html\" \"C:/Claude/store-deploy/\")",
+      "Bash(cp -r \"C:/Claude/Code/css\" \"C:/Claude/Code/js\" \"C:/Claude/store-deploy/\")",
+      "Bash(cp \"C:/Claude/Media/logo.png\" \"C:/Claude/Code/logo.png\")",
+      "Bash(cp \"C:/Claude/Media/logo.png\" \"C:/Claude/store-deploy/logo.png\")",
+      "Bash(pip install *)",
+      "Bash(python3 -c ' *)",
+      "Bash(python -m pip install Pillow -q)",
+      "Bash(python -c ' *)",
+      "Bash(cp \"C:/Claude/Media/logo_transparent.png\" \"C:/Claude/Code/logo.png\")",
+      "Bash(cp \"C:/Claude/Media/logo_transparent.png\" \"C:/Claude/store-deploy/logo.png\")",
+      "Bash(chmod 644 \"C:/Claude/store-deploy/logo.png\")"
     ]
   }
 }
