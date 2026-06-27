@@ -1,103 +1,124 @@
-# החנות שלי — אתר קניות בעברית
+# כספת המטבעות 🪙 — Coin Quest App
 
-אתר קניות סטטי בעברית (RTL) הכולל ניהול מוצרים, עגלת קניות, ותשלום דרך Tranzila ו-PayPal.
+מערכת תגמול ממוגמרת לילדים עם צ'ק-בוקס משימות, סריקת QR, תרגילי חשבון יומיים, חנות פרסים, ואתגר 30 הימים עם ניטנדו סוויץ' 2.
 
----
+## 🚀 תכונות
 
-## מבנה הקבצים
+### 👧 ממשק הילדים
+- **בחירת פרופיל דינמית**: אריאל 🦊 (סגול) ונועה 🐰 (אדום), כל אחד עם יתרה היסטוריה נפרדות
+- **מטלות עם צ'ק-בוקס** 🧹: צחצוח שיניים, פינוי אוכל, שירותים — ממשק פשוט לילדים
+- **סריקת QR** 📷: סריקה חיה, צילום/העלאה, הזנה ידנית (fallback)
+- **תרגילי חשבון יומיים** ➗: +, −, ×, ÷ עם מכסה יומית וניקוד
+- **חנות פרסים** 🎁: החלפת מטבעות בפרסים מוגדרים
+- **יומן** 📜: היסטוריית כל פעולה עם timeAgo
+- **אתגר 30 הימים** 🔥: רצף נקי עם לוח חודשי (בחר אריאל)
+  - כפתור ירוק אחד בלבד: "✅ היום היה יום נקי!"
+  - בהגעה ל-30 ימים → פרס Nintendo Switch 2
+  - תקרית מאפסת הרצף (מדווח מהורה בלבד)
+
+### ⚙️ אזור הורים (Admin, PIN 1234)
+- **👧 ילדים**: ערוך שם/אימוג'י, תיקן יתרה, אפס, הוסף ילדים חדשים
+- **🧹 מטלות**: CRUD מטלות checkbox עם נקודות ומכסה יומית
+- **🌟 רצף**: בחר ילד, עדכן מטרה ופרס, לוח שנה interactive לסימון ימים, דיווח מהיר על תקרית
+- **🏆 פעולות**: CRUD פעולות QR עם נקודות
+- **🔳 QR**: הדפסת קודים לפעולות
+- **➗ חשבון**: הפעל/כבה, בחר סוגים, הגדר טווח ופרס
+- **🎁 פרסים**: CRUD פרסים החלפה
+- **🔧 הגדרות**: שנה PIN
+
+## 💾 אחסון נתונים
+
+**שכבת abstractions כפולה:**
+- ✅ **Artifact mode** (claude.ai): `window.storage` (Claude artifacts)
+- ✅ **Local mode** (website): `localStorage`
+- ✅ **In-memory fallback**: אם שום דבר לא זמין
+
+**Keys:**
+- `cs_children`, `cs_current` — פרופילים ובחירה
+- `cs_chores`, `cs_actions`, `cs_rewards` — קטלוגים משותפים
+- `cs_math` — הגדרות חשבון
+- `cs_streak` — בנתוני אתגר (ילד מסוים, ימים, שיא, פרס)
+- `cs_bal_[id]`, `cs_hist_[id]`, `cs_daily_[id]`, `cs_mathd_[id]` — לכל ילד
+- `cs_pin` — קוד הורים (ברירה: 1234)
+
+## 🎯 ערכי ברירה
+
+**ילדים:**
+- אריאל 🦊 (ID: ariel, סגול)
+- נועה 🐰 (ID: noa, אדום)
+
+**מטלות (checkbox):**
+- צחצוח שיניים 🦷 (5 נק', 2/יום)
+- לשבת בשירותים 🚽 (3 נק', 6/יום)
+- פינוי אוכל 🍽️ (8 נק', 3/יום)
+
+**פעולות (QR):**
+- סידור החדר 🧸 (10 נק', 1/יום)
+- מקלחת 🚿 (5 נק', 1/יום)
+
+**פרסים:**
+- 30 דקות מסך 🎮 (30 מטבעות)
+- גלידה 🍦 (50 מטבעות)
+- שקל אחד 💵 (20 מטבעות)
+- ערב סרט 🍿 (80 מטבעות)
+
+**חשבון:**
+- סוגים: + − (by default)
+- טווח: 0–20
+- נקודות לתשובה: 2
+- מטרה יומית: 10 תרגילים
+
+**אתגר 30 הימים:**
+- ילד: אריאל (by default)
+- מטרה: 30 ימים ברצף
+- פרס: Nintendo Switch 2 🎮
+
+## 🛠️ טכנולוגיה
+
+- **HTML5 + CSS3 + Vanilla JS** — אין תלויות מופחתות
+- **ספריות CDN:**
+  - jsQR 1.4.0 (סריקת QR)
+  - qrcodejs 1.0.0 (יצור QR)
+- **עיצוב:** RTL עברית, responsive (mobile-first), CSS custom properties
+- **Animation:** coin burst, toast notifications, button feedback
+
+## 📱 Responsive Design
+
+- Mobile-first
+- Sticky top bar עם profile switch ויתרה
+- Bottom nav (5 כפתורים) עם ריפוד safe-area-inset
+- תמיכה ב-notches ו-dynamic island
+
+## 🔐 אבטחה & עיצוב
+
+- **PIN מגן**: אזור הורים דורש PIN (ברירה: 1234)
+- **לא משדר מבחוץ**: כל הנתונים נשמרים locally, zero network
+- **חיוביות לילדים**: אין כפתור דיווח על תקרות במסך הילד, רק הורים יכולים לדווח
+- **Privacy**: אין analytics, אין tracking, אין cookies (רק localStorage)
+
+## 📖 קבצים בפרויקט
 
 ```
-├── index.html          ← דף הבית + רשת מוצרים
-├── cart.html           ← עגלת קניות + תשלום
-├── admin.html          ← פאנל ניהול מוצרים (מוגן בהתחברות)
-├── success.html        ← דף הצלחה לאחר תשלום
-├── fail.html           ← דף שגיאה לאחר תשלום
-├── css/style.css       ← כל עיצוב האתר
-├── js/
-│   ├── firebase-config.js  ← פרטי חיבור Firebase (ממלאים בשלב 1)
-│   ├── app.js              ← טעינת מוצרים, עגלה, חיפוש
-│   ├── cart.js             ← לוגיקת עגלה + תשלום
-│   └── admin.js            ← הוספה / עריכה / מחיקת מוצרים
-├── firestore.rules     ← חוקי אבטחה ל-Firestore (מעלים ב-Firebase)
-└── _headers            ← כותרות אבטחה עבור Netlify
+coin_quest_app.html         — אפליקציה ראשית (single-file)
+README.md                   — תיעוד (קובץ זה)
+DEPLOYMENT.md               — הוראות Netlify/GitHub
+PROJECT_STATUS.md           — מצב פרויקט וקצרים נוכחיים
 ```
 
----
+## 🚀 להתחיל מהר
 
-## שלב 1 — הגדרת Firebase
+1. פתח את `coin_quest_app.html` בדפדפן
+2. בחר ילד מהמסך הראשון
+3. סימן מטלה או סרוק QR או פתור תרגיל
+4. לחץ על ⚙️ (פינה עליונה ימנית), הזן PIN (1234)
 
-1. כנס ל-[Firebase Console](https://console.firebase.google.com/) וצור פרויקט חדש.
-2. בפרויקט: **Build → Firestore Database** → צור מסד נתונים (Production mode).
-3. בפרויקט: **Build → Authentication → Sign-in method** → הפעל **Email/Password**.
-4. ב-Authentication → **Users** → הוסף משתמש עם כתובת מייל וסיסמה (זה חשבון הניהול שלך).
-5. **Project Settings → Your apps → Add app (Web)** → העתק את ה-`firebaseConfig`.
-6. פתח את `js/firebase-config.js` והחלף את ערכי ה-placeholder בערכים האמיתיים.
+## 📞 השק הבא
 
-### הגדרת חוקי Firestore
-
-1. ב-Firebase Console → **Firestore → Rules**
-2. העתק את תוכן הקובץ `firestore.rules` ולחץ **Publish**.
+- Netlify deployment (ראה DEPLOYMENT.md)
+- GitHub repository setup
+- בדיקות ב-iOS Safari
+- חיבור Optional: Firebase לסנכרון cross-device
 
 ---
 
-## שלב 2 — הגדרת Tranzila
-
-1. פתח חשבון ב-[Tranzila](https://www.tranzila.com/).
-2. קבל את **מזהה הטרמינל** שלך.
-3. פתח `js/cart.js` ועדכן:
-   ```js
-   const TRANZILA_TERMINAL = 'YOUR_TRANZILA_TERMINAL_ID';
-   ```
-
----
-
-## שלב 3 — הגדרת PayPal (אופציונלי)
-
-1. היכנס ל-[PayPal Developer](https://developer.paypal.com/).
-2. צור אפליקציה וקבל **Client ID** (Live).
-3. פתח `js/cart.js` ועדכן:
-   ```js
-   const PAYPAL_CLIENT_ID = 'YOUR_PAYPAL_CLIENT_ID';
-   ```
-
----
-
-## שלב 4 — פרסום האתר
-
-### Netlify (מומלץ)
-1. העלה את כל הקבצים ל-GitHub Repository חדש.
-2. כנס ל-[netlify.com](https://www.netlify.com/) → **Add new site → Import from Git**.
-3. בחר את ה-Repository וכנס **Deploy site**.
-4. הקובץ `_headers` יחיל אוטומטית את כותרות האבטחה.
-
-### GitHub Pages
-1. העלה ל-Repository ב-GitHub.
-2. Settings → Pages → Branch: main → Save.
-3. **שים לב:** GitHub Pages לא תומך בקובץ `_headers`. הוסף כותרות ידנית ב-Firebase Hosting אם תרצה.
-
-### Vercel
-1. העלה ל-GitHub ואז חבר ב-[vercel.com](https://vercel.com/).
-2. הוסף קובץ `vercel.json` להגדרת הכותרות (ראה תיעוד Vercel).
-
----
-
-## הוספת תמונות למוצרים
-
-האתר משתמש בקישורי URL לתמונות. כדי לארח תמונות בחינם:
-- [imgBB](https://imgbb.com/) — העלה תמונה, קבל קישור ישיר, הדבק בשדה התמונה בפאנל הניהול.
-- [Cloudinary](https://cloudinary.com/) — 25GB בחינם, אפשרויות עריכה מתקדמות.
-
----
-
-## אבטחה
-
-| נושא | פתרון |
-|------|--------|
-| גישה לניהול | Firebase Auth (אימייל + סיסמה) |
-| כתיבה ל-Firestore | רק משתמשים מחוברים (חוקי Firestore) |
-| אימות נתונים | Server-side validation ב-Firestore Rules |
-| XSS | כל הנתונים מוצגים דרך `textContent` (לא innerHTML) |
-| Clickjacking | X-Frame-Options: DENY |
-| HTTPS | אוטומטי ב-Netlify / Vercel / GitHub Pages |
-| פרטי כרטיס אשראי | לא עוברים דרך האתר — Tranzila/PayPal מטפלים ישירות |
-| CSP | Content-Security-Policy מוגדר ב-`_headers` |
+**קיים ופעיל: v1.0 משולב** ✅
