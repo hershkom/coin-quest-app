@@ -703,7 +703,7 @@ async function loadState(){
   state.rewards =(await DB.get('cs_rewards')) ??DEFAULT_REWARDS;
   state.math    =(await DB.get('cs_math'))    ??DEFAULT_MATH;
   state.streak  =(await DB.get('cs_streak'))  ??DEFAULT_STREAK;
-  state.pin     =(await DB.get('cs_pin'))     ??'1234';
+  state.pin     =(await DB.get('cs_pin'))     ??'0525622636';
   state.kid={};
 }
 async function loadKid(id){
@@ -732,8 +732,8 @@ function renderBalance(){
     document.getElementById('psName').textContent=c.name;
     const psAv=document.getElementById('psAvatar');
     if(c.id==='ariel'){
-      psAv.innerHTML='🟫';
-      psAv.style.fontSize='1.8rem';
+      psAv.innerHTML='<div style="display:flex;flex-direction:column;gap:1px;font-size:.8rem;line-height:1;"><div style="display:flex;gap:1px;">🟨🟨</div><div style="display:flex;gap:1px;">🟥🟥</div><div style="display:flex;gap:1px;">🟦🟦</div></div>';
+      psAv.style.fontSize='inherit';
     }else{
       psAv.textContent=c.emoji;
       psAv.style.fontSize='';
@@ -742,8 +742,8 @@ function renderBalance(){
     document.getElementById('childName').textContent=c.name;
     const heroAv=document.getElementById('heroAv');
     if(c.id==='ariel'){
-      heroAv.innerHTML='🟫';
-      heroAv.style.fontSize='3.2rem';
+      heroAv.innerHTML='<div style="display:flex;flex-direction:column;gap:3px;font-size:1.4rem;line-height:1;"><div style="display:flex;gap:3px;">🟨🟨</div><div style="display:flex;gap:3px;">🟥🟥</div><div style="display:flex;gap:3px;">🟦🟦</div></div>';
+      heroAv.style.fontSize='inherit';
     }else{
       heroAv.textContent=c.emoji;
       heroAv.style.fontSize='';
@@ -799,7 +799,11 @@ function renderPicker(){
     const card=document.createElement('button');
     card.className='kid-card'; card.style.setProperty('--kc',ch.color);
     if(ch.id==='ariel'){
-      card.innerHTML=`<div class="kc-av" style="display:flex;align-items:center;justify-content:center;font-size:3rem;text-shadow:2px 2px 0 rgba(0,0,0,.3);filter:drop-shadow(0 2px 4px rgba(0,0,0,.2));">🟫🟫<br>🟫🟫<br>🟥🟥<br>🟪🟪</div><div class="kc-name">${esc(ch.name)}</div><div class="kc-bal">🪙 <span data-bal="${ch.id}">…</span></div>`;
+      card.innerHTML=`<div class="kc-av" style="display:flex;align-items:center;justify-content:center;flex-direction:column;gap:2px;font-size:1.2rem;line-height:1;">
+        <div style="display:flex;gap:2px;">🟨🟨</div>
+        <div style="display:flex;gap:2px;">🟥🟥</div>
+        <div style="display:flex;gap:2px;">🟦🟦</div>
+      </div><div class="kc-name">${esc(ch.name)}</div><div class="kc-bal">🪙 <span data-bal="${ch.id}">…</span></div>`;
     }else{
       card.innerHTML=`<div class="kc-av">${ch.emoji}</div><div class="kc-name">${esc(ch.name)}</div><div class="kc-bal">🪙 <span data-bal="${ch.id}">…</span></div>`;
     }
