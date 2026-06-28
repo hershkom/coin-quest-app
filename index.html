@@ -732,21 +732,43 @@ function renderBalance(){
     document.getElementById('psName').textContent=c.name;
     const psAv=document.getElementById('psAvatar');
     if(c.id==='ariel'){
-      psAv.innerHTML='<div style="display:flex;flex-direction:column;gap:1px;font-size:.8rem;line-height:1;"><div style="display:flex;gap:1px;">🟨🟨</div><div style="display:flex;gap:1px;">🟥🟥</div><div style="display:flex;gap:1px;">🟦🟦</div></div>';
-      psAv.style.fontSize='inherit';
+      psAv.innerHTML='<svg viewBox="0 0 64 128" style="width:100%;height:100%;filter:drop-shadow(0 2px 4px rgba(0,0,0,.2));">'
+        +'<rect x="16" y="0" width="32" height="32" fill="#8B5A3C"/>'
+        +'<rect x="20" y="8" width="6" height="8" fill="#4444FF"/>'
+        +'<rect x="38" y="8" width="6" height="8" fill="#4444FF"/>'
+        +'<rect x="24" y="20" width="16" height="2" fill="#000"/>'
+        +'<rect x="12" y="32" width="40" height="32" fill="#00CCCC"/>'
+        +'<rect x="0" y="32" width="12" height="32" fill="#D4A373"/>'
+        +'<rect x="52" y="32" width="12" height="32" fill="#D4A373"/>'
+        +'<rect x="16" y="64" width="14" height="32" fill="#4A3FA5"/>'
+        +'<rect x="34" y="64" width="14" height="32" fill="#4A3FA5"/>'
+        +'<rect x="16" y="96" width="14" height="8" fill="#222"/>'
+        +'<rect x="34" y="96" width="14" height="8" fill="#222"/>'
+        +'</svg>';
     }else{
       psAv.textContent=c.emoji;
-      psAv.style.fontSize='';
     }
     psAv.style.background=c.color;
     document.getElementById('childName').textContent=c.name;
     const heroAv=document.getElementById('heroAv');
     if(c.id==='ariel'){
-      heroAv.innerHTML='<div style="display:flex;flex-direction:column;gap:3px;font-size:1.4rem;line-height:1;"><div style="display:flex;gap:3px;">🟨🟨</div><div style="display:flex;gap:3px;">🟥🟥</div><div style="display:flex;gap:3px;">🟦🟦</div></div>';
-      heroAv.style.fontSize='inherit';
+      heroAv.innerHTML='<svg viewBox="0 0 64 128" style="width:74px;height:100%;filter:drop-shadow(0 2px 4px rgba(0,0,0,.2));">'
+        +'<rect x="16" y="0" width="32" height="32" fill="#8B5A3C"/>'
+        +'<rect x="20" y="8" width="6" height="8" fill="#4444FF"/>'
+        +'<rect x="38" y="8" width="6" height="8" fill="#4444FF"/>'
+        +'<rect x="24" y="20" width="16" height="2" fill="#000"/>'
+        +'<rect x="12" y="32" width="40" height="32" fill="#00CCCC"/>'
+        +'<rect x="0" y="32" width="12" height="32" fill="#D4A373"/>'
+        +'<rect x="52" y="32" width="12" height="32" fill="#D4A373"/>'
+        +'<rect x="16" y="64" width="14" height="32" fill="#4A3FA5"/>'
+        +'<rect x="34" y="64" width="14" height="32" fill="#4A3FA5"/>'
+        +'<rect x="16" y="96" width="14" height="8" fill="#222"/>'
+        +'<rect x="34" y="96" width="14" height="8" fill="#222"/>'
+        +'<rect x="50" y="35" width="4" height="20" fill="#1a7d1a"/>'
+        +'<rect x="48" y="32" width="8" height="4" fill="#888"/>'
+        +'</svg>';
     }else{
       heroAv.textContent=c.emoji;
-      heroAv.style.fontSize='';
     }
     document.getElementById('hero').style.background='linear-gradient(140deg,'+c.color+',var(--sky))';
     const rn=document.getElementById('rwName'); if(rn) rn.textContent=c.name;
@@ -799,10 +821,31 @@ function renderPicker(){
     const card=document.createElement('button');
     card.className='kid-card'; card.style.setProperty('--kc',ch.color);
     if(ch.id==='ariel'){
-      card.innerHTML=`<div class="kc-av" style="display:flex;align-items:center;justify-content:center;flex-direction:column;gap:2px;font-size:1.2rem;line-height:1;">
-        <div style="display:flex;gap:2px;">🟨🟨</div>
-        <div style="display:flex;gap:2px;">🟥🟥</div>
-        <div style="display:flex;gap:2px;">🟦🟦</div>
+      card.innerHTML=`<div class="kc-av" style="display:flex;align-items:center;justify-content:center;">
+        <svg viewBox="0 0 64 128" style="width:74px;height:100%;filter:drop-shadow(0 2px 4px rgba(0,0,0,.2));">
+          <!-- Head -->
+          <rect x="16" y="0" width="32" height="32" fill="#8B5A3C"/>
+          <!-- Eyes -->
+          <rect x="20" y="8" width="6" height="8" fill="#4444FF"/>
+          <rect x="38" y="8" width="6" height="8" fill="#4444FF"/>
+          <!-- Mouth -->
+          <rect x="24" y="20" width="16" height="2" fill="#000"/>
+          <!-- Body -->
+          <rect x="12" y="32" width="40" height="32" fill="#00CCCC"/>
+          <!-- Left Arm -->
+          <rect x="0" y="32" width="12" height="32" fill="#D4A373"/>
+          <!-- Right Arm -->
+          <rect x="52" y="32" width="12" height="32" fill="#D4A373"/>
+          <!-- Legs -->
+          <rect x="16" y="64" width="14" height="32" fill="#4A3FA5"/>
+          <rect x="34" y="64" width="14" height="32" fill="#4A3FA5"/>
+          <!-- Shoes -->
+          <rect x="16" y="96" width="14" height="8" fill="#222"/>
+          <rect x="34" y="96" width="14" height="8" fill="#222"/>
+          <!-- Sword in hand -->
+          <rect x="50" y="35" width="4" height="20" fill="#1a7d1a"/>
+          <rect x="48" y="32" width="8" height="4" fill="#888"/>
+        </svg>
       </div><div class="kc-name">${esc(ch.name)}</div><div class="kc-bal">🪙 <span data-bal="${ch.id}">…</span></div>`;
     }else{
       card.innerHTML=`<div class="kc-av">${ch.emoji}</div><div class="kc-name">${esc(ch.name)}</div><div class="kc-bal">🪙 <span data-bal="${ch.id}">…</span></div>`;
