@@ -356,10 +356,102 @@
   .cal-legend{display:flex;gap:14px;justify-content:center;margin-top:14px;font-size:.76rem;color:var(--ink2);}
   .cal-legend span{display:inline-flex;align-items:center;gap:5px;}
   .cal-legend i{width:11px;height:11px;border-radius:4px;display:inline-block;}
+
+  /* Clock */
+  .clock-widget{
+    position:fixed;
+    right:16px;
+    top:80px;
+    z-index:40;
+    text-align:center;
+    pointer-events:none;
+  }
+  .analog-clock{
+    width:80px;
+    height:80px;
+    border-radius:50%;
+    background:#fff;
+    box-shadow:0 4px 12px rgba(124,92,252,.2);
+    position:relative;
+    margin:0 auto 8px;
+  }
+  .clock-face{
+    position:absolute;
+    width:100%;
+    height:100%;
+    border-radius:50%;
+    background:#fff;
+  }
+  .clock-center{
+    position:absolute;
+    width:6px;
+    height:6px;
+    background:#2A2440;
+    border-radius:50%;
+    top:50%;
+    left:50%;
+    transform:translate(-50%,-50%);
+    z-index:10;
+  }
+  .hand{
+    position:absolute;
+    background:#2A2440;
+    transform-origin:bottom center;
+    left:50%;
+  }
+  .hour-hand{
+    width:3px;
+    height:20px;
+    bottom:50%;
+    margin-left:-1.5px;
+  }
+  .minute-hand{
+    width:2px;
+    height:28px;
+    bottom:50%;
+    margin-left:-1px;
+  }
+  .second-hand{
+    width:1px;
+    height:30px;
+    bottom:50%;
+    margin-left:-0.5px;
+    background:#FF6B6B;
+  }
+  .digital-clock{
+    font-family:'Press Start 2P',monospace;
+    font-size:.65rem;
+    background:#fff;
+    padding:6px 10px;
+    border-radius:8px;
+    box-shadow:0 2px 8px rgba(124,92,252,.15);
+    color:#2A2440;
+    font-weight:800;
+    letter-spacing:1px;
+  }
+  .time-greeting{
+    font-family:'Press Start 2P',monospace;
+    font-size:.6rem;
+    color:#6B6585;
+    margin-top:12px;
+    text-align:center;
+  }
 </style>
 </head>
 <body>
 <div class="app">
+  <div class="clock-widget" id="clockWidget">
+    <div class="analog-clock">
+      <div class="clock-face">
+        <div class="hand hour-hand" id="hourHand"></div>
+        <div class="hand minute-hand" id="minuteHand"></div>
+        <div class="hand second-hand" id="secondHand"></div>
+        <div class="clock-center"></div>
+      </div>
+    </div>
+    <div class="digital-clock" id="digitalClock">00:00</div>
+    <div class="time-greeting" id="timeGreeting"></div>
+  </div>
   <div class="topbar">
     <button class="profile-switch" id="profileSwitch" onclick="go('picker')">
       <span class="ps-av" id="psAvatar">🦊</span>
@@ -793,6 +885,7 @@ async function addPoints(n,label,type){
 
 /* ===== NAV ===== */
 let currentView='picker';
+let clockInterval=null;
 function go(v){
   if(currentView==='scan' && v!=='scan') stopCamera();
   if((v!=='picker'&&v!=='admin') && !cur()){ v='picker'; }
@@ -804,6 +897,8 @@ function go(v){
   document.getElementById('profileSwitch').style.visibility=onPicker?'hidden':'visible';
   document.getElementById('balPill').style.visibility=onPicker?'hidden':'visible';
   document.getElementById('bottomnav').style.display=(onPicker||v==='admin'||v==='streak')?'none':'flex';
+  // Update chores when switching to home view
+  if(v==='home'&&state.current==='ariel') renderChores();
   window.scrollTo(0,0);
   if(v==='picker') renderPicker();
   if(v==='home'){ renderChores(); renderStreakBanner(); }
@@ -860,12 +955,15 @@ async function selectChild(id){
   await loadKid(id); renderBalance(); go('home');
   // Apply Minecraft theme if Ariel is selected
   const app=document.querySelector('.app');
+  const clockWidget=document.getElementById('clockWidget');
   if(id==='ariel'){
     app.classList.add('minecraft-mode');
     addMinecraftDecorations();
+    clockWidget.style.display='block';
   }else{
     app.classList.remove('minecraft-mode');
     removeMinecraftDecorations();
+    clockWidget.style.display='none';
   }
 }
 function addMinecraftDecorations(){
@@ -987,8 +1085,19 @@ function renderChores(){
   wrap.innerHTML='';
   const k=cur(); if(!k) return;
   ensureTodayKid(state.current);
-  if(state.chores.length===0){ wrap.innerHTML='<div class="empty"><span class="e-ic">🧹</span>אין מטלות מוגדרות</div>'; return; }
-  state.chores.forEach(ch=>{
+  // Use time-based tasks if current view is home and it's for Ariel
+  let tasks=state.chores;
+  if(state.current==='ariel'&&currentView==='home'){
+    tasks=getTasksForTimeOfDay();
+    const timeHour=new Date().getHours();
+    const hour=String(timeHour).padStart(2,'0');
+    const greeting=document.createElement('div');
+    greeting.style.cssText='font-size:1.1rem;font-weight:800;color:#6B6585;margin-bottom:14px;text-align:center;';
+    greeting.textContent=hour+':00 - 🌤️ מטלות כרגע';
+    wrap.appendChild(greeting);
+  }
+  if(tasks.length===0){ wrap.innerHTML='<div class="empty"><span class="e-ic">🧹</span>אין מטלות כרגע</div>'; return; }
+  tasks.forEach(ch=>{
     const used=k.daily.counts[ch.id]||0;
     const full=used>=ch.max;
     const row=document.createElement('div'); row.className='chore-row'+(full?' done':'');
@@ -1428,6 +1537,56 @@ function esc(s){ return (s+'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>'
 function timeAgo(ts){ const s=Math.floor((Date.now()-ts)/1000);
   if(s<60) return 'הרגע'; if(s<3600) return 'לפני '+Math.floor(s/60)+' דק׳'; if(s<86400) return 'לפני '+Math.floor(s/3600)+' שעות'; return 'לפני '+Math.floor(s/86400)+' ימים'; }
 
+/* ===== CLOCK & TIME-BASED TASKS ===== */
+function updateClock(){
+  const now=new Date();
+  const h=now.getHours(), m=now.getMinutes(), s=now.getSeconds();
+  const hDeg=h*30+m*0.5, mDeg=m*6+s*0.1, sDeg=s*6;
+  document.getElementById('hourHand').style.transform=`rotate(${hDeg}deg)`;
+  document.getElementById('minuteHand').style.transform=`rotate(${mDeg}deg)`;
+  document.getElementById('secondHand').style.transform=`rotate(${sDeg}deg)`;
+  const timeStr=String(h).padStart(2,'0')+':'+String(m).padStart(2,'0');
+  document.getElementById('digitalClock').textContent=timeStr;
+  const timeOfDay=getTimeOfDay(h);
+  const greetings={morning:'בוקר טוב',afternoon:'צהריים טובים',evening:'ערב טוב',night:'לילה טוב'};
+  document.getElementById('timeGreeting').textContent=greetings[timeOfDay];
+}
+function getTimeOfDay(hour){
+  if(hour>=5&&hour<12) return 'morning';
+  if(hour>=12&&hour<17) return 'afternoon';
+  if(hour>=17&&hour<21) return 'evening';
+  return 'night';
+}
+function getTasksForTimeOfDay(){
+  const now=new Date();
+  const hour=now.getHours();
+  const timeOfDay=getTimeOfDay(hour);
+  const allTasks={
+    morning:[
+      {id:'chore_teeth',label:'צחצוח שיניים',emoji:'🦷',points:5,max:2},
+      {id:'chore_toilet',label:'לשבת בשירותים',emoji:'🚽',points:3,max:6},
+      {id:'morning_med',label:'לקחת תרופה',emoji:'💊',points:3,max:1}
+    ],
+    afternoon:[
+      {id:'chore_cleanfood',label:'פינוי אוכל אחרי שמסיימים',emoji:'🍽️',points:8,max:3},
+      {id:'chore_teeth',label:'צחצוח שיניים',emoji:'🦷',points:5,max:2}
+    ],
+    evening:[
+      {id:'chore_teeth',label:'צחצוח שיניים',emoji:'🦷',points:5,max:2},
+      {id:'evening_bath',label:'אמבטיה/מקלחת',emoji:'🛁',points:5,max:1},
+      {id:'evening_read',label:'קריאה לפני שינה',emoji:'📖',points:3,max:1}
+    ],
+    night:[
+      {id:'night_sleep',label:'זמן שינה',emoji:'😴',points:2,max:1}
+    ]
+  };
+  return allTasks[timeOfDay]||[];
+}
+function startClockUpdate(){
+  updateClock();
+  setInterval(updateClock,1000);
+}
+
 /* ===== GOOGLE DRIVE SYNC ===== */
 const GD={
   fileId:null, accessToken:null,
@@ -1537,11 +1696,19 @@ const GD={
   if(await GD.handleCallback()){ await loadState(); }
   await loadState();
   const app=document.querySelector('.app');
+  const clockWidget=document.getElementById('clockWidget');
   if(state.current && state.children.find(c=>c.id===state.current)){
     await loadKid(state.current); renderBalance(); go('home');
-    if(state.current==='ariel'){ app.classList.add('minecraft-mode'); addMinecraftDecorations(); }
+    if(state.current==='ariel'){
+      app.classList.add('minecraft-mode');
+      addMinecraftDecorations();
+      clockWidget.style.display='block';
+      startClockUpdate();
+    }else{
+      clockWidget.style.display='none';
+    }
   }
-  else { state.current=null; go('picker'); }
+  else { state.current=null; go('picker'); clockWidget.style.display='none'; }
 })();
 </script>
 </body>
