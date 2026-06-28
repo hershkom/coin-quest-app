@@ -18,7 +18,12 @@
     --ink:#2A2440; --ink2:#6B6585; --muted:#9B96B0;
     --card:#FFFFFF; --line:#ECE9F5;
     --bg1:#EEF0FF; --bg2:#FBEEFF; --bg3:#E8FBFF;
+    /* Minecraft colors for Ariel */
+    --mc-dirt:#8B7355; --mc-grass:#52C64B; --mc-wood:#6B4423;
+    --mc-stone:#808080; --mc-dirt-light:#A0826D;
   }
+  @import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap');
+  .minecraft-theme { font-family: 'Press Start 2P', monospace !important; }
   *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;}
   html,body{height:100%;}
   body{font-family:'Varela Round','Heebo',sans-serif;background:linear-gradient(160deg,var(--bg1) 0%,var(--bg2) 50%,var(--bg3) 100%);background-attachment:fixed;color:var(--ink);min-height:100%;overflow-x:hidden;}
@@ -83,6 +88,7 @@
   .btn.primary{background:linear-gradient(135deg,var(--purple),var(--sky));color:#fff;box-shadow:0 6px 16px rgba(124,92,252,.3);}
   .btn.mint{background:linear-gradient(135deg,var(--mint),var(--mint-d));color:#fff;box-shadow:0 6px 16px rgba(39,201,154,.3);}
   .btn.gold{background:linear-gradient(135deg,var(--gold),var(--gold-d));color:#fff;}
+  .btn.sky{background:linear-gradient(135deg,var(--sky),#2D8FE0);color:#fff;box-shadow:0 6px 16px rgba(45,143,224,.3);}
   .btn.ghost{background:#F2F0FB;color:var(--ink2);}
   .btn.coral{background:linear-gradient(135deg,var(--coral),var(--coral-d));color:#fff;}
   .btn.sm{padding:9px 14px;font-size:.85rem;width:auto;border-radius:12px;}
@@ -452,9 +458,16 @@
           <div class="field"><label>שנה קוד הורים (PIN)</label><input id="setPin" type="number" placeholder="קוד חדש"></div>
           <button class="btn primary" onclick="savePin()">שמור קוד</button>
         </div>
+        <div class="card">
+          <div class="card-h">☁️ סנכרון Google Drive</div>
+          <div class="card-sub" style="margin-bottom:12px;">גבה את הנתונים שלך ב-Google Drive</div>
+          <button class="btn primary" onclick="GD.authGoogle()" style="margin-bottom:8px;">📲 התחבר ל-Google</button>
+          <button class="btn mint" onclick="GD.syncToGoogleDrive()" style="margin-bottom:8px;">💾 שמור לדרייב</button>
+          <button class="btn sky" onclick="GD.syncFromGoogleDrive()">📥 טען מדרייב</button>
+        </div>
         <div class="card" style="background:#F7F6FC;">
           <div class="card-sub" style="font-size:.78rem;line-height:1.6;">
-            💡 <b>איך זה עובד בין מכשירים:</b> קוד ה-QR נושא את הנקודות, אז אפשר לייצר אותו כאן ולסרוק בכל מכשיר. הנתונים נשמרים על המכשיר שבו פתחת. לסנכרון אמיתי בין מכשירים שונים צריך שרת.
+            💡 <b>סנכרון:</b> לחץ "התחבר ל-Google" פעם אחת, אחר כך השתמש ב"שמור לדרייב" ו"טען מדרייב" לסנכרון בין מכשירים. הנתונים נשמרים גם locally.
           </div>
         </div>
       </div>
@@ -563,7 +576,19 @@ function renderBalance(){
     document.getElementById('psAvatar').style.background=c.color;
     document.getElementById('childName').textContent=c.name;
     document.getElementById('heroAv').textContent=c.emoji;
-    document.getElementById('hero').style.background='linear-gradient(140deg,'+c.color+',var(--sky))';
+    const hero=document.getElementById('hero');
+    // Apply Minecraft theme for Ariel
+    if(c.id==='ariel'){
+      hero.style.background='linear-gradient(140deg,var(--mc-dirt),var(--mc-grass))';
+      document.getElementById('psName').style.fontFamily="'Press Start 2P',monospace";
+      document.getElementById('psName').style.fontSize='.8rem';
+      document.getElementById('heroAv').style.fontFamily="'Press Start 2P',monospace";
+    }else{
+      hero.style.background='linear-gradient(140deg,'+c.color+',var(--sky))';
+      document.getElementById('psName').style.fontFamily="inherit";
+      document.getElementById('psName').style.fontSize="inherit";
+      document.getElementById('heroAv').style.fontFamily="inherit";
+    }
     const rn=document.getElementById('rwName'); if(rn) rn.textContent=c.name;
     const hn=document.getElementById('histName'); if(hn) hn.textContent=c.name;
     const sf=document.getElementById('scanFor'); if(sf) sf.textContent=c.name;
@@ -612,8 +637,16 @@ function renderPicker(){
   const c=document.getElementById('pickerCards'); c.innerHTML='';
   state.children.forEach(ch=>{
     const card=document.createElement('button');
-    card.className='kid-card'; card.style.setProperty('--kc',ch.color);
-    card.innerHTML=`<div class="kc-av">${ch.emoji}</div><div class="kc-name">${esc(ch.name)}</div><div class="kc-bal">🪙 <span data-bal="${ch.id}">…</span></div>`;
+    card.className='kid-card';
+    card.setAttribute('data-child',ch.id);
+    card.style.setProperty('--kc',ch.color);
+    if(ch.id==='ariel'){
+      card.style.borderTop='5px solid var(--mc-dirt)';
+      card.innerHTML=`<div class="kc-av" style="background:linear-gradient(140deg,var(--mc-dirt),var(--mc-wood));font-family:'Press Start 2P',monospace;font-size:2.8rem;box-shadow:inset 0 -4px 8px rgba(0,0,0,.3), 0 4px 8px rgba(0,0,0,.2);">${ch.emoji}</div><div class="kc-name" style="font-family:'Press Start 2P',monospace;font-size:.7rem;">${esc(ch.name)}</div><div class="kc-bal">🪙 <span data-bal="${ch.id}">…</span></div>`;
+    }else{
+      card.style.setProperty('--kc',ch.color);
+      card.innerHTML=`<div class="kc-av">${ch.emoji}</div><div class="kc-name">${esc(ch.name)}</div><div class="kc-bal">🪙 <span data-bal="${ch.id}">…</span></div>`;
+    }
     card.onclick=()=>selectChild(ch.id);
     c.appendChild(card);
     DB.get('cs_bal_'+ch.id).then(b=>{ const el=card.querySelector('[data-bal]'); if(el) el.textContent=(b??0); });
@@ -789,6 +822,7 @@ async function markStreakCleanToday(){
 }
 function buildCalendar(year, month, days, editable, onTap, todayKeyStr){
   // returns {dowHtml, gridHtml}
+  // Logic: unmarked/clean = default (green), 'accident' = red, editable admin view allows cycling
   const dows=['א','ב','ג','ד','ה','ו','ש'];
   const dowHtml=dows.map(d=>'<div class="cal-dow">'+d+'</div>').join('');
   const first=new Date(year,month,1);
@@ -798,8 +832,8 @@ function buildCalendar(year, month, days, editable, onTap, todayKeyStr){
   for(let i=0;i<startOffset;i++) cells+='<div class="cal-cell empty-cell"></div>';
   for(let d=1; d<=daysInMonth; d++){
     const key=year+'-'+(month+1)+'-'+d;
-    const status=days[key];
-    const cls=status==='clean'?'clean':status==='accident'?'accident':'';
+    const status=days[key]; // undefined or 'accident'
+    const cls=status==='accident'?'accident':'clean'; // default to clean if unmarked
     const isToday=key===todayKeyStr;
     const editAttr=editable?` onclick="${onTap}('${key}')"`:'';
     cells+=`<div class="cal-cell ${cls} ${isToday?'today':''} ${editable?'editable':''}"${editAttr}>${d}</div>`;
@@ -1004,9 +1038,8 @@ function renderAdminCalendar(){
 async function cycleAdminDay(key){
   const s=state.streak;
   const cur=s.days[key];
-  // cycle: none -> clean -> accident -> none
-  if(!cur) s.days[key]='clean';
-  else if(cur==='clean') s.days[key]='accident';
+  // cycle: none(clean) -> accident -> none(clean)
+  if(!cur || cur==='clean') s.days[key]='accident';
   else delete s.days[key];
   recomputeStreak();
   await DB.set('cs_streak',s);
@@ -1015,17 +1048,21 @@ async function cycleAdminDay(key){
   if(currentView==='streak') renderStreakView();
 }
 function recomputeStreak(){
-  // recompute current streak by walking backward from today through consecutive marked days
+  // recompute current streak by walking backward from today through consecutive clean days
+  // INVERTED LOGIC: unmarked days = clean (default), only 'accident' breaks the streak
   const s=state.streak;
-  let d=new Date(), count=0, best=s.best||0, running=0;
-  // current streak: walk back from today while days are 'clean' (stop at first gap/accident/unmarked... except allow today unmarked)
+  let count=0, best=s.best||0;
   let cursor=new Date();
-  // if today not marked yet, start counting from yesterday backward
+  // start from yesterday if today not marked (today is assumed clean until marked as accident)
   if(!s.days[dateKey(cursor)]){ cursor.setDate(cursor.getDate()-1); }
   while(true){
     const k=dateKey(cursor);
-    if(s.days[k]==='clean'){ count++; cursor.setDate(cursor.getDate()-1); }
-    else break;
+    const status=s.days[k]; // undefined or 'accident'
+    if(status==='accident') break; // stop streak on accident
+    count++; // unmarked or doesn't matter - it's clean
+    cursor.setDate(cursor.getDate()-1);
+    // safety limit to prevent infinite loop (don't go back more than 3 years)
+    if(count>1095) break;
   }
   s.current=count;
   if(s.current>best) best=s.current;
@@ -1166,9 +1203,113 @@ function esc(s){ return (s+'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>'
 function timeAgo(ts){ const s=Math.floor((Date.now()-ts)/1000);
   if(s<60) return 'הרגע'; if(s<3600) return 'לפני '+Math.floor(s/60)+' דק׳'; if(s<86400) return 'לפני '+Math.floor(s/3600)+' שעות'; return 'לפני '+Math.floor(s/86400)+' ימים'; }
 
+/* ===== GOOGLE DRIVE SYNC ===== */
+const GD={
+  fileId:null, accessToken:null,
+  async init(){
+    this.fileId=await DB.get('cs_gd_fileid');
+    this.accessToken=await DB.get('cs_gd_token');
+  },
+  async authGoogle(){
+    const clientId='1065661847825-d7j8q8v0j0m1n2p3q4r5s6t7u8v9w0x.apps.googleusercontent.com';
+    const redirectUri=window.location.origin+window.location.pathname;
+    const scope='https://www.googleapis.com/auth/drive.file';
+    const authUrl=`https://accounts.google.com/o/oauth2/v2/auth?client_id=${clientId}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=token&scope=${encodeURIComponent(scope)}&prompt=consent`;
+    window.location.href=authUrl;
+  },
+  async handleCallback(){
+    const hash=window.location.hash.substring(1);
+    const params=new URLSearchParams(hash);
+    const token=params.get('access_token');
+    if(token){ this.accessToken=token; await DB.set('cs_gd_token',token); return true; }
+    return false;
+  },
+  async syncToGoogleDrive(){
+    if(!this.accessToken){ toast('אתחול עם Google Drive קודם'); return false; }
+    try{
+      const data={
+        children:state.children,
+        chores:state.chores,
+        actions:state.actions,
+        rewards:state.rewards,
+        math:state.math,
+        streak:state.streak,
+        pin:state.pin,
+        kids:{}
+      };
+      for(const ch of state.children){
+        if(state.kid[ch.id]){
+          data.kids[ch.id]={
+            balance:state.kid[ch.id].balance,
+            history:state.kid[ch.id].history,
+            daily:state.kid[ch.id].daily,
+            mathDaily:state.kid[ch.id].mathDaily
+          };
+        }
+      }
+      const body=JSON.stringify(data);
+      if(!this.fileId){
+        const res=await fetch('https://www.googleapis.com/drive/v3/files?supportsAllDrives=true',{
+          method:'POST',
+          headers:{'Authorization':`Bearer ${this.accessToken}`,'Content-Type':'application/json'},
+          body:JSON.stringify({name:'CoinQuest_Backup.json',mimeType:'application/json',parents:['root']})
+        });
+        const file=await res.json();
+        if(file.id){ this.fileId=file.id; await DB.set('cs_gd_fileid',file.id); }
+      }
+      if(this.fileId){
+        await fetch(`https://www.googleapis.com/upload/drive/v3/files/${this.fileId}?uploadType=media&supportsAllDrives=true`,{
+          method:'PATCH',
+          headers:{'Authorization':`Bearer ${this.accessToken}`,'Content-Type':'application/json'},
+          body
+        });
+        toast('סנכרון עם Google Drive בוצע ✓');
+        return true;
+      }
+    }catch(e){ console.error(e); toast('שגיאה בסנכרון: '+e.message); return false; }
+  },
+  async syncFromGoogleDrive(){
+    if(!this.accessToken){ toast('אתחול עם Google Drive קודם'); return false; }
+    if(!this.fileId){ toast('אין קובץ גיבוי'); return false; }
+    try{
+      const res=await fetch(`https://www.googleapis.com/drive/v3/files/${this.fileId}?alt=media&supportsAllDrives=true`,{
+        headers:{'Authorization':`Bearer ${this.accessToken}`}
+      });
+      const data=await res.json();
+      if(data.children) state.children=data.children;
+      if(data.chores) state.chores=data.chores;
+      if(data.actions) state.actions=data.actions;
+      if(data.rewards) state.rewards=data.rewards;
+      if(data.math) state.math=data.math;
+      if(data.streak) state.streak=data.streak;
+      if(data.pin) state.pin=data.pin;
+      if(data.kids){
+        for(const [id,kid] of Object.entries(data.kids)){
+          state.kid[id]=kid;
+          await DB.set('cs_bal_'+id,kid.balance);
+          await DB.set('cs_hist_'+id,kid.history);
+          await DB.set('cs_daily_'+id,kid.daily);
+          await DB.set('cs_mathd_'+id,kid.mathDaily);
+        }
+      }
+      await DB.set('cs_children',state.children);
+      await DB.set('cs_chores',state.chores);
+      await DB.set('cs_actions',state.actions);
+      await DB.set('cs_rewards',state.rewards);
+      await DB.set('cs_math',state.math);
+      await DB.set('cs_streak',state.streak);
+      await DB.set('cs_pin',state.pin);
+      toast('נטענו נתונים מ-Google Drive ✓');
+      return true;
+    }catch(e){ console.error(e); toast('שגיאה בטעינה: '+e.message); return false; }
+  }
+};
+
 /* ===== INIT ===== */
 (async function(){
   await detectBackend();
+  await GD.init();
+  if(await GD.handleCallback()){ await loadState(); }
   await loadState();
   if(state.current && state.children.find(c=>c.id===state.current)){ await loadKid(state.current); renderBalance(); go('home'); }
   else { state.current=null; go('picker'); }
