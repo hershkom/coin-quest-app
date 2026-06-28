@@ -23,7 +23,227 @@
     --mc-stone:#808080; --mc-dirt-light:#A0826D;
   }
   @import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap');
-  .minecraft-theme { font-family: 'Press Start 2P', monospace !important; }
+
+  /* Minecraft theme - applies to entire app when Ariel is selected */
+  .app.minecraft-mode {
+    background:linear-gradient(180deg,#87CEEB 0%,#E0F6FF 100%) !important;
+  }
+  .app.minecraft-mode .topbar {
+    background:#8B7355 !important;
+  }
+  .app.minecraft-mode .hero {
+    background:linear-gradient(140deg,#8B7355,#52C64B) !important;
+    border:4px solid #6B4423 !important;
+    box-shadow:0 0 0 2px #000,inset 0 4px 0 rgba(0,0,0,.4) !important;
+    border-radius:0 !important;
+    padding:30px 20px 20px !important;
+  }
+  .app.minecraft-mode .hero .big-coin {
+    width:80px !important;
+    height:80px !important;
+    border-radius:0 !important;
+    background:#FFD700 !important;
+    box-shadow:0 0 0 2px #000,inset 0 -4px 0 #CC9900 !important;
+    font-size:2.4rem !important;
+  }
+  .app.minecraft-mode .hero .amount {
+    font-family:'Press Start 2P',monospace !important;
+    font-size:2.4rem !important;
+    letter-spacing:2px !important;
+  }
+  .app.minecraft-mode .hero .amount-label {
+    font-family:'Press Start 2P',monospace !important;
+    font-size:.6rem !important;
+  }
+  .app.minecraft-mode .ps-name {
+    font-family:'Press Start 2P',monospace !important;
+    font-size:.65rem !important;
+  }
+  .app.minecraft-mode .kid-card {
+    background:#8B7355 !important;
+    border:4px solid #6B4423 !important;
+    border-radius:0 !important;
+    box-shadow:0 0 0 2px #000,inset 0 -4px 0 rgba(0,0,0,.3) !important;
+    color:#fff !important;
+  }
+  .app.minecraft-mode .kc-av {
+    background:linear-gradient(140deg,#8B7355,#A0826D) !important;
+    border:3px solid #000 !important;
+    border-radius:0 !important;
+    box-shadow:inset 0 -2px 0 rgba(0,0,0,.4) !important;
+    font-size:3rem !important;
+  }
+  .app.minecraft-mode .kc-name {
+    font-family:'Press Start 2P',monospace !important;
+    font-size:.55rem !important;
+    color:#FFF !important;
+  }
+  .app.minecraft-mode .bigbtn {
+    background:#8B7355 !important;
+    border:4px solid #6B4423 !important;
+    border-radius:0 !important;
+    box-shadow:0 0 0 2px #000,0 6px 0 #6B4423 !important;
+    font-family:'Press Start 2P',monospace !important;
+    font-size:.6rem !important;
+  }
+  .app.minecraft-mode .bigbtn:active {
+    box-shadow:0 0 0 2px #000,inset 0 4px 0 rgba(0,0,0,.3) !important;
+    transform:translateY(2px) !important;
+  }
+  .app.minecraft-mode .section-title {
+    font-family:'Press Start 2P',monospace !important;
+    font-size:.7rem !important;
+    color:#6B4423 !important;
+  }
+  .app.minecraft-mode .card {
+    background:#C4A747 !important;
+    border:4px solid #826E3C !important;
+    border-radius:0 !important;
+    box-shadow:0 0 0 2px #000,inset 0 -4px 0 rgba(0,0,0,.2) !important;
+  }
+  .app.minecraft-mode .btn {
+    border-radius:0 !important;
+    border:3px solid #000 !important;
+    box-shadow:0 0 0 1px #000,0 4px 0 #000 !important;
+    font-family:'Press Start 2P',monospace !important;
+    font-size:.5rem !important;
+  }
+  .app.minecraft-mode .btn.primary {
+    background:#52C64B !important;
+  }
+  .app.minecraft-mode .btn.mint {
+    background:#52C64B !important;
+  }
+  .app.minecraft-mode .btn.gold {
+    background:#FFD700 !important;
+    color:#000 !important;
+  }
+  .app.minecraft-mode .btn.ghost {
+    background:#A0826D !important;
+  }
+  .app.minecraft-mode .btn:active {
+    box-shadow:0 0 0 1px #000,inset 0 2px 0 rgba(0,0,0,.3) !important;
+    transform:translateY(2px) !important;
+  }
+  .app.minecraft-mode .chore-row {
+    background:#C4A747 !important;
+    border:3px solid #826E3C !important;
+    border-radius:0 !important;
+    box-shadow:0 0 0 2px #000 !important;
+  }
+  .app.minecraft-mode .chore-check {
+    background:#8B7355 !important;
+    border:2px solid #000 !important;
+    border-radius:0 !important;
+    font-size:1.2rem !important;
+  }
+  .app.minecraft-mode .chore-check.checked {
+    background:#52C64B !important;
+  }
+  .app.minecraft-mode .bottomnav {
+    background:#8B7355 !important;
+    border-top:4px solid #6B4423 !important;
+    border-radius:0 !important;
+  }
+  .app.minecraft-mode .navbtn {
+    background:#A0826D !important;
+    border:2px solid #000 !important;
+    border-radius:0 !important;
+    font-family:'Press Start 2P',monospace !important;
+    font-size:.5rem !important;
+    color:#000 !important;
+    margin:4px !important;
+  }
+  .app.minecraft-mode .navbtn.active {
+    background:#52C64B !important;
+  }
+  .app.minecraft-mode .cal-cell {
+    background:#A0826D !important;
+    border:2px solid #000 !important;
+    border-radius:0 !important;
+    font-weight:900 !important;
+  }
+  .app.minecraft-mode .cal-cell.clean {
+    background:#52C64B !important;
+  }
+  .app.minecraft-mode .cal-cell.accident {
+    background:#FF6B6B !important;
+  }
+  .app.minecraft-mode .streak-banner {
+    background:#FFD700 !important;
+    border:4px solid #CC9900 !important;
+    border-radius:0 !important;
+    box-shadow:0 0 0 2px #000,inset 0 -4px 0 rgba(0,0,0,.2) !important;
+  }
+  .app.minecraft-mode .streak-hero {
+    background:linear-gradient(140deg,#FFD700,#FFA500) !important;
+    border:4px solid #CC9900 !important;
+    border-radius:0 !important;
+    box-shadow:0 0 0 2px #000,inset 0 -4px 0 rgba(0,0,0,.2) !important;
+  }
+  .app.minecraft-mode .streak-hero .sh-num {
+    font-family:'Press Start 2P',monospace !important;
+    font-size:2.5rem !important;
+  }
+  .app.minecraft-mode .row {
+    background:#C4A747 !important;
+    border:3px solid #826E3C !important;
+    border-radius:0 !important;
+    box-shadow:0 0 0 2px #000 !important;
+  }
+  .app.minecraft-mode .math-problem {
+    background:#FF6B6B !important;
+    border:4px solid #CC3333 !important;
+    border-radius:0 !important;
+    box-shadow:0 0 0 2px #000,inset 0 -4px 0 rgba(0,0,0,.2) !important;
+  }
+  .app.minecraft-mode .math-problem .q {
+    font-family:'Press Start 2P',monospace !important;
+    font-size:2rem !important;
+  }
+  .app.minecraft-mode .math-input {
+    border:3px solid #000 !important;
+    border-radius:0 !important;
+    font-family:'Press Start 2P',monospace !important;
+    font-size:1.5rem !important;
+  }
+  .app.minecraft-mode .key {
+    background:#C4A747 !important;
+    border:2px solid #000 !important;
+    border-radius:0 !important;
+    box-shadow:0 0 0 1px #000,0 3px 0 #826E3C !important;
+    font-family:'Press Start 2P',monospace !important;
+    font-size:.7rem !important;
+  }
+  .app.minecraft-mode .key:active {
+    box-shadow:0 0 0 1px #000,inset 0 2px 0 rgba(0,0,0,.3) !important;
+  }
+  .app.minecraft-mode .key.ok {
+    background:#52C64B !important;
+    box-shadow:0 0 0 1px #000,0 3px 0 #2D7D2D !important;
+  }
+  .app.minecraft-mode .key.del {
+    background:#FF6B6B !important;
+    box-shadow:0 0 0 1px #000,0 3px 0 #CC3333 !important;
+  }
+  .app.minecraft-mode .modal {
+    background:#C4A747 !important;
+    border:4px solid #826E3C !important;
+    border-radius:0 !important;
+    box-shadow:0 0 0 2px #000 !important;
+  }
+  .app.minecraft-mode .modal h3 {
+    font-family:'Press Start 2P',monospace !important;
+    font-size:.8rem !important;
+  }
+  .app.minecraft-mode .field input,
+  .app.minecraft-mode .field select {
+    background:#fff !important;
+    border:2px solid #000 !important;
+    border-radius:0 !important;
+    font-family:'Press Start 2P',monospace !important;
+    font-size:.6rem !important;
+  }
   *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;}
   html,body{height:100%;}
   body{font-family:'Varela Round','Heebo',sans-serif;background:linear-gradient(160deg,var(--bg1) 0%,var(--bg2) 50%,var(--bg3) 100%);background-attachment:fixed;color:var(--ink);min-height:100%;overflow-x:hidden;}
@@ -576,19 +796,7 @@ function renderBalance(){
     document.getElementById('psAvatar').style.background=c.color;
     document.getElementById('childName').textContent=c.name;
     document.getElementById('heroAv').textContent=c.emoji;
-    const hero=document.getElementById('hero');
-    // Apply Minecraft theme for Ariel
-    if(c.id==='ariel'){
-      hero.style.background='linear-gradient(140deg,var(--mc-dirt),var(--mc-grass))';
-      document.getElementById('psName').style.fontFamily="'Press Start 2P',monospace";
-      document.getElementById('psName').style.fontSize='.8rem';
-      document.getElementById('heroAv').style.fontFamily="'Press Start 2P',monospace";
-    }else{
-      hero.style.background='linear-gradient(140deg,'+c.color+',var(--sky))';
-      document.getElementById('psName').style.fontFamily="inherit";
-      document.getElementById('psName').style.fontSize="inherit";
-      document.getElementById('heroAv').style.fontFamily="inherit";
-    }
+    document.getElementById('hero').style.background='linear-gradient(140deg,'+c.color+',var(--sky))';
     const rn=document.getElementById('rwName'); if(rn) rn.textContent=c.name;
     const hn=document.getElementById('histName'); if(hn) hn.textContent=c.name;
     const sf=document.getElementById('scanFor'); if(sf) sf.textContent=c.name;
@@ -637,16 +845,8 @@ function renderPicker(){
   const c=document.getElementById('pickerCards'); c.innerHTML='';
   state.children.forEach(ch=>{
     const card=document.createElement('button');
-    card.className='kid-card';
-    card.setAttribute('data-child',ch.id);
-    card.style.setProperty('--kc',ch.color);
-    if(ch.id==='ariel'){
-      card.style.borderTop='5px solid var(--mc-dirt)';
-      card.innerHTML=`<div class="kc-av" style="background:linear-gradient(140deg,var(--mc-dirt),var(--mc-wood));font-family:'Press Start 2P',monospace;font-size:2.8rem;box-shadow:inset 0 -4px 8px rgba(0,0,0,.3), 0 4px 8px rgba(0,0,0,.2);">${ch.emoji}</div><div class="kc-name" style="font-family:'Press Start 2P',monospace;font-size:.7rem;">${esc(ch.name)}</div><div class="kc-bal">🪙 <span data-bal="${ch.id}">…</span></div>`;
-    }else{
-      card.style.setProperty('--kc',ch.color);
-      card.innerHTML=`<div class="kc-av">${ch.emoji}</div><div class="kc-name">${esc(ch.name)}</div><div class="kc-bal">🪙 <span data-bal="${ch.id}">…</span></div>`;
-    }
+    card.className='kid-card'; card.style.setProperty('--kc',ch.color);
+    card.innerHTML=`<div class="kc-av">${ch.emoji}</div><div class="kc-name">${esc(ch.name)}</div><div class="kc-bal">🪙 <span data-bal="${ch.id}">…</span></div>`;
     card.onclick=()=>selectChild(ch.id);
     c.appendChild(card);
     DB.get('cs_bal_'+ch.id).then(b=>{ const el=card.querySelector('[data-bal]'); if(el) el.textContent=(b??0); });
@@ -655,6 +855,10 @@ function renderPicker(){
 async function selectChild(id){
   state.current=id; await DB.set('cs_current',id);
   await loadKid(id); renderBalance(); go('home');
+  // Apply Minecraft theme if Ariel is selected
+  const app=document.querySelector('.app');
+  if(id==='ariel') app.classList.add('minecraft-mode');
+  else app.classList.remove('minecraft-mode');
 }
 
 /* ===== SCANNER ===== */
@@ -822,7 +1026,6 @@ async function markStreakCleanToday(){
 }
 function buildCalendar(year, month, days, editable, onTap, todayKeyStr){
   // returns {dowHtml, gridHtml}
-  // Logic: unmarked/clean = default (green), 'accident' = red, editable admin view allows cycling
   const dows=['א','ב','ג','ד','ה','ו','ש'];
   const dowHtml=dows.map(d=>'<div class="cal-dow">'+d+'</div>').join('');
   const first=new Date(year,month,1);
@@ -832,8 +1035,8 @@ function buildCalendar(year, month, days, editable, onTap, todayKeyStr){
   for(let i=0;i<startOffset;i++) cells+='<div class="cal-cell empty-cell"></div>';
   for(let d=1; d<=daysInMonth; d++){
     const key=year+'-'+(month+1)+'-'+d;
-    const status=days[key]; // undefined or 'accident'
-    const cls=status==='accident'?'accident':'clean'; // default to clean if unmarked
+    const status=days[key];
+    const cls=status==='clean'?'clean':status==='accident'?'accident':'';
     const isToday=key===todayKeyStr;
     const editAttr=editable?` onclick="${onTap}('${key}')"`:'';
     cells+=`<div class="cal-cell ${cls} ${isToday?'today':''} ${editable?'editable':''}"${editAttr}>${d}</div>`;
@@ -1038,8 +1241,9 @@ function renderAdminCalendar(){
 async function cycleAdminDay(key){
   const s=state.streak;
   const cur=s.days[key];
-  // cycle: none(clean) -> accident -> none(clean)
-  if(!cur || cur==='clean') s.days[key]='accident';
+  // cycle: none -> clean -> accident -> none
+  if(!cur) s.days[key]='clean';
+  else if(cur==='clean') s.days[key]='accident';
   else delete s.days[key];
   recomputeStreak();
   await DB.set('cs_streak',s);
@@ -1048,27 +1252,22 @@ async function cycleAdminDay(key){
   if(currentView==='streak') renderStreakView();
 }
 function recomputeStreak(){
-  // recompute current streak by walking backward from today through consecutive clean days
-  // INVERTED LOGIC: unmarked days = clean (default), only 'accident' breaks the streak
+  // recompute current streak by walking backward from today through consecutive marked clean days
   const s=state.streak;
   let count=0, best=s.best||0;
   let cursor=new Date();
-  // start from yesterday if today not marked (today is assumed clean until marked as accident)
+  // if today not marked yet, start counting from yesterday backward
   if(!s.days[dateKey(cursor)]){ cursor.setDate(cursor.getDate()-1); }
   while(true){
     const k=dateKey(cursor);
-    const status=s.days[k]; // undefined or 'accident'
-    if(status==='accident') break; // stop streak on accident
-    count++; // unmarked or doesn't matter - it's clean
-    cursor.setDate(cursor.getDate()-1);
-    // safety limit to prevent infinite loop (don't go back more than 3 years)
-    if(count>1095) break;
+    if(s.days[k]==='clean'){ count++; cursor.setDate(cursor.getDate()-1); }
+    else break;
   }
   s.current=count;
   if(s.current>best) best=s.current;
   s.best=best;
   if(s.current>=s.goal && !s.wonAt) s.wonAt=Date.now();
-  if(s.current<s.goal) s.wonAt=s.wonAt; // keep historical win flag even if later reset; admin can clear manually if desired
+  if(s.current<s.goal) s.wonAt=s.wonAt;
 }
 function adminReportAccidentToday(){
   modalConfirm('🚨','לדווח על תקרית היום?','הרצף יתאפס ל-0. ניתן עדיין לערוך ימים בלוח.', async()=>{
@@ -1311,7 +1510,11 @@ const GD={
   await GD.init();
   if(await GD.handleCallback()){ await loadState(); }
   await loadState();
-  if(state.current && state.children.find(c=>c.id===state.current)){ await loadKid(state.current); renderBalance(); go('home'); }
+  const app=document.querySelector('.app');
+  if(state.current && state.children.find(c=>c.id===state.current)){
+    await loadKid(state.current); renderBalance(); go('home');
+    if(state.current==='ariel') app.classList.add('minecraft-mode');
+  }
   else { state.current=null; go('picker'); }
 })();
 </script>
