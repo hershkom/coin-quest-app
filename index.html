@@ -24,225 +24,157 @@
   }
   @import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap');
 
-  /* Minecraft theme - applies to entire app when Ariel is selected */
+  /* Minecraft theme - blocky backgrounds + original colors */
   .app.minecraft-mode {
-    background:linear-gradient(180deg,#87CEEB 0%,#E0F6FF 100%) !important;
-  }
-  .app.minecraft-mode .topbar {
-    background:#8B7355 !important;
+    background:linear-gradient(160deg,#87CEEB 0%,#E0F6FF 100%),repeating-linear-gradient(45deg,transparent,transparent 10px,rgba(255,255,255,.1) 10px,rgba(255,255,255,.1) 20px) !important;
   }
   .app.minecraft-mode .hero {
-    background:linear-gradient(140deg,#8B7355,#52C64B) !important;
-    border:4px solid #6B4423 !important;
-    box-shadow:0 0 0 2px #000,inset 0 4px 0 rgba(0,0,0,.4) !important;
-    border-radius:0 !important;
-    padding:30px 20px 20px !important;
+    background:linear-gradient(140deg,#7C5CFC,#4DABF7),repeating-linear-gradient(90deg,rgba(255,255,255,.05) 0,rgba(255,255,255,.05) 8px,transparent 8px,transparent 16px) !important;
+    box-shadow:inset 0 2px 0 rgba(255,255,255,.2),0 8px 16px rgba(124,92,252,.2) !important;
   }
   .app.minecraft-mode .hero .big-coin {
-    width:80px !important;
-    height:80px !important;
-    border-radius:0 !important;
-    background:#FFD700 !important;
-    box-shadow:0 0 0 2px #000,inset 0 -4px 0 #CC9900 !important;
-    font-size:2.4rem !important;
+    width:74px !important;
+    height:74px !important;
+    box-shadow:0 8px 0 #D99409,0 14px 24px rgba(217,148,9,.35),inset 0 -2px 3px rgba(0,0,0,.15) !important;
   }
   .app.minecraft-mode .hero .amount {
     font-family:'Press Start 2P',monospace !important;
-    font-size:2.4rem !important;
-    letter-spacing:2px !important;
+    font-size:2rem !important;
+    text-shadow:2px 2px 0 rgba(0,0,0,.3) !important;
   }
   .app.minecraft-mode .hero .amount-label {
     font-family:'Press Start 2P',monospace !important;
-    font-size:.6rem !important;
+    font-size:.65rem !important;
   }
   .app.minecraft-mode .ps-name {
     font-family:'Press Start 2P',monospace !important;
     font-size:.65rem !important;
   }
-  .app.minecraft-mode .kid-card {
-    background:#8B7355 !important;
-    border:4px solid #6B4423 !important;
-    border-radius:0 !important;
-    box-shadow:0 0 0 2px #000,inset 0 -4px 0 rgba(0,0,0,.3) !important;
-    color:#fff !important;
+  .app.minecraft-mode .ps-av {
+    width:38px !important;
+    height:38px !important;
+    box-shadow:0 0 0 2px rgba(0,0,0,.3),inset 0 -2px 0 rgba(0,0,0,.3) !important;
   }
-  .app.minecraft-mode .kc-av {
-    background:linear-gradient(140deg,#8B7355,#A0826D) !important;
-    border:3px solid #000 !important;
-    border-radius:0 !important;
-    box-shadow:inset 0 -2px 0 rgba(0,0,0,.4) !important;
-    font-size:3rem !important;
+  .app.minecraft-mode .card {
+    background:linear-gradient(135deg,rgba(255,255,255,.95),rgba(255,255,255,.85)),repeating-linear-gradient(90deg,rgba(124,92,252,.02) 0,rgba(124,92,252,.02) 8px,transparent 8px,transparent 16px) !important;
+    box-shadow:0 8px 22px rgba(124,92,252,.12),inset 0 1px 0 rgba(255,255,255,.8) !important;
   }
-  .app.minecraft-mode .kc-name {
+  .app.minecraft-mode .btn {
     font-family:'Press Start 2P',monospace !important;
-    font-size:.55rem !important;
-    color:#FFF !important;
+    font-size:.5rem !important;
+    box-shadow:0 6px 0 rgba(0,0,0,.15),0 10px 20px rgba(0,0,0,.1) !important;
   }
-  .app.minecraft-mode .bigbtn {
-    background:#8B7355 !important;
-    border:4px solid #6B4423 !important;
-    border-radius:0 !important;
-    box-shadow:0 0 0 2px #000,0 6px 0 #6B4423 !important;
-    font-family:'Press Start 2P',monospace !important;
-    font-size:.6rem !important;
+  .app.minecraft-mode .btn.primary {
+    background:linear-gradient(135deg,#7C5CFC,#5E3FD6) !important;
   }
-  .app.minecraft-mode .bigbtn:active {
-    box-shadow:0 0 0 2px #000,inset 0 4px 0 rgba(0,0,0,.3) !important;
-    transform:translateY(2px) !important;
+  .app.minecraft-mode .btn.mint {
+    background:linear-gradient(135deg,#27C99A,#1BA37C) !important;
+  }
+  .app.minecraft-mode .btn.gold {
+    background:linear-gradient(135deg,#F5B82E,#D99409) !important;
+  }
+  .app.minecraft-mode .btn:active {
+    transform:translateY(4px) !important;
+    box-shadow:0 2px 0 rgba(0,0,0,.15),0 5px 10px rgba(0,0,0,.1) !important;
   }
   .app.minecraft-mode .section-title {
     font-family:'Press Start 2P',monospace !important;
-    font-size:.7rem !important;
-    color:#6B4423 !important;
-  }
-  .app.minecraft-mode .card {
-    background:#C4A747 !important;
-    border:4px solid #826E3C !important;
-    border-radius:0 !important;
-    box-shadow:0 0 0 2px #000,inset 0 -4px 0 rgba(0,0,0,.2) !important;
-  }
-  .app.minecraft-mode .btn {
-    border-radius:0 !important;
-    border:3px solid #000 !important;
-    box-shadow:0 0 0 1px #000,0 4px 0 #000 !important;
-    font-family:'Press Start 2P',monospace !important;
-    font-size:.5rem !important;
-  }
-  .app.minecraft-mode .btn.primary {
-    background:#52C64B !important;
-  }
-  .app.minecraft-mode .btn.mint {
-    background:#52C64B !important;
-  }
-  .app.minecraft-mode .btn.gold {
-    background:#FFD700 !important;
-    color:#000 !important;
-  }
-  .app.minecraft-mode .btn.ghost {
-    background:#A0826D !important;
-  }
-  .app.minecraft-mode .btn:active {
-    box-shadow:0 0 0 1px #000,inset 0 2px 0 rgba(0,0,0,.3) !important;
-    transform:translateY(2px) !important;
+    font-size:.65rem !important;
+    color:#6B6585 !important;
   }
   .app.minecraft-mode .chore-row {
-    background:#C4A747 !important;
-    border:3px solid #826E3C !important;
-    border-radius:0 !important;
-    box-shadow:0 0 0 2px #000 !important;
+    background:linear-gradient(135deg,#fff,#FAFBFF),repeating-linear-gradient(90deg,rgba(124,92,252,.03) 0,rgba(124,92,252,.03) 8px,transparent 8px,transparent 16px) !important;
+    box-shadow:0 4px 14px rgba(124,92,252,.08) !important;
   }
   .app.minecraft-mode .chore-check {
-    background:#8B7355 !important;
-    border:2px solid #000 !important;
-    border-radius:0 !important;
-    font-size:1.2rem !important;
-  }
-  .app.minecraft-mode .chore-check.checked {
-    background:#52C64B !important;
+    font-family:'Press Start 2P',monospace !important;
   }
   .app.minecraft-mode .bottomnav {
-    background:#8B7355 !important;
-    border-top:4px solid #6B4423 !important;
-    border-radius:0 !important;
+    background:rgba(255,255,255,.92),repeating-linear-gradient(90deg,rgba(124,92,252,.02) 0,rgba(124,92,252,.02) 8px,transparent 8px,transparent 16px) !important;
   }
   .app.minecraft-mode .navbtn {
-    background:#A0826D !important;
-    border:2px solid #000 !important;
-    border-radius:0 !important;
     font-family:'Press Start 2P',monospace !important;
     font-size:.5rem !important;
-    color:#000 !important;
-    margin:4px !important;
   }
   .app.minecraft-mode .navbtn.active {
-    background:#52C64B !important;
+    color:#7C5CFC !important;
   }
   .app.minecraft-mode .cal-cell {
-    background:#A0826D !important;
-    border:2px solid #000 !important;
-    border-radius:0 !important;
-    font-weight:900 !important;
+    border-radius:6px !important;
+    font-weight:700 !important;
+    box-shadow:0 2px 4px rgba(0,0,0,.08) !important;
   }
   .app.minecraft-mode .cal-cell.clean {
-    background:#52C64B !important;
+    background:linear-gradient(135deg,#27C99A,#1BA37C) !important;
+    color:#fff !important;
   }
   .app.minecraft-mode .cal-cell.accident {
-    background:#FF6B6B !important;
+    background:linear-gradient(135deg,#FF6B6B,#E84A4A) !important;
+    color:#fff !important;
   }
   .app.minecraft-mode .streak-banner {
-    background:#FFD700 !important;
-    border:4px solid #CC9900 !important;
-    border-radius:0 !important;
-    box-shadow:0 0 0 2px #000,inset 0 -4px 0 rgba(0,0,0,.2) !important;
+    background:linear-gradient(135deg,#FFE9B0,#FFC55C) !important;
+    box-shadow:0 8px 22px rgba(217,148,9,.25) !important;
+  }
+  .app.minecraft-mode .streak-banner .sb-title {
+    font-family:'Press Start 2P',monospace !important;
+    font-size:.85rem !important;
   }
   .app.minecraft-mode .streak-hero {
-    background:linear-gradient(140deg,#FFD700,#FFA500) !important;
-    border:4px solid #CC9900 !important;
-    border-radius:0 !important;
-    box-shadow:0 0 0 2px #000,inset 0 -4px 0 rgba(0,0,0,.2) !important;
+    background:linear-gradient(135deg,#FFE9B0,#FFC55C) !important;
+    box-shadow:0 12px 28px rgba(217,148,9,.3) !important;
   }
   .app.minecraft-mode .streak-hero .sh-num {
     font-family:'Press Start 2P',monospace !important;
-    font-size:2.5rem !important;
+    font-size:3rem !important;
   }
   .app.minecraft-mode .row {
-    background:#C4A747 !important;
-    border:3px solid #826E3C !important;
-    border-radius:0 !important;
-    box-shadow:0 0 0 2px #000 !important;
+    background:#FAF9FF,repeating-linear-gradient(90deg,rgba(124,92,252,.02) 0,rgba(124,92,252,.02) 8px,transparent 8px,transparent 16px) !important;
+    box-shadow:0 4px 14px rgba(124,92,252,.08) !important;
   }
   .app.minecraft-mode .math-problem {
-    background:#FF6B6B !important;
-    border:4px solid #CC3333 !important;
-    border-radius:0 !important;
-    box-shadow:0 0 0 2px #000,inset 0 -4px 0 rgba(0,0,0,.2) !important;
+    background:linear-gradient(140deg,#FF6B6B,#E84A4A),repeating-linear-gradient(45deg,rgba(255,255,255,.05) 0,rgba(255,255,255,.05) 10px,transparent 10px,transparent 20px) !important;
   }
   .app.minecraft-mode .math-problem .q {
     font-family:'Press Start 2P',monospace !important;
-    font-size:2rem !important;
+    font-size:2.4rem !important;
   }
   .app.minecraft-mode .math-input {
-    border:3px solid #000 !important;
-    border-radius:0 !important;
     font-family:'Press Start 2P',monospace !important;
     font-size:1.5rem !important;
   }
   .app.minecraft-mode .key {
-    background:#C4A747 !important;
-    border:2px solid #000 !important;
-    border-radius:0 !important;
-    box-shadow:0 0 0 1px #000,0 3px 0 #826E3C !important;
     font-family:'Press Start 2P',monospace !important;
     font-size:.7rem !important;
   }
-  .app.minecraft-mode .key:active {
-    box-shadow:0 0 0 1px #000,inset 0 2px 0 rgba(0,0,0,.3) !important;
-  }
-  .app.minecraft-mode .key.ok {
-    background:#52C64B !important;
-    box-shadow:0 0 0 1px #000,0 3px 0 #2D7D2D !important;
-  }
-  .app.minecraft-mode .key.del {
-    background:#FF6B6B !important;
-    box-shadow:0 0 0 1px #000,0 3px 0 #CC3333 !important;
-  }
   .app.minecraft-mode .modal {
-    background:#C4A747 !important;
-    border:4px solid #826E3C !important;
-    border-radius:0 !important;
-    box-shadow:0 0 0 2px #000 !important;
+    background:#fff,repeating-linear-gradient(90deg,rgba(124,92,252,.01) 0,rgba(124,92,252,.01) 8px,transparent 8px,transparent 16px) !important;
   }
   .app.minecraft-mode .modal h3 {
     font-family:'Press Start 2P',monospace !important;
-    font-size:.8rem !important;
+    font-size:.9rem !important;
   }
-  .app.minecraft-mode .field input,
-  .app.minecraft-mode .field select {
-    background:#fff !important;
-    border:2px solid #000 !important;
-    border-radius:0 !important;
-    font-family:'Press Start 2P',monospace !important;
-    font-size:.6rem !important;
+  .app.minecraft-mode .kid-card {
+    background:linear-gradient(135deg,#fff,#FAFBFF) !important;
+    box-shadow:0 10px 26px rgba(124,92,252,.14) !important;
+  }
+  /* Minecraft character sprite */
+  .minecraft-player {
+    display:inline-block;
+    width:100%;
+    height:100%;
+    background-image:
+      /* head */ linear-gradient(90deg,#845EC2 0%,#845EC2 100%),
+      linear-gradient(90deg,#845EC2 0%,#845EC2 100%),
+      linear-gradient(90deg,#845EC2 0%,#845EC2 100%),
+      linear-gradient(90deg,#845EC2 0%,#845EC2 100%);
+    background-position:
+      25% 0%,  /* top */
+      0% 25%, /* left */
+      100% 25%, /* right */
+      25% 100%; /* bottom */
+    background-size:50% 25%;
+    background-repeat:no-repeat;
   }
   *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;}
   html,body{height:100%;}
@@ -792,10 +724,24 @@ function renderBalance(){
   const c=curChild(), k=cur();
   if(c){
     document.getElementById('psName').textContent=c.name;
-    document.getElementById('psAvatar').textContent=c.emoji;
-    document.getElementById('psAvatar').style.background=c.color;
+    const psAv=document.getElementById('psAvatar');
+    if(c.id==='ariel'){
+      psAv.innerHTML='🟫';
+      psAv.style.fontSize='1.8rem';
+    }else{
+      psAv.textContent=c.emoji;
+      psAv.style.fontSize='';
+    }
+    psAv.style.background=c.color;
     document.getElementById('childName').textContent=c.name;
-    document.getElementById('heroAv').textContent=c.emoji;
+    const heroAv=document.getElementById('heroAv');
+    if(c.id==='ariel'){
+      heroAv.innerHTML='🟫';
+      heroAv.style.fontSize='3.2rem';
+    }else{
+      heroAv.textContent=c.emoji;
+      heroAv.style.fontSize='';
+    }
     document.getElementById('hero').style.background='linear-gradient(140deg,'+c.color+',var(--sky))';
     const rn=document.getElementById('rwName'); if(rn) rn.textContent=c.name;
     const hn=document.getElementById('histName'); if(hn) hn.textContent=c.name;
@@ -846,7 +792,11 @@ function renderPicker(){
   state.children.forEach(ch=>{
     const card=document.createElement('button');
     card.className='kid-card'; card.style.setProperty('--kc',ch.color);
-    card.innerHTML=`<div class="kc-av">${ch.emoji}</div><div class="kc-name">${esc(ch.name)}</div><div class="kc-bal">🪙 <span data-bal="${ch.id}">…</span></div>`;
+    if(ch.id==='ariel'){
+      card.innerHTML=`<div class="kc-av" style="display:flex;align-items:center;justify-content:center;font-size:3rem;text-shadow:2px 2px 0 rgba(0,0,0,.3);filter:drop-shadow(0 2px 4px rgba(0,0,0,.2));">🟫🟫<br>🟫🟫<br>🟥🟥<br>🟪🟪</div><div class="kc-name">${esc(ch.name)}</div><div class="kc-bal">🪙 <span data-bal="${ch.id}">…</span></div>`;
+    }else{
+      card.innerHTML=`<div class="kc-av">${ch.emoji}</div><div class="kc-name">${esc(ch.name)}</div><div class="kc-bal">🪙 <span data-bal="${ch.id}">…</span></div>`;
+    }
     card.onclick=()=>selectChild(ch.id);
     c.appendChild(card);
     DB.get('cs_bal_'+ch.id).then(b=>{ const el=card.querySelector('[data-bal]'); if(el) el.textContent=(b??0); });
