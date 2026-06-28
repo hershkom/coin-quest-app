@@ -1665,45 +1665,44 @@ async function sendChatMessage(){
   displayMessage(text,true);
   const childName=curChild()?.name||'אריאל';
   const thinkingWrap=document.createElement('div');
-  thinkingWrap.style.cssText='display:flex;align-items:center;gap:8px;';
-  thinkingWrap.innerHTML='<div class="chat-bubble-ai" id="thinkingBubble" style="color:var(--muted);">✨ חושב...</div>';
+  thinkingWrap.style.cssText='display:flex;align-items:flex-start;gap:6px;';
+  thinkingWrap.innerHTML='<div class="chat-bubble-ai" style="color:var(--muted);">✨ חושב...</div>';
   document.getElementById('chatMessages').appendChild(thinkingWrap);
   document.getElementById('chatMessages').scrollTop=document.getElementById('chatMessages').scrollHeight;
   try{
-    const systemPrompt=`אתה עוזר חכם, חם ואהוב בשם "איזי" לילד בשם ${childName} שבן 7 ויש לו אוטיזם בתפקוד גבוה.
-תמיד דבר בעברית פשוטה וברורה. חשוב מאוד:
-- תשובות קצרות מאוד (2-3 משפטים בלבד)
-- חיובי, מעודד, חם
-- השתמש ב-emojis רלוונטיים (2-3 לכל תשובה)
-- מילים פשוטות של ילד בן 7, לא מילים קשות
-- אם שואלים על רגשות - תהיה אמפתי וסופג, אל תמזער רגשות
-- אם שואלים שאלות ידע - תסביר בצורה פשוטה ומשעשעת
-- אל תשתמש בביטויים כמו "בוודאי!", "כמובן!" - תהיה טבעי`;
+    const systemPrompt=`אתה עוזר חכם, חם ואהוב בשם "איזי" לילד בשם ${childName} שבן 7 ויש לו אוטיזם בתפקוד גבוה. תמיד דבר בעברית פשוטה וברורה. תשובות קצרות מאוד (2-3 משפטים). חיובי ומעודד. השתמש ב-emojis (2-3). מילים פשוטות. אם שואלים על רגשות - היה אמפתי.`;
+    // Build contents array - must alternate user/model
+    const contents=[];
+    const hist=chatHistory.slice(-10);
+    for(const m of hist) contents.push({role:m.isUser?'user':'model',parts:[{text:m.text}]});
+    contents.push({role:'user',parts:[{text}]});
+    const body={
+      system_instruction:{parts:[{text:systemPrompt}]},
+      contents,
+      generationConfig:{temperature:0.7,maxOutputTokens:200,stopSequences:[]}
+    };
     const response=await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_API_KEY}`,{
       method:'POST',
       headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({
-        contents:[
-          {role:'user',parts:[{text:systemPrompt+'\n\nשלום!'}]},
-          {role:'model',parts:[{text:'שלום! אני איזי 🤖 אשמח לעזור לך! 😊'}]},
-          ...chatHistory.slice(-8).map(msg=>({role:msg.isUser?'user':'model',parts:[{text:msg.text}]})),
-          {role:'user',parts:[{text}]}
-        ],
-        generationConfig:{temperature:0.75,maxOutputTokens:150}
-      })
+      body:JSON.stringify(body)
     });
     const data=await response.json();
-    const reply=data.candidates?.[0]?.content?.parts?.[0]?.text||'סליחה, לא הצלחתי לענות 😔';
+    if(data.error){
+      console.error('Gemini error:',data.error);
+      thinkingWrap.remove();
+      displayMessage('שגיאה: '+data.error.message,false);
+      return;
+    }
+    const reply=data.candidates?.[0]?.content?.parts?.[0]?.text||'לא הצלחתי לענות, נסה שנית 😔';
     chatHistory.push({text,isUser:true},{text:reply,isUser:false});
     thinkingWrap.remove();
     displayMessage(reply,false);
-    // Auto-speak reply
     const speakBtns=document.querySelectorAll('.chat-speak-btn');
     if(speakBtns.length) speakText(reply,speakBtns[speakBtns.length-1]);
   }catch(e){
-    console.error(e);
+    console.error('Chat error:',e);
     thinkingWrap.remove();
-    displayMessage('אוי, משהו קרה 😓 נסה שנית!',false);
+    displayMessage('אין חיבור לאינטרנט 😓 נסה שנית!',false);
   }
 }
 
