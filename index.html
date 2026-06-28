@@ -26,7 +26,13 @@
 
   /* Minecraft theme - blocky backgrounds + original colors */
   .app.minecraft-mode {
-    background:linear-gradient(160deg,#87CEEB 0%,#E0F6FF 100%),repeating-linear-gradient(45deg,transparent,transparent 10px,rgba(255,255,255,.1) 10px,rgba(255,255,255,.1) 20px) !important;
+    background:
+      /* grass line */ linear-gradient(90deg,#52C64B 0%,#52C64B 100%),
+      /* sky */ linear-gradient(180deg,#87CEEB 0%,#E0F6FF 100%) !important;
+    background-position:0 15%,0 0 !important;
+    background-size:100% 3px, 100% 100% !important;
+    background-repeat:repeat,no-repeat !important;
+    background-attachment:fixed !important;
   }
   .app.minecraft-mode .hero {
     background:linear-gradient(140deg,#7C5CFC,#4DABF7),repeating-linear-gradient(90deg,rgba(255,255,255,.05) 0,rgba(255,255,255,.05) 8px,transparent 8px,transparent 16px) !important;
@@ -39,16 +45,16 @@
   }
   .app.minecraft-mode .hero .amount {
     font-family:'Press Start 2P',monospace !important;
-    font-size:2rem !important;
-    text-shadow:2px 2px 0 rgba(0,0,0,.3) !important;
+    font-size:2.8rem !important;
+    text-shadow:3px 3px 0 rgba(0,0,0,.3) !important;
   }
   .app.minecraft-mode .hero .amount-label {
     font-family:'Press Start 2P',monospace !important;
-    font-size:.65rem !important;
+    font-size:.9rem !important;
   }
   .app.minecraft-mode .ps-name {
     font-family:'Press Start 2P',monospace !important;
-    font-size:.65rem !important;
+    font-size:.85rem !important;
   }
   .app.minecraft-mode .ps-av {
     width:38px !important;
@@ -61,7 +67,7 @@
   }
   .app.minecraft-mode .btn {
     font-family:'Press Start 2P',monospace !important;
-    font-size:.5rem !important;
+    font-size:.65rem !important;
     box-shadow:0 6px 0 rgba(0,0,0,.15),0 10px 20px rgba(0,0,0,.1) !important;
   }
   .app.minecraft-mode .btn.primary {
@@ -79,7 +85,7 @@
   }
   .app.minecraft-mode .section-title {
     font-family:'Press Start 2P',monospace !important;
-    font-size:.65rem !important;
+    font-size:.85rem !important;
     color:#6B6585 !important;
   }
   .app.minecraft-mode .chore-row {
@@ -94,7 +100,7 @@
   }
   .app.minecraft-mode .navbtn {
     font-family:'Press Start 2P',monospace !important;
-    font-size:.5rem !important;
+    font-size:.6rem !important;
   }
   .app.minecraft-mode .navbtn.active {
     color:#7C5CFC !important;
@@ -807,8 +813,31 @@ async function selectChild(id){
   await loadKid(id); renderBalance(); go('home');
   // Apply Minecraft theme if Ariel is selected
   const app=document.querySelector('.app');
-  if(id==='ariel') app.classList.add('minecraft-mode');
-  else app.classList.remove('minecraft-mode');
+  if(id==='ariel'){
+    app.classList.add('minecraft-mode');
+    addMinecraftDecorations();
+  }else{
+    app.classList.remove('minecraft-mode');
+    removeMinecraftDecorations();
+  }
+}
+function addMinecraftDecorations(){
+  let deco=document.getElementById('mc-deco');
+  if(!deco){
+    deco=document.createElement('div');
+    deco.id='mc-deco';
+    deco.style.cssText='position:fixed;inset:0;pointer-events:none;z-index:-1;overflow:hidden;';
+    deco.innerHTML=`
+      <div style="position:fixed;right:-8%;top:5%;font-size:4rem;opacity:.08;transform:rotate(-15deg);">🌳🌲🌳</div>
+      <div style="position:fixed;left:-10%;bottom:10%;font-size:3rem;opacity:.06;">🪵🪵🪵<br>🪨🪨🪨</div>
+      <div style="position:fixed;right:-5%;bottom:5%;font-size:2.5rem;opacity:.07;">⛏️⛏️</div>
+    `;
+    document.body.appendChild(deco);
+  }
+}
+function removeMinecraftDecorations(){
+  const deco=document.getElementById('mc-deco');
+  if(deco) deco.remove();
 }
 
 /* ===== SCANNER ===== */
@@ -1463,7 +1492,7 @@ const GD={
   const app=document.querySelector('.app');
   if(state.current && state.children.find(c=>c.id===state.current)){
     await loadKid(state.current); renderBalance(); go('home');
-    if(state.current==='ariel') app.classList.add('minecraft-mode');
+    if(state.current==='ariel'){ app.classList.add('minecraft-mode'); addMinecraftDecorations(); }
   }
   else { state.current=null; go('picker'); }
 })();
