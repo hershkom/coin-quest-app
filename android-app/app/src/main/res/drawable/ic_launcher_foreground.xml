@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Coin circle -->
+    <path
+        android:fillColor="#F5B82E"
+        android:pathData="M54,20 a34,34 0 1,1 0.01,0 Z"/>
+    <path
+        android:fillColor="#D99409"
+        android:pathData="M54,26 a28,28 0 1,1 0.01,0 Z"/>
+    <!-- Coin symbol -->
+    <path
+        android:fillColor="#F5B82E"
+        android:strokeColor="#F5B82E"
+        android:strokeWidth="2"
+        android:pathData="M48,38 L48,54 Q48,62 56,62 Q64,62 64,54 L64,46 Q64,40 58,40 L52,40 L52,34 L62,34 L62,38"/>
+</vector>
