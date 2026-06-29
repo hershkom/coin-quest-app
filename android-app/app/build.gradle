@@ -1,11 +1,11 @@
 plugins {
     id 'com.android.application'
+    id 'kotlin-android'
 }
 
 android {
-    compileSdk 34
-
     namespace "com.coinquest.app"
+    compileSdk 34
 
     defaultConfig {
         applicationId "com.coinquest.app"
@@ -30,6 +30,9 @@ android {
         targetCompatibility JavaVersion.VERSION_1_8
     }
 
+    kotlinOptions {
+        jvmTarget = '1.8'
+    }
 }
 
 dependencies {

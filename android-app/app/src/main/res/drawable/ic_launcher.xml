@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Purple rounded-square background -->
+    <path
+        android:fillColor="#7C5CFC"
+        android:pathData="M24,0 L84,0 C97.3,0 108,10.7 108,24 L108,84 C108,97.3 97.3,108 84,108 L24,108 C10.7,108 0,97.3 0,84 L0,24 C0,10.7 10.7,0 24,0 Z"/>
+    <!-- Gold coin -->
+    <path
+        android:fillColor="#F5B82E"
+        android:pathData="M54,20 a34,34 0 1,1 -0.01,0 Z"/>
+    <path
+        android:fillColor="#E0A312"
+        android:pathData="M54,27 a27,27 0 1,1 -0.01,0 Z"/>
+    <path
+        android:fillColor="#F5B82E"
+        android:pathData="M54,31 a23,23 0 1,1 -0.01,0 Z"/>
+    <!-- Star symbol in the center of the coin -->
+    <path
+        android:fillColor="#E0A312"
+        android:pathData="M54,39 L58.4,50.2 L70.5,50.9 L61.1,58.5 L64.2,70.2 L54,63.6 L43.8,70.2 L46.9,58.5 L37.5,50.9 L49.6,50.2 Z"/>
+</vector>

@@ -1,0 +1,17 @@
+# Android / Gradle build artifacts
+.gradle/
+build/
+app/build/
+captures/
+local.properties
+
+# Android Studio / IntelliJ
+.idea/
+*.iml
+
+# Daemon JVM criteria (machine-specific, regenerated locally)
+gradle/gradle-daemon-jvm.properties
+
+# Keystore (never commit signing keys)
+*.jks
+*.keystore
