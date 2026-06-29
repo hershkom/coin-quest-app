@@ -700,6 +700,7 @@
           <div class="field"><label>כותרת האירוע</label><input id="newEvTitle" placeholder="הולכים לפארק..."></div>
           <div class="inline-row">
             <div class="field"><label>אימוג'י</label><input id="newEvEmoji" placeholder="🌳" style="text-align:center;font-size:1.4rem;"></div>
+            <div class="field"><label>תאריך</label><input id="newEvDate" type="date"></div>
             <div class="field"><label>שעה</label><input id="newEvTime" type="time"></div>
             <div class="field"><label>תזכורת לפני</label>
               <select id="newEvReminder">
@@ -2082,13 +2083,15 @@ async function addEvent(){
   const title=document.getElementById('newEvTitle').value.trim(); if(!title){ toast('צריך כותרת לאירוע'); return; }
   const emoji=document.getElementById('newEvEmoji').value.trim()||'📅';
   const time=document.getElementById('newEvTime').value; if(!time){ toast('בחר שעה לאירוע'); return; }
+  const dateVal=document.getElementById('newEvDate').value||todayDateStr();
   const reminderMins=parseInt(document.getElementById('newEvReminder').value)||30;
   const image=document.getElementById('newEvImage').dataset.b64||'';
   const evs=await loadEvents();
-  evs.push({id:'ev'+Date.now().toString(36),title,emoji,time,reminderMins,image,date:todayDateStr()});
+  evs.push({id:'ev'+Date.now().toString(36),title,emoji,time,reminderMins,image,date:dateVal});
   await saveEvents(evs);
   document.getElementById('newEvTitle').value='';
   document.getElementById('newEvEmoji').value='';
+  document.getElementById('newEvDate').value='';
   document.getElementById('newEvTime').value='';
   document.getElementById('newEvImage').value='';
   document.getElementById('newEvImage').dataset.b64='';
@@ -2113,7 +2116,9 @@ function renderEventsHome(){
   const wrap=document.getElementById('eventsWrap'); if(!wrap) return;
   loadEvents().then(allEvs=>{
     const today=todayDateStr();
-    const evs=allEvs.filter(e=>e.date===today).sort((a,b)=>a.time.localeCompare(b.time));
+    const tomorrow=new Date(); tomorrow.setDate(tomorrow.getDate()+1);
+    const tomorrowStr=tomorrow.getFullYear()+'-'+(tomorrow.getMonth()+1)+'-'+tomorrow.getDate();
+    const evs=allEvs.filter(e=>e.date===today||e.date===tomorrowStr).sort((a,b)=>a.date===b.date?a.time.localeCompare(b.time):a.date.localeCompare(b.date));
     if(!evs.length){ wrap.innerHTML=''; return; }
     let html='<div class="section-title">📅 האירועים של היום</div>';
     evs.forEach(ev=>{
@@ -2124,11 +2129,12 @@ function renderEventsHome(){
       const mediaHtml=ev.image
         ?`<img src="${ev.image}" class="ev-img">`
         :`<div class="ev-emoji">${ev.emoji}</div>`;
+      const dateLabel=ev.date===today?'היום':ev.date===tomorrowStr?'מחר':formatDateHe(ev.date);
       html+=`<div class="event-card ${passed?'passed':''} ${imminent?'imminent':''}">
         ${mediaHtml}
         <div class="ev-info">
           <div class="ev-title">${esc(ev.title)}</div>
-          <div class="ev-time">🕐 ${ev.time}</div>
+          <div class="ev-time">📆 ${dateLabel} · 🕐 ${ev.time}</div>
           ${badgeCls?`<span class="ev-badge ${badgeCls}">${badgeTxt}</span>`:''}
         </div>
       </div>`;
@@ -2137,17 +2143,23 @@ function renderEventsHome(){
   });
 }
 
+function formatDateHe(dateStr){
+  const [y,m,d]=dateStr.split('-');
+  const months=['ינואר','פברואר','מרץ','אפריל','מאי','יוני','יולי','אוגוסט','ספטמבר','אוקטובר','נובמבר','דצמבר'];
+  return d+' ב'+months[parseInt(m)-1];
+}
 async function renderEventsAdmin(){
   const c=document.getElementById('eventsList'); if(!c) return;
   const evs=await loadEvents();
   const today=todayDateStr();
-  const todayEvs=evs.filter(e=>e.date===today).sort((a,b)=>a.time.localeCompare(b.time));
-  if(!todayEvs.length){ c.innerHTML='<div class="empty"><span class="e-ic">📅</span>אין אירועים להיום</div>'; return; }
+  const upcoming=evs.filter(e=>e.date>=today).sort((a,b)=>a.date===b.date?a.time.localeCompare(b.time):a.date.localeCompare(b.date));
+  if(!upcoming.length){ c.innerHTML='<div class="empty"><span class="e-ic">📅</span>אין אירועים קרובים</div>'; return; }
   c.innerHTML='';
-  todayEvs.forEach(ev=>{
+  upcoming.forEach(ev=>{
     const row=document.createElement('div'); row.className='admin-row';
     const thumb=ev.image?`<img src="${ev.image}" style="width:40px;height:40px;border-radius:10px;object-fit:cover;">`:`<span style="font-size:1.6rem;">${ev.emoji}</span>`;
-    row.innerHTML=`${thumb}<span class="t">${esc(ev.title)}<br><span style="font-size:.72rem;color:var(--muted);font-weight:400;">${ev.time} · תזכורת ${ev.reminderMins} דק׳ לפני</span></span>
+    const dateLabel=ev.date===today?'היום':formatDateHe(ev.date);
+    row.innerHTML=`${thumb}<span class="t">${esc(ev.title)}<br><span style="font-size:.72rem;color:var(--muted);font-weight:400;">${dateLabel} · ${ev.time} · תזכורת ${ev.reminderMins} דק׳ לפני</span></span>
       <button class="icon-btn" onclick="deleteEvent('${ev.id}')">🗑️</button>`;
     c.appendChild(row);
   });
