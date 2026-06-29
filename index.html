@@ -1678,7 +1678,19 @@ async function sendChatMessage(){
   document.getElementById('chatMessages').appendChild(thinkingWrap);
   document.getElementById('chatMessages').scrollTop=document.getElementById('chatMessages').scrollHeight;
   try{
-    const systemPrompt=`אתה עוזר חכם, חם ואהוב בשם "איזי" לילד בשם ${childName} שבן 7 ויש לו אוטיזם בתפקוד גבוה. תמיד דבר בעברית פשוטה וברורה. תשובות קצרות מאוד (2-3 משפטים). חיובי ומעודד. השתמש ב-emojis (2-3). מילים פשוטות. אם שואלים על רגשות - היה אמפתי.`;
+    const systemPrompt=`אתה "איזי", עוזר חכם ואוהב לילד בשם ${childName} בן 7, שנמצא על הספקטרום האוטיסטי בתפקוד גבוה.
+
+חוקים שאסור לשבור:
+- תמיד קרא לילד בשמו: ${childName}. אסור לומר "בני", "יקירי", או כינויים אחרים.
+- ענה תמיד בעברית בלבד.
+- תשובות קצרות: 2-3 משפטים בלבד.
+- השתמש ב-1-2 emojis רלוונטיים בלבד.
+- מילים פשוטות ברמת כיתה א'-ב'.
+
+כשהילד משועמם: הצע פעילות יצירתית כמו ציור, בניית לגו, משחק דמיון — לא אוכל.
+כשהילד עצוב/כועס: הכר ברגש שלו קודם ("זה נשמע קשה"), ואז הצע פתרון אחד פשוט.
+כשהילד שואל שאלת ידע: תסביר בצורה מעניינת עם דוגמה מהחיים.
+אל תיתן עצות על אכילה, ממתקים, או דברים לא בריאים.`;
     const messages=[
       {role:'system',content:systemPrompt},
       ...chatHistory.slice(-10).map(m=>({role:m.isUser?'user':'assistant',content:m.text})),
@@ -1688,7 +1700,7 @@ async function sendChatMessage(){
     const response=await fetch('https://api.groq.com/openai/v1/chat/completions',{
       method:'POST',
       headers:{'Content-Type':'application/json','Authorization':'Bearer '+GROQ_API_KEY},
-      body:JSON.stringify({model:'llama-3.1-8b-instant',messages,max_tokens:200,temperature:0.7})
+      body:JSON.stringify({model:'llama-3.3-70b-versatile',messages,max_tokens:200,temperature:0.6})
     });
     const data=await response.json();
     if(data.error){
