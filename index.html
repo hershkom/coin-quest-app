@@ -678,15 +678,21 @@
           <button class="btn primary" onclick="saveGroqKey()">שמור מפתח</button>
         </div>
         <div class="card">
-          <div class="card-h">☁️ סנכרון Google Drive</div>
-          <div class="card-sub" style="margin-bottom:12px;">גבה את הנתונים שלך ב-Google Drive</div>
-          <button class="btn primary" onclick="GD.authGoogle()" style="margin-bottom:8px;">📲 התחבר ל-Google</button>
-          <button class="btn mint" onclick="GD.syncToGoogleDrive()" style="margin-bottom:8px;">💾 שמור לדרייב</button>
-          <button class="btn sky" onclick="GD.syncFromGoogleDrive()">📥 טען מדרייב</button>
+          <div class="card-h">☁️ סנכרון בין מכשירים</div>
+          <div class="card-sub" style="margin-bottom:12px;">הגדר פעם אחת — ישמר אוטומטית בכל מכשיר</div>
+          <div id="syncStatus" style="font-size:.85rem;font-weight:700;margin-bottom:10px;min-height:20px;"></div>
+          <div class="field"><label>Firebase Database URL</label><input id="setFbUrl" type="url" placeholder="https://xxx-default-rtdb.firebaseio.com"></div>
+          <div class="field"><label>קוד משפחה (סיסמה משותפת לכל המכשירים)</label><input id="setFamilyCode" type="text" placeholder="לדוגמה: הרש2024"></div>
+          <button class="btn primary" onclick="saveSyncSettings()">💾 שמור והפעל סנכרון</button>
+          <button class="btn mint" style="margin-top:8px;" onclick="forceSyncNow()">🔄 סנכרן עכשיו</button>
         </div>
         <div class="card" style="background:#F7F6FC;">
-          <div class="card-sub" style="font-size:.78rem;line-height:1.6;">
-            💡 <b>סנכרון:</b> לחץ "התחבר ל-Google" פעם אחת, אחר כך השתמש ב"שמור לדרייב" ו"טען מדרייב" לסנכרון בין מכשירים. הנתונים נשמרים גם locally.
+          <div class="card-sub" style="font-size:.82rem;line-height:1.7;">
+            💡 <b>הוראות:</b><br>
+            1. כנס ל-console.firebase.google.com<br>
+            2. צור פרויקט → Realtime Database → Test mode<br>
+            3. הדבק את ה-URL + בחר קוד משפחה<br>
+            4. כל המכשירים עם אותו קוד מסתנכרנים אוטומטית
           </div>
         </div>
       </div>
@@ -878,6 +884,7 @@ async function addPoints(n,label,type){
   await DB.set('cs_bal_'+id,k.balance);
   await DB.set('cs_hist_'+id,k.history);
   renderBalance(); coinBurst(); chime(type==='spend');
+  scheduleSync();
 }
 
 /* ===== NAV ===== */
@@ -1160,6 +1167,7 @@ async function markStreakCleanToday(){
   recomputeStreak();
   let justWon = !wasWon && !!s.wonAt;
   await DB.set('cs_streak',s);
+  scheduleSync();
   renderStreakBanner();
   if(currentView==='streak') renderStreakView();
   coinBurst();
@@ -1265,6 +1273,7 @@ function adminTab(t){
   if(t==='qr') fillQRSelect();
   if(t==='math') fillMathConfig();
   if(t==='rewards') renderRewardsAdmin();
+  if(t==='settings') fillSyncSettings();
 }
 function renderAnchoredAdmin(){
   const a=state.anchored;
@@ -1439,6 +1448,7 @@ async function cycleAdminDay(key){
   else delete s.days[key];
   recomputeStreak();
   await DB.set('cs_streak',s);
+  scheduleSync();
   fillStreakAdmin();
   renderStreakBanner();
   if(currentView==='streak') renderStreakView();
@@ -1466,6 +1476,7 @@ function adminReportAccidentToday(){
     const s=state.streak, k=dateKey(new Date());
     s.days[k]='accident'; s.current=0;
     await DB.set('cs_streak',s);
+    scheduleSync();
     fillStreakAdmin(); renderStreakBanner();
     if(currentView==='streak') renderStreakView();
     toast('עודכן — הרצף התאפס');
@@ -1541,7 +1552,7 @@ async function saveMathConfig(){
   state.math.pts=parseInt(document.getElementById('mathPts').value)||2;
   state.math.daily=parseInt(document.getElementById('mathDaily').value)||10;
   if(state.math.ops.length===0){ toast('בחר לפחות סוג תרגיל אחד'); return; }
-  await DB.set('cs_math',state.math); toast('הגדרות נשמרו ✓');
+  await DB.set('cs_math',state.math); scheduleSync(); toast('הגדרות נשמרו ✓');
 }
 function renderRewardsAdmin(){
   const c=document.getElementById('rewardsAdmin'); c.innerHTML='';
@@ -1559,9 +1570,10 @@ async function addReward(){
   const label=document.getElementById('newRwLabel').value.trim(); if(!label){ toast('צריך שם לפרס'); return; }
   const emoji=document.getElementById('newRwEmoji').value.trim()||'🎁', cost=parseInt(document.getElementById('newRwCost').value)||30;
   state.rewards.push({id:'r'+Date.now().toString(36),label,emoji,cost}); await DB.set('cs_rewards',state.rewards);
+  scheduleSync();
   document.getElementById('newRwLabel').value=''; document.getElementById('newRwEmoji').value=''; renderRewardsAdmin(); toast('נוסף! ✓');
 }
-async function savePin(){ const v=document.getElementById('setPin').value.trim(); if(v.length<3){ toast('קוד קצר מדי'); return; } state.pin=v; await DB.set('cs_pin',v); document.getElementById('setPin').value=''; toast('הקוד עודכן ✓'); }
+async function savePin(){ const v=document.getElementById('setPin').value.trim(); if(v.length<3){ toast('קוד קצר מדי'); return; } state.pin=v; await DB.set('cs_pin',v); scheduleSync(); document.getElementById('setPin').value=''; toast('הקוד עודכן ✓'); }
 async function saveGroqKey(){ const v=document.getElementById('setGroqKey').value.trim(); if(!v){ toast('הכנס מפתח'); return; } GROQ_API_KEY=v; localStorage.setItem('cs_groq_key',v); document.getElementById('setGroqKey').value=''; document.getElementById('groqKeyStatus').textContent='✅ מפתח שמור'; toast('מפתח Groq נשמר ✓'); }
 
 /* ===== MODALS ===== */
@@ -1772,6 +1784,100 @@ async function sendChatMessage(){
   }
 }
 
+/* ===== FIREBASE AUTO-SYNC ===== */
+let FB_URL='', FB_CODE='', fbSyncTimer=null, fbSyncing=false;
+
+function fbPath(){ return FB_URL+'/families/'+encodeURIComponent(FB_CODE)+'/data.json'; }
+
+function showSyncStatus(msg,color){
+  const el=document.getElementById('syncStatus');
+  if(el){ el.textContent=msg; el.style.color=color||'var(--mint)'; }
+}
+
+async function saveSyncSettings(){
+  const url=(document.getElementById('setFbUrl')?.value||'').trim().replace(/\/$/,'');
+  const code=(document.getElementById('setFamilyCode')?.value||'').trim();
+  if(!url||!code){ toast('מלא URL וקוד משפחה'); return; }
+  FB_URL=url; FB_CODE=code;
+  localStorage.setItem('cs_fb_url',url);
+  localStorage.setItem('cs_fb_code',code);
+  showSyncStatus('⏳ מתחבר...','#F5B82E');
+  const ok=await forceSyncNow();
+  if(ok) toast('סנכרון הופעל! ✓');
+}
+
+function buildSyncPayload(){
+  const payload={children:state.children,chores:state.chores,actions:state.actions,
+    rewards:state.rewards,math:state.math,streak:state.streak,pin:state.pin,kids:{}};
+  for(const ch of state.children){
+    if(state.kid[ch.id]){
+      payload.kids[ch.id]={balance:state.kid[ch.id].balance,history:state.kid[ch.id].history,
+        daily:state.kid[ch.id].daily,mathDaily:state.kid[ch.id].mathDaily};
+    }
+  }
+  return payload;
+}
+
+async function pushToFirebase(){
+  if(!FB_URL||!FB_CODE||fbSyncing) return;
+  fbSyncing=true;
+  try{
+    const r=await fetch(fbPath(),{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(buildSyncPayload())});
+    if(r.ok) showSyncStatus('✅ מסונכרן '+new Date().toLocaleTimeString('he-IL',{hour:'2-digit',minute:'2-digit'}),'var(--mint)');
+    else showSyncStatus('⚠️ שגיאת שמירה','var(--coral)');
+  }catch(e){ showSyncStatus('⚠️ אין חיבור','var(--coral)'); }
+  fbSyncing=false;
+}
+
+async function pullFromFirebase(){
+  if(!FB_URL||!FB_CODE) return false;
+  try{
+    const r=await fetch(fbPath());
+    if(!r.ok) return false;
+    const data=await r.json();
+    if(!data||typeof data!=='object') return false;
+    if(data.children){ state.children=data.children; await DB.set('cs_children',data.children); }
+    if(data.chores){ state.chores=data.chores; await DB.set('cs_chores',data.chores); }
+    if(data.actions){ state.actions=data.actions; await DB.set('cs_actions',data.actions); }
+    if(data.rewards){ state.rewards=data.rewards; await DB.set('cs_rewards',data.rewards); }
+    if(data.math){ state.math=data.math; await DB.set('cs_math',data.math); }
+    if(data.streak){ state.streak=data.streak; await DB.set('cs_streak',data.streak); }
+    if(data.pin){ state.pin=data.pin; await DB.set('cs_pin',data.pin); }
+    if(data.kids){
+      for(const [id,kid] of Object.entries(data.kids)){
+        state.kid[id]=kid;
+        await DB.set('cs_bal_'+id,kid.balance);
+        await DB.set('cs_hist_'+id,kid.history);
+        await DB.set('cs_daily_'+id,kid.daily);
+        await DB.set('cs_mathd_'+id,kid.mathDaily);
+      }
+    }
+    return true;
+  }catch(e){ return false; }
+}
+
+async function forceSyncNow(){
+  showSyncStatus('⏳ מסנכרן...','#F5B82E');
+  // pull first, then push (merge: remote wins on load)
+  const pulled=await pullFromFirebase();
+  await pushToFirebase();
+  if(pulled){ renderBalance(); renderChores(); renderStreakBanner(); }
+  return pulled;
+}
+
+function scheduleSync(){
+  clearTimeout(fbSyncTimer);
+  fbSyncTimer=setTimeout(pushToFirebase,3000);
+}
+
+function fillSyncSettings(){
+  const urlEl=document.getElementById('setFbUrl');
+  const codeEl=document.getElementById('setFamilyCode');
+  if(urlEl) urlEl.value=FB_URL;
+  if(codeEl) codeEl.value=FB_CODE;
+  if(FB_URL&&FB_CODE) showSyncStatus('✅ סנכרון פעיל','var(--mint)');
+}
+
 /* ===== GOOGLE DRIVE SYNC ===== */
 const GD={
   fileId:null, accessToken:null,
@@ -1876,12 +1982,18 @@ const GD={
 
 /* ===== INIT ===== */
 (async function(){
-  // Load Groq key from localStorage
   GROQ_API_KEY=localStorage.getItem('cs_groq_key')||'';
+  FB_URL=localStorage.getItem('cs_fb_url')||'';
+  FB_CODE=localStorage.getItem('cs_fb_code')||'';
   await detectBackend();
   await GD.init();
   if(await GD.handleCallback()){ await loadState(); }
   await loadState();
+  // Pull from Firebase on startup (overrides local if newer data exists)
+  if(FB_URL&&FB_CODE){
+    const pulled=await pullFromFirebase();
+    if(pulled){ showSyncStatus('✅ נטען מהענן','var(--mint)'); }
+  }
   const app=document.querySelector('.app');
   if(state.current && state.children.find(c=>c.id===state.current)){
     await loadKid(state.current); renderBalance(); go('home');
