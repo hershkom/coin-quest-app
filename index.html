@@ -357,6 +357,31 @@
   .cal-legend span{display:inline-flex;align-items:center;gap:6px;}
   .cal-legend i{width:14px;height:14px;border-radius:4px;display:inline-block;}
 
+  /* Daily Events */
+  .event-card{display:flex;align-items:center;gap:14px;background:var(--card);border-radius:20px;padding:14px 16px;margin-bottom:12px;box-shadow:0 6px 18px rgba(124,92,252,.1);border-right:5px solid var(--purple);transition:transform .12s;}
+  .event-card.imminent{border-right-color:var(--coral);background:linear-gradient(135deg,#FFF5F5,#fff);animation:pulse-event 1.5s ease-in-out infinite;}
+  .event-card.passed{opacity:.45;}
+  @keyframes pulse-event{0%,100%{box-shadow:0 6px 18px rgba(255,107,107,.15);}50%{box-shadow:0 6px 24px rgba(255,107,107,.4);}}
+  .event-card .ev-img{width:56px;height:56px;border-radius:14px;object-fit:cover;flex-shrink:0;box-shadow:0 2px 8px rgba(0,0,0,.1);}
+  .event-card .ev-emoji{width:56px;height:56px;border-radius:14px;background:#F2F0FB;display:flex;align-items:center;justify-content:center;font-size:2rem;flex-shrink:0;}
+  .event-card .ev-info{flex:1;min-width:0;}
+  .event-card .ev-title{font-weight:800;font-size:1.05rem;color:var(--ink);}
+  .event-card .ev-time{font-size:.88rem;color:var(--ink2);margin-top:3px;font-weight:700;}
+  .event-card .ev-badge{font-size:.75rem;font-weight:800;padding:3px 10px;border-radius:20px;display:inline-block;margin-top:4px;}
+  .event-card .ev-badge.soon{background:#FFE9E9;color:var(--coral-d);}
+  .event-card .ev-badge.later{background:#EEF0FF;color:var(--purple);}
+  .event-card .ev-badge.now{background:var(--coral);color:#fff;}
+
+  /* Event reminder popup */
+  .event-reminder-modal{position:fixed;inset:0;background:rgba(42,36,64,.7);backdrop-filter:blur(6px);display:none;align-items:center;justify-content:center;z-index:200;padding:20px;}
+  .event-reminder-modal.show{display:flex;animation:fade .25s;}
+  .event-reminder-box{background:#fff;border-radius:30px;padding:30px 24px;max-width:360px;width:100%;text-align:center;box-shadow:0 30px 60px rgba(0,0,0,.35);animation:pop .4s cubic-bezier(.2,1.3,.4,1);}
+  .event-reminder-box .erm-img{width:140px;height:140px;border-radius:22px;object-fit:cover;margin:0 auto 14px;display:block;box-shadow:0 8px 20px rgba(0,0,0,.12);}
+  .event-reminder-box .erm-emoji{font-size:5rem;margin-bottom:10px;line-height:1;}
+  .event-reminder-box .erm-title{font-size:1.5rem;font-weight:900;color:var(--ink);margin-bottom:6px;}
+  .event-reminder-box .erm-time{font-size:1rem;font-weight:700;color:var(--purple);margin-bottom:18px;}
+  .event-reminder-box .erm-msg{font-size:1.1rem;color:var(--ink2);margin-bottom:20px;line-height:1.5;}
+
   /* Chat */
   .chat-bubble-user{background:linear-gradient(135deg,var(--purple),var(--sky));color:#fff;align-self:flex-end;padding:10px 14px;border-radius:18px 18px 4px 18px;max-width:80%;word-wrap:break-word;box-shadow:0 2px 8px rgba(124,92,252,.2);}
   .chat-bubble-ai{background:#fff;color:var(--ink);align-self:flex-start;padding:10px 14px;border-radius:18px 18px 18px 4px;max-width:80%;word-wrap:break-word;box-shadow:0 2px 8px rgba(0,0,0,.08);}
@@ -407,6 +432,7 @@
         <button class="bigbtn history" onclick="go('history')"><span class="ic">📜</span>היומן שלי<span class="sub">כל מה שהרווחת</span></button>
       </div>
 
+      <div id="eventsWrap"></div>
       <div id="streakBannerWrap"></div>
 
       <div class="section-title">🧹 המטלות של היום</div>
@@ -503,6 +529,7 @@
         <button class="atab" data-atab="qr" onclick="adminTab('qr')">🔳 QR</button>
         <button class="atab" data-atab="math" onclick="adminTab('math')">➗ חשבון</button>
         <button class="atab" data-atab="rewards" onclick="adminTab('rewards')">🎁 פרסים</button>
+        <button class="atab" data-atab="events" onclick="adminTab('events')">📅 אירועים</button>
         <button class="atab" data-atab="settings" onclick="adminTab('settings')">🔧 הגדרות</button>
       </div>
       <div class="admin-pane" id="pane-children">
@@ -665,6 +692,34 @@
           <button class="btn primary" onclick="addReward()">הוסף פרס</button>
         </div>
       </div>
+      <div class="admin-pane" id="pane-events" style="display:none;">
+        <div class="card"><div class="card-h">📅 אירועים של היום</div><div class="card-sub">הוסף אירועים ותזכורות לילד. תצוגה בולטת תופיע כשהזמן מתקרב.</div></div>
+        <div id="eventsList"></div>
+        <div class="card">
+          <div class="card-h" style="margin-bottom:12px;">➕ הוסף אירוע</div>
+          <div class="field"><label>כותרת האירוע</label><input id="newEvTitle" placeholder="הולכים לפארק..."></div>
+          <div class="inline-row">
+            <div class="field"><label>אימוג'י</label><input id="newEvEmoji" placeholder="🌳" style="text-align:center;font-size:1.4rem;"></div>
+            <div class="field"><label>שעה</label><input id="newEvTime" type="time"></div>
+            <div class="field"><label>תזכורת לפני</label>
+              <select id="newEvReminder">
+                <option value="10">10 דקות</option>
+                <option value="20">20 דקות</option>
+                <option value="30" selected>30 דקות</option>
+                <option value="60">שעה</option>
+                <option value="120">שעתיים</option>
+              </select>
+            </div>
+          </div>
+          <div class="field"><label>תמונה (אופציונלי)</label>
+            <input type="file" id="newEvImage" accept="image/*" style="padding:8px;border:2px dashed var(--line);border-radius:12px;width:100%;">
+          </div>
+          <div id="newEvPreview" style="margin-bottom:12px;display:none;">
+            <img id="newEvPreviewImg" style="width:100%;max-height:160px;object-fit:cover;border-radius:14px;box-shadow:0 4px 12px rgba(0,0,0,.1);">
+          </div>
+          <button class="btn primary" onclick="addEvent()">➕ הוסף אירוע</button>
+        </div>
+      </div>
       <div class="admin-pane" id="pane-settings" style="display:none;">
         <div class="card">
           <div class="field"><label>שנה קוד הורים (PIN)</label><input id="setPin" type="number" placeholder="קוד חדש"></div>
@@ -731,6 +786,15 @@
 </div>
 
 <div class="modal-bg" id="modalBg"><div class="modal" id="modalContent"></div></div>
+<div class="event-reminder-modal" id="eventReminderModal">
+  <div class="event-reminder-box">
+    <div id="ermMedia"></div>
+    <div class="erm-title" id="ermTitle"></div>
+    <div class="erm-time" id="ermTime"></div>
+    <div class="erm-msg" id="ermMsg"></div>
+    <button class="btn primary" style="font-size:1.1rem;padding:16px;" onclick="closeEventReminder()">👍 הבנתי!</button>
+  </div>
+</div>
 <div id="toast"></div>
 <script>
 /* ===== STORAGE: artifact window.storage + localStorage fallback ===== */
@@ -905,7 +969,7 @@ function go(v){
   if(v==='home'&&state.current==='ariel') renderChores();
   window.scrollTo(0,0);
   if(v==='picker') renderPicker();
-  if(v==='home'){ renderChores(); renderStreakBanner(); }
+  if(v==='home'){ renderChores(); renderStreakBanner(); renderEventsHome(); }
   if(v==='scan') startCamera();
   if(v==='math') initMath();
   if(v==='rewards') renderRewards();
@@ -1273,6 +1337,7 @@ function adminTab(t){
   if(t==='qr') fillQRSelect();
   if(t==='math') fillMathConfig();
   if(t==='rewards') renderRewardsAdmin();
+  if(t==='events') renderEventsAdmin();
   if(t==='settings') fillSyncSettings();
 }
 function renderAnchoredAdmin(){
@@ -1980,6 +2045,152 @@ const GD={
   }
 };
 
+/* ===== DAILY EVENTS ===== */
+let shownReminderIds=new Set();
+
+function todayDateStr(){ const d=new Date(); return d.getFullYear()+'-'+(d.getMonth()+1)+'-'+d.getDate(); }
+
+async function loadEvents(){ return (await DB.get('cs_events'))||[]; }
+async function saveEvents(evs){ await DB.set('cs_events',evs); scheduleSync(); }
+
+function resizeImageToBase64(file, maxPx, cb){
+  const reader=new FileReader();
+  reader.onload=e=>{
+    const img=new Image();
+    img.onload=()=>{
+      const scale=Math.min(1,maxPx/Math.max(img.width,img.height));
+      const w=Math.round(img.width*scale), h=Math.round(img.height*scale);
+      const canvas=document.createElement('canvas'); canvas.width=w; canvas.height=h;
+      canvas.getContext('2d').drawImage(img,0,0,w,h);
+      cb(canvas.toDataURL('image/jpeg',0.75));
+    };
+    img.src=e.target.result;
+  };
+  reader.readAsDataURL(file);
+}
+
+document.getElementById('newEvImage').addEventListener('change',e=>{
+  const f=e.target.files[0]; if(!f) return;
+  resizeImageToBase64(f,600,b64=>{
+    document.getElementById('newEvPreviewImg').src=b64;
+    document.getElementById('newEvPreview').style.display='block';
+    document.getElementById('newEvImage').dataset.b64=b64;
+  });
+});
+
+async function addEvent(){
+  const title=document.getElementById('newEvTitle').value.trim(); if(!title){ toast('צריך כותרת לאירוע'); return; }
+  const emoji=document.getElementById('newEvEmoji').value.trim()||'📅';
+  const time=document.getElementById('newEvTime').value; if(!time){ toast('בחר שעה לאירוע'); return; }
+  const reminderMins=parseInt(document.getElementById('newEvReminder').value)||30;
+  const image=document.getElementById('newEvImage').dataset.b64||'';
+  const evs=await loadEvents();
+  evs.push({id:'ev'+Date.now().toString(36),title,emoji,time,reminderMins,image,date:todayDateStr()});
+  await saveEvents(evs);
+  document.getElementById('newEvTitle').value='';
+  document.getElementById('newEvEmoji').value='';
+  document.getElementById('newEvTime').value='';
+  document.getElementById('newEvImage').value='';
+  document.getElementById('newEvImage').dataset.b64='';
+  document.getElementById('newEvPreview').style.display='none';
+  renderEventsAdmin(); renderEventsHome();
+  toast('אירוע נוסף! ✓');
+}
+
+async function deleteEvent(id){
+  const evs=(await loadEvents()).filter(e=>e.id!==id);
+  await saveEvents(evs); renderEventsAdmin(); renderEventsHome();
+}
+
+function getMinutesUntil(timeStr){
+  const [h,m]=timeStr.split(':').map(Number);
+  const now=new Date(), target=new Date();
+  target.setHours(h,m,0,0);
+  return Math.round((target-now)/60000);
+}
+
+function renderEventsHome(){
+  const wrap=document.getElementById('eventsWrap'); if(!wrap) return;
+  loadEvents().then(allEvs=>{
+    const today=todayDateStr();
+    const evs=allEvs.filter(e=>e.date===today).sort((a,b)=>a.time.localeCompare(b.time));
+    if(!evs.length){ wrap.innerHTML=''; return; }
+    let html='<div class="section-title">📅 האירועים של היום</div>';
+    evs.forEach(ev=>{
+      const mins=getMinutesUntil(ev.time);
+      const passed=mins<-5, imminent=mins>=0&&mins<=30;
+      const badgeTxt=passed?'עבר':(imminent&&mins<=0?'עכשיו!':(imminent?'בעוד '+mins+' דק׳':ev.time));
+      const badgeCls=passed?'':(mins<=0?'now':(imminent?'soon':'later'));
+      const mediaHtml=ev.image
+        ?`<img src="${ev.image}" class="ev-img">`
+        :`<div class="ev-emoji">${ev.emoji}</div>`;
+      html+=`<div class="event-card ${passed?'passed':''} ${imminent?'imminent':''}">
+        ${mediaHtml}
+        <div class="ev-info">
+          <div class="ev-title">${esc(ev.title)}</div>
+          <div class="ev-time">🕐 ${ev.time}</div>
+          ${badgeCls?`<span class="ev-badge ${badgeCls}">${badgeTxt}</span>`:''}
+        </div>
+      </div>`;
+    });
+    wrap.innerHTML=html;
+  });
+}
+
+async function renderEventsAdmin(){
+  const c=document.getElementById('eventsList'); if(!c) return;
+  const evs=await loadEvents();
+  const today=todayDateStr();
+  const todayEvs=evs.filter(e=>e.date===today).sort((a,b)=>a.time.localeCompare(b.time));
+  if(!todayEvs.length){ c.innerHTML='<div class="empty"><span class="e-ic">📅</span>אין אירועים להיום</div>'; return; }
+  c.innerHTML='';
+  todayEvs.forEach(ev=>{
+    const row=document.createElement('div'); row.className='admin-row';
+    const thumb=ev.image?`<img src="${ev.image}" style="width:40px;height:40px;border-radius:10px;object-fit:cover;">`:`<span style="font-size:1.6rem;">${ev.emoji}</span>`;
+    row.innerHTML=`${thumb}<span class="t">${esc(ev.title)}<br><span style="font-size:.72rem;color:var(--muted);font-weight:400;">${ev.time} · תזכורת ${ev.reminderMins} דק׳ לפני</span></span>
+      <button class="icon-btn" onclick="deleteEvent('${ev.id}')">🗑️</button>`;
+    c.appendChild(row);
+  });
+}
+
+let shownReminders=new Set();
+function checkEventReminders(){
+  loadEvents().then(evs=>{
+    const today=todayDateStr();
+    evs.filter(e=>e.date===today).forEach(ev=>{
+      const mins=getMinutesUntil(ev.time);
+      const shouldAlert=(mins>=0&&mins<=ev.reminderMins)||(mins>=-2&&mins<0);
+      if(shouldAlert&&!shownReminders.has(ev.id)){
+        shownReminders.add(ev.id);
+        showEventReminder(ev,mins);
+      }
+    });
+  });
+}
+
+function showEventReminder(ev,minsLeft){
+  const mediaEl=document.getElementById('ermMedia');
+  if(ev.image){
+    mediaEl.innerHTML=`<img src="${ev.image}" class="erm-img">`;
+  } else {
+    mediaEl.innerHTML=`<div class="erm-emoji">${ev.emoji}</div>`;
+  }
+  document.getElementById('ermTitle').textContent=ev.title;
+  const name=curChild()?.name||'';
+  if(minsLeft<=0){
+    document.getElementById('ermTime').textContent='⏰ עכשיו!';
+    document.getElementById('ermMsg').textContent=(name?name+', ':'')+' הגיע הזמן! '+ev.emoji;
+  } else {
+    document.getElementById('ermTime').textContent='בעוד '+minsLeft+' דקות ('+ev.time+')';
+    document.getElementById('ermMsg').textContent=(name?name+', ':'')+'תכין/י את עצמך! 😊';
+  }
+  document.getElementById('eventReminderModal').classList.add('show');
+}
+
+function closeEventReminder(){
+  document.getElementById('eventReminderModal').classList.remove('show');
+}
+
 /* ===== INIT ===== */
 (async function(){
   GROQ_API_KEY=localStorage.getItem('cs_groq_key')||'';
@@ -1995,6 +2206,9 @@ const GD={
     if(pulled){ showSyncStatus('✅ נטען מהענן','var(--mint)'); }
   }
   const app=document.querySelector('.app');
+  // Start event reminder checker every minute
+  setInterval(checkEventReminders, 60000);
+  checkEventReminders();
   if(state.current && state.children.find(c=>c.id===state.current)){
     await loadKid(state.current); renderBalance(); go('home');
     if(state.current==='ariel'){
