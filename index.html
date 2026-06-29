@@ -219,9 +219,9 @@
   .hero .hi .av{width:30px;height:30px;border-radius:50%;background:rgba(255,255,255,.25);display:flex;align-items:center;justify-content:center;font-size:1rem;}
   .hero .big-coin{width:74px;height:74px;border-radius:50%;margin:12px auto 6px;background:radial-gradient(circle at 35% 28%,var(--gold-l),var(--gold-d));display:flex;align-items:center;justify-content:center;font-size:2.2rem;box-shadow:0 8px 0 var(--gold-d),0 14px 24px rgba(0,0,0,.25);animation:bob 2.4s ease-in-out infinite;}
   @keyframes bob{0%,100%{transform:translateY(0) rotate(-4deg);}50%{transform:translateY(-7px) rotate(4deg);}}
-  .hero .amount{font-size:3.3rem;font-weight:900;line-height:1;letter-spacing:-1px;text-shadow:0 3px 0 rgba(0,0,0,.12);}
-  .hero .amount-label{font-size:.92rem;opacity:.9;margin-top:2px;}
-  .section-title{font-weight:800;font-size:1.05rem;margin:22px 4px 12px;display:flex;align-items:center;gap:8px;}
+  .hero .amount{font-size:3.8rem;font-weight:900;line-height:1;letter-spacing:-1px;text-shadow:0 3px 0 rgba(0,0,0,.15);}
+  .hero .amount-label{font-size:1.05rem;opacity:1;margin-top:4px;font-weight:700;text-shadow:0 1px 3px rgba(0,0,0,.15);}
+  .section-title{font-weight:900;font-size:1.2rem;margin:22px 4px 12px;display:flex;align-items:center;gap:8px;}
   .grid2{display:grid;grid-template-columns:1fr 1fr;gap:13px;}
   .bigbtn{border:none;border-radius:22px;padding:20px 14px;cursor:pointer;color:#fff;font-family:inherit;font-weight:700;font-size:1rem;text-align:center;display:flex;flex-direction:column;align-items:center;gap:8px;transition:transform .12s;box-shadow:0 7px 0 rgba(0,0,0,.16),0 10px 20px rgba(0,0,0,.14);}
   .bigbtn:active{transform:translateY(4px);box-shadow:0 3px 0 rgba(0,0,0,.16),0 5px 12px rgba(0,0,0,.14);}
@@ -323,8 +323,8 @@
   .chore-check.full{background:linear-gradient(135deg,var(--mint),var(--mint-d));color:#fff;opacity:.55;cursor:not-allowed;}
   .chore-check:active{transform:scale(.88);}
   .chore-info{flex:1;min-width:0;}
-  .chore-info .ci-t{font-weight:700;font-size:.95rem;}
-  .chore-info .ci-d{font-size:.74rem;color:var(--muted);margin-top:1px;}
+  .chore-info .ci-t{font-weight:800;font-size:1.05rem;}
+  .chore-info .ci-d{font-size:.82rem;color:var(--muted);margin-top:2px;}
   .chore-pts{font-weight:800;color:var(--gold-d);font-size:.85rem;white-space:nowrap;}
 
   /* ---- streak banner + view ---- */
@@ -332,17 +332,17 @@
   .streak-banner:active{transform:scale(.98);}
   .streak-banner .sb-flame{font-size:2.2rem;flex-shrink:0;}
   .streak-banner .sb-text{flex:1;min-width:0;}
-  .streak-banner .sb-title{font-weight:800;font-size:.95rem;color:#7a4a00;}
-  .streak-banner .sb-sub{font-size:.78rem;color:#8a5e00;margin-top:1px;}
+  .streak-banner .sb-title{font-weight:900;font-size:1.1rem;color:#5a3400;}
+  .streak-banner .sb-sub{font-size:.88rem;color:#6a4400;margin-top:2px;font-weight:700;}
   .streak-banner .sb-bar{background:rgba(255,255,255,.55);border-radius:20px;height:9px;margin-top:7px;overflow:hidden;}
   .streak-banner .sb-fill{height:100%;border-radius:20px;background:linear-gradient(90deg,#FF8A4C,#FFC55C);}
   .streak-banner .sb-arrow{font-size:1.3rem;color:#a4720a;}
 
   .streak-hero{border-radius:26px;padding:26px 20px;text-align:center;color:#fff;background:linear-gradient(140deg,#FF8A4C,#F5B82E);box-shadow:0 12px 28px rgba(217,148,9,.3);margin-bottom:8px;}
-  .streak-hero .sh-flame{font-size:2.6rem;}
-  .streak-hero .sh-num{font-size:3rem;font-weight:900;line-height:1;}
-  .streak-hero .sh-lbl{font-size:.85rem;opacity:.92;}
-  .streak-hero .sh-goal{margin-top:10px;font-size:.82rem;background:rgba(255,255,255,.22);border-radius:14px;padding:7px 12px;display:inline-block;}
+  .streak-hero .sh-flame{font-size:3rem;}
+  .streak-hero .sh-num{font-size:4rem;font-weight:900;line-height:1;text-shadow:0 3px 0 rgba(0,0,0,.15);}
+  .streak-hero .sh-lbl{font-size:1rem;font-weight:700;opacity:1;text-shadow:0 1px 3px rgba(0,0,0,.2);}
+  .streak-hero .sh-goal{margin-top:12px;font-size:.95rem;font-weight:800;background:rgba(0,0,0,.18);border-radius:14px;padding:9px 16px;display:inline-block;text-shadow:0 1px 2px rgba(0,0,0,.2);}
   .streak-today-btn{margin-top:14px;}
 
   .cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:6px;margin-top:6px;}
@@ -353,9 +353,9 @@
   .cal-cell.accident{background:linear-gradient(135deg,var(--coral),var(--coral-d));color:#fff;}
   .cal-cell.today{box-shadow:0 0 0 2px var(--purple);}
   .cal-cell.editable{cursor:pointer;}
-  .cal-legend{display:flex;gap:14px;justify-content:center;margin-top:14px;font-size:.76rem;color:var(--ink2);}
-  .cal-legend span{display:inline-flex;align-items:center;gap:5px;}
-  .cal-legend i{width:11px;height:11px;border-radius:4px;display:inline-block;}
+  .cal-legend{display:flex;gap:14px;justify-content:center;margin-top:14px;font-size:.9rem;color:var(--ink);font-weight:700;}
+  .cal-legend span{display:inline-flex;align-items:center;gap:6px;}
+  .cal-legend i{width:14px;height:14px;border-radius:4px;display:inline-block;}
 
   /* Chat */
   .chat-bubble-user{background:linear-gradient(135deg,var(--purple),var(--sky));color:#fff;align-self:flex-end;padding:10px 14px;border-radius:18px 18px 4px 18px;max-width:80%;word-wrap:break-word;box-shadow:0 2px 8px rgba(124,92,252,.2);}
@@ -415,7 +415,7 @@
 
     <div class="view" id="view-streak">
       <button class="backbtn" onclick="go('home')">→ חזרה</button>
-      <div class="section-title">🌟 אתגר 30 הימים</div>
+      <div class="section-title" id="streakViewTitle">🌟 אתגר הרצף</div>
       <div id="streakHeroWrap"></div>
       <div class="card">
         <div class="card-h" id="calMonthLabel" style="text-align:center;margin-bottom:2px;">—</div>
@@ -1190,6 +1190,9 @@ function buildCalendar(year, month, days, editable, onTap, todayKeyStr){
 }
 function renderStreakView(){
   const s=state.streak;
+  // Fix title to show actual goal
+  const titleEl=document.getElementById('streakViewTitle');
+  if(titleEl) titleEl.textContent='🌟 אתגר '+s.goal+' הימים';
   document.getElementById('streakHeroWrap').innerHTML=`
     <div class="streak-hero">
       <div class="sh-flame">🔥</div>
