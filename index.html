@@ -610,9 +610,18 @@
         </div>
       </div>
       <div class="admin-pane" id="pane-qr" style="display:none;">
-        <div class="card"><div class="card-h">צור קוד QR לפעולה</div><div class="card-sub">בחר פעולה, צור קוד, והדפס/הצג לילד. הילד בוחר את הפרופיל שלו ואז סורק — והמטבעות נזקפים לו.</div></div>
-        <div class="field"><label>בחר פעולה</label><select id="qrSelect"></select></div>
+        <div class="card"><div class="card-h">צור קוד QR למטלה או פעולה</div><div class="card-sub">בחר מטלה/פעולה, צור קוד, והצג לילד לסריקה — והמטבעות נזקפים לו.</div></div>
+        <div class="field"><label>בחר מטלה / פעולה</label><select id="qrSelect"></select></div>
         <button class="btn mint" onclick="makeQR()">🔳 צור קוד QR</button>
+        <div class="card" style="margin-top:16px;background:linear-gradient(135deg,#FFF6E0,#FFF);">
+          <div class="card-h">🏆 QR לפרס הרצף</div>
+          <div class="card-sub" style="margin-bottom:10px;">הילד יוכל לפדות את פרס האתגר רק על ידי סריקת קוד זה.</div>
+          <button class="btn gold" onclick="makeStreakQR()">🔳 צור QR לפרס הרצף</button>
+          <div id="streakQrResult" style="display:none;margin-top:12px;text-align:center;">
+            <div id="streakQrBox" style="display:inline-block;padding:14px;background:#fff;border-radius:18px;box-shadow:0 6px 18px rgba(0,0,0,.12);"></div>
+            <div id="streakQrLabel" style="font-weight:800;margin-top:10px;font-size:1rem;"></div>
+          </div>
+        </div>
         <div id="qrResult" style="display:none;margin-top:16px;">
           <div id="qrBox"></div>
           <div id="qrLabel" style="font-weight:800;margin-top:10px;font-size:1.05rem;"></div>
@@ -1009,6 +1018,21 @@ document.getElementById('photoInput').addEventListener('change',e=>{
 function toggleManual(){ const b=document.getElementById('manualBox'); b.style.display=b.style.display==='flex'?'none':'flex'; }
 function redeemToken(raw){
   raw=(raw||'').trim(); const p=raw.split('|');
+  // Streak reward QR
+  if(p[0]==='CSSTREAK'){
+    stopCamera();
+    const s=state.streak;
+    if(s.current<s.goal){
+      modalMsg('⏳','עוד לא הגעת ליעד!','השלמת '+s.current+' מתוך '+s.goal+' ימים. תמשיך להתאמץ! 💪');
+    } else {
+      if(!s.wonAt) s.wonAt=Date.now();
+      DB.set('cs_streak',s);
+      modalMsg(p[2]||'🎮','🏆 הגיע הזמן לפרס!','השלמת '+s.goal+' ימים נקיים!\nהפרס שלך: '+(p[1]||s.rewardLabel)+' '+(p[2]||s.rewardEmoji)+'\nכל הכבוד אריאל!');
+      coinBurst();
+    }
+    return;
+  }
+  // Regular task/action QR
   if(p[0]!=='CSQR'||p.length<5){ toast('הקוד לא תקין 🤔'); if(currentView==='scan'&&stream){ scanning=true; requestAnimationFrame(scanTick);} return; }
   const id=p[1], label=p[2], pts=parseInt(p[3])||0, maxd=parseInt(p[4])||1;
   const k=cur(); ensureTodayKid(state.current);
@@ -1017,7 +1041,8 @@ function redeemToken(raw){
   k.daily.counts[id]=used+1; DB.set('cs_daily_'+state.current,k.daily);
   stopCamera();
   addPoints(pts,label,'scan');
-  modalMsg('🎉','+'+pts+' מטבעות!','השלמת: '+label+' '+((state.actions.find(a=>a.id===id)||{}).emoji||'⭐'));
+  const emoji=[...state.actions,...state.chores].find(a=>a.id===id)?.emoji||'⭐';
+  modalMsg('🎉','+'+pts+' מטבעות!','השלמת: '+label+' '+emoji);
 }
 
 /* ===== MATH ===== */
@@ -1465,17 +1490,39 @@ async function addAction(){
 }
 function fillQRSelect(){
   const s=document.getElementById('qrSelect'); s.innerHTML='';
-  state.actions.forEach(a=>{ const o=document.createElement('option'); o.value=a.id; o.textContent=a.emoji+' '+a.label+' ('+a.points+' מטבעות)'; s.appendChild(o); });
+  // Chores
+  if(state.chores.length){
+    const g=document.createElement('optgroup'); g.label='🧹 מטלות';
+    state.chores.forEach(a=>{ const o=document.createElement('option'); o.value='chore|'+a.id; o.textContent=a.emoji+' '+a.label+' ('+a.points+' מטבעות)'; g.appendChild(o); });
+    s.appendChild(g);
+  }
+  // Actions
+  if(state.actions.length){
+    const g=document.createElement('optgroup'); g.label='🏆 פעולות';
+    state.actions.forEach(a=>{ const o=document.createElement('option'); o.value='action|'+a.id; o.textContent=a.emoji+' '+a.label+' ('+a.points+' מטבעות)'; g.appendChild(o); });
+    s.appendChild(g);
+  }
   document.getElementById('qrResult').style.display='none';
+  document.getElementById('streakQrResult').style.display='none';
 }
 function makeQR(){
-  const id=document.getElementById('qrSelect').value, a=state.actions.find(x=>x.id===id); if(!a) return;
+  const val=document.getElementById('qrSelect').value; if(!val) return;
+  const [type,id]=val.split('|');
+  const a=(type==='chore'?state.chores:state.actions).find(x=>x.id===id); if(!a) return;
   const token='CSQR|'+a.id+'|'+a.label+'|'+a.points+'|'+a.max;
   const box=document.getElementById('qrBox'); box.innerHTML='';
   new QRCode(box,{text:token,width:200,height:200,colorDark:'#2A2440',colorLight:'#ffffff',correctLevel:QRCode.CorrectLevel.M});
   document.getElementById('qrLabel').textContent=a.emoji+' '+a.label+' · '+a.points+' מטבעות';
   document.getElementById('qrToken').textContent=token;
   document.getElementById('qrResult').style.display='block';
+}
+function makeStreakQR(){
+  const s=state.streak;
+  const token='CSSTREAK|'+s.rewardLabel+'|'+s.rewardEmoji+'|'+s.goal;
+  const box=document.getElementById('streakQrBox'); box.innerHTML='';
+  new QRCode(box,{text:token,width:200,height:200,colorDark:'#D99409',colorLight:'#ffffff',correctLevel:QRCode.CorrectLevel.M});
+  document.getElementById('streakQrLabel').textContent=s.rewardEmoji+' '+s.rewardLabel+' — פרס '+s.goal+' ימים';
+  document.getElementById('streakQrResult').style.display='block';
 }
 function fillMathConfig(){
   const m=state.math;
