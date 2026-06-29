@@ -6,6 +6,8 @@ plugins {
 android {
     compileSdk 34
 
+    namespace "com.coinquest.app"
+
     defaultConfig {
         applicationId "com.coinquest.app"
         minSdk 21
