@@ -864,6 +864,9 @@ async function loadState(){
   state.streak  =(await DB.get('cs_streak'))  ??DEFAULT_STREAK;
   state.anchored=(await DB.get('cs_anchored'))??DEFAULT_ANCHORED_TASKS;
   state.pin     =(await DB.get('cs_pin'))     ??'0525622636';
+  _hwmDate=(await DB.get('cs_hwm_date'))??todayStr();
+  _hwmAdvanceMono=performance.now();
+  await DB.set('cs_hwm_date',_hwmDate);
   state.kid={};
 }
 async function loadKid(id){
@@ -880,9 +883,48 @@ function cur(){ return state.kid[state.current]; }
 function curChild(){ return state.children.find(c=>c.id===state.current); }
 function todayStr(){ const d=new Date(); return d.getFullYear()+'-'+(d.getMonth()+1)+'-'+d.getDate(); }
 function ensureTodayKid(id){
-  const t=todayStr(), k=state.kid[id]; if(!k) return;
+  const t=effectiveToday(), k=state.kid[id]; if(!k) return;
   if(k.daily.date!==t){ k.daily={date:t,counts:{}}; DB.set('cs_daily_'+id,k.daily); }
   if(k.mathDaily.date!==t){ k.mathDaily={date:t,done:0}; DB.set('cs_mathd_'+id,k.mathDaily); }
+}
+/* ---- anti-tamper helpers ---- */
+function dateToNum(str){ const a=(str||'').split('-').map(Number); return new Date(a[0]||1970,(a[1]||1)-1,a[2]||1).getTime(); }
+let _hwmDate=null, _hwmAdvanceMono=-Infinity;
+function effectiveToday(){
+  // High-water-mark date that only moves forward: rewinding the device clock is
+  // fully blocked. Jumping the clock FORWARD is clamped to +1 calendar day per
+  // call, and successive forward advances must be >=90 real seconds apart
+  // (measured with performance.now(), which the device date can't affect) — so
+  // winding the clock ahead by weeks/years can't unlock weeks/years of daily
+  // allowances in one sitting. This is a deterrent, not a cryptographic guarantee:
+  // a very patient child repeating the trick every 90s could still slowly creep
+  // it forward. True tamper-proofing needs a server clock, which pullFromFirebase
+  // partially provides by syncing the high-water-mark itself once sync is on.
+  const t=todayStr();
+  if(_hwmDate==null){ _hwmDate=t; _hwmAdvanceMono=performance.now(); return t; }
+  const tn=dateToNum(t), hn=dateToNum(_hwmDate);
+  if(tn<=hn) return _hwmDate;
+  const now=performance.now();
+  if(now-_hwmAdvanceMono<90000) return _hwmDate;
+  const next=new Date(hn); next.setDate(next.getDate()+1);
+  _hwmDate=next.getFullYear()+'-'+(next.getMonth()+1)+'-'+next.getDate();
+  _hwmAdvanceMono=now;
+  DB.set('cs_hwm_date',_hwmDate);
+  return _hwmDate;
+}
+function findTaskById(id){
+  // Look up a task/action by id across every configured list. Used to validate
+  // scanned/typed QR codes against the real config so forged ids are rejected.
+  if(!id) return null;
+  let t=state.chores.find(x=>x.id===id) || state.actions.find(x=>x.id===id);
+  if(t) return t;
+  if(state.anchored){
+    for(const period of ['morning','afternoon','evening']){
+      const f=(state.anchored[period]||[]).find(x=>x.id===id);
+      if(f) return f;
+    }
+  }
+  return null;
 }
 
 /* ===== BALANCE / EARN ===== */
@@ -943,7 +985,8 @@ function renderBalance(){
 }
 async function addPoints(n,label,type){
   const id=state.current, k=cur();
-  k.balance+=n;
+  if(!Number.isFinite(n)) return;
+  k.balance=Math.max(0,Math.min(1000000,Math.round(k.balance+n)));
   k.history.unshift({ts:Date.now(),label,points:n,type});
   if(k.history.length>120) k.history.pop();
   await DB.set('cs_bal_'+id,k.balance);
@@ -1090,30 +1133,41 @@ document.getElementById('photoInput').addEventListener('change',e=>{
 function toggleManual(){ const b=document.getElementById('manualBox'); b.style.display=b.style.display==='flex'?'none':'flex'; }
 function redeemToken(raw){
   raw=(raw||'').trim(); const p=raw.split('|');
-  // Streak reward QR
+  // Streak reward QR — claiming the prize is a parent-confirmed moment just like
+  // marking a clean day, so it goes through the same PIN gate. The displayed
+  // prize name/emoji always comes from the admin-configured streak settings,
+  // never from the scanned token, so a hand-typed code can't spoof what was won.
   if(p[0]==='CSSTREAK'){
     stopCamera();
     const s=state.streak;
+    if(!curChild()||curChild().id!==s.childId){ modalMsg('🤔','לא מתאים','הפרס הזה לא משויך לפרופיל הזה.'); return; }
     if(s.current<s.goal){
       modalMsg('⏳','עוד לא הגעת ליעד!','השלמת '+s.current+' מתוך '+s.goal+' ימים. תמשיך להתאמץ! 💪');
-    } else {
+      return;
+    }
+    modalPin(()=>{
       if(!s.wonAt) s.wonAt=Date.now();
       DB.set('cs_streak',s);
-      modalMsg(p[2]||'🎮','🏆 הגיע הזמן לפרס!','השלמת '+s.goal+' ימים נקיים!\nהפרס שלך: '+(p[1]||s.rewardLabel)+' '+(p[2]||s.rewardEmoji)+'\nכל הכבוד אריאל!');
+      modalMsg(s.rewardEmoji,'🏆 הגיע הזמן לפרס!','השלמת '+s.goal+' ימים נקיים!\nהפרס שלך: '+s.rewardLabel+' '+s.rewardEmoji+'\nכל הכבוד אריאל!');
       coinBurst();
-    }
+    });
     return;
   }
-  // Regular task/action QR
-  if(p[0]!=='CSQR'||p.length<5){ toast('הקוד לא תקין 🤔'); if(currentView==='scan'&&stream){ scanning=true; requestAnimationFrame(scanTick);} return; }
-  const id=p[1], label=p[2], pts=parseInt(p[3])||0, maxd=parseInt(p[4])||1;
+  // Regular task/action QR — validate the id against the real config (anti-forgery).
+  // Points and daily-max come from the stored task, NOT from the scanned text, so a
+  // hand-typed or edited code can't grant extra coins or raise its own limit.
+  if(p[0]!=='CSQR'||p.length<2){ toast('הקוד לא תקין 🤔'); if(currentView==='scan'&&stream){ scanning=true; requestAnimationFrame(scanTick);} return; }
+  const id=p[1];
+  const task=findTaskById(id);
+  if(!task){ stopCamera(); modalMsg('🤔','הקוד לא מתאים','הקוד הזה לא שייך לאף מטלה אמיתית.\nבקש מאמא או אבא קוד נכון.'); return; }
+  const label=task.label, pts=task.points, maxd=task.max;
   const k=cur(); ensureTodayKid(state.current);
   const used=k.daily.counts[id]||0;
   if(used>=maxd){ stopCamera(); modalMsg('🌟','כל הכבוד!','כבר השלמת את "'+label+'" '+maxd+' פעמים היום. נסה שוב מחר!'); return; }
   k.daily.counts[id]=used+1; DB.set('cs_daily_'+state.current,k.daily);
   stopCamera();
   addPoints(pts,label,'scan');
-  const emoji=[...state.actions,...state.chores].find(a=>a.id===id)?.emoji||'⭐';
+  const emoji=task.emoji||'⭐';
   modalMsg('🎉','+'+pts+' מטבעות!','השלמת: '+label+' '+emoji);
 }
 
@@ -1194,7 +1248,7 @@ function renderChores(){
   });
 }
 function markChore(id){
-  const ch=state.chores.find(c=>c.id===id); if(!ch) return;
+  const ch=findTaskById(id); if(!ch) return;
   const k=cur(); ensureTodayKid(state.current);
   const used=k.daily.counts[id]||0;
   if(used>=ch.max) return;
@@ -1223,6 +1277,12 @@ function renderStreakBanner(){
     </span>
     <span class="sb-arrow">›</span>`;
   wrap.appendChild(banner);
+}
+function requestMarkCleanToday(){
+  // A "clean day" reflects real-world behavior that a parent confirms — so marking
+  // it requires the parent PIN. This stops the child from self-marking the streak
+  // (and the big prize) without anyone checking.
+  modalPin(()=>{ markStreakCleanToday(); });
 }
 async function markStreakCleanToday(){
   const s=state.streak, k=dateKey(new Date());
@@ -1275,7 +1335,7 @@ function renderStreakView(){
       <div class="streak-today-btn">${
         s.days[dateKey(new Date())]
           ? '<button class="btn ghost" disabled>✓ סימנת היום</button>'
-          : '<button class="btn mint" onclick="markStreakCleanToday()">✅ היום היה יום נקי!</button>'
+          : '<button class="btn mint" onclick="requestMarkCleanToday()">✅ היום היה יום נקי! (אישור הורה)</button>'
       }</div>
     </div>`;
   const now=new Date();
@@ -1303,6 +1363,7 @@ function renderRewards(){
 function redeemReward(rw){
   if(cur().balance<rw.cost) return;
   modalConfirm('🎁','להחליף את "'+rw.label+'"?','זה יעלה '+rw.cost+' מטבעות.', async()=>{
+    if(cur().balance<rw.cost){ toast('אין מספיק מטבעות 🪙'); renderRewards(); return; }
     await addPoints(-rw.cost,'פרס: '+rw.label,'spend'); renderRewards();
     modalMsg(rw.emoji,'מזל טוב! 🎉','החלפת את: '+rw.label+'\nהראה את המסך להורים.');
   });
@@ -1658,12 +1719,29 @@ function modalInput(emoji,title,text,val,onOk){
     <div style="display:flex;gap:8px;margin-top:14px;"><button class="btn ghost" onclick="closeModal()">ביטול</button><button class="btn primary" id="mOk">אישור</button></div>`;
   modalBg.classList.add('show'); document.getElementById('mOk').onclick=()=>{ const v=document.getElementById('mInput').value; closeModal(); onOk(v); };
 }
+let _pinFails=0, _pinLockUntil=0;
 function modalPin(onOk){
+  const remain=_pinLockUntil-Date.now();
+  if(remain>0){
+    modalMsg('⏳','חכה קצת','יותר מדי ניסיונות שגויים.\nנסה שוב בעוד '+Math.ceil(remain/1000)+' שניות.');
+    return;
+  }
   modalContent.innerHTML=`<div class="m-emoji">🔒</div><h3>אזור הורים</h3><p>הזן את קוד ההורים</p>
     <input id="mPin" class="pin-input" style="width:100%;border:2px solid var(--line);border-radius:13px;padding:12px;font-family:inherit;" type="number" placeholder="••••">
     <div style="display:flex;gap:8px;margin-top:14px;"><button class="btn ghost" onclick="closeModal()">ביטול</button><button class="btn primary" id="mPinOk">כניסה</button></div>`;
   modalBg.classList.add('show'); setTimeout(()=>document.getElementById('mPin').focus(),100);
-  const ok=()=>{ const v=document.getElementById('mPin').value.trim(); if(v===state.pin){ closeModal(); onOk(); } else { toast('קוד שגוי 🔒'); document.getElementById('mPin').value=''; } };
+  // Lock out after repeated wrong guesses, with growing cooldowns, so the PIN
+  // can't be brute-forced by rapid tapping. Persisted-per-session (in memory),
+  // not tied to the PIN value itself.
+  const ok=()=>{
+    const v=document.getElementById('mPin').value.trim();
+    if(v===state.pin){ _pinFails=0; closeModal(); onOk(); }
+    else{
+      _pinFails++;
+      if(_pinFails>=5){ _pinLockUntil=Date.now()+Math.min(300000,10000*Math.pow(2,_pinFails-5)); closeModal(); modalMsg('⏳','יותר מדי ניסיונות','חכה קצת ונסה שוב.'); return; }
+      toast('קוד שגוי 🔒'); document.getElementById('mPin').value='';
+    }
+  };
   document.getElementById('mPinOk').onclick=ok;
   document.getElementById('mPin').addEventListener('keyup',e=>{ if(e.key==='Enter') ok(); });
 }
@@ -1793,10 +1871,13 @@ function stopMic(){
   document.getElementById('micStatus').textContent='';
 }
 
+let _chatBusy=false;
 async function sendChatMessage(){
+  if(_chatBusy) return; // block concurrent sends (rapid tapping / double-fire spam)
   const input=document.getElementById('chatInput');
   const text=input.value.trim();
   if(!text) return;
+  _chatBusy=true;
   input.value='';
   displayMessage(text,true);
   const childName=curChild()?.name||'אריאל';
@@ -1847,6 +1928,8 @@ async function sendChatMessage(){
     console.error('Chat error:',e);
     thinkingWrap.remove();
     displayMessage('אין חיבור לאינטרנט 😓 נסה שנית!',false);
+  }finally{
+    _chatBusy=false;
   }
 }
 
@@ -1873,8 +1956,11 @@ async function saveSyncSettings(){
 }
 
 function buildSyncPayload(){
+  // The parent PIN is intentionally NOT included: the Firebase DB is in open
+  // "test mode", so anything synced here is readable by anyone who knows the
+  // family code. The PIN stays device-local; set it separately on each device.
   const payload={children:state.children,chores:state.chores,actions:state.actions,
-    rewards:state.rewards,math:state.math,streak:state.streak,pin:state.pin,kids:{}};
+    rewards:state.rewards,math:state.math,streak:state.streak,hwmDate:_hwmDate,kids:{}};
   for(const ch of state.children){
     if(state.kid[ch.id]){
       payload.kids[ch.id]={balance:state.kid[ch.id].balance,history:state.kid[ch.id].history,
@@ -1908,9 +1994,25 @@ async function pullFromFirebase(){
     if(data.rewards){ state.rewards=data.rewards; await DB.set('cs_rewards',data.rewards); }
     if(data.math){ state.math=data.math; await DB.set('cs_math',data.math); }
     if(data.streak){ state.streak=data.streak; await DB.set('cs_streak',data.streak); }
-    if(data.pin){ state.pin=data.pin; await DB.set('cs_pin',data.pin); }
+    // PIN is never synced (see buildSyncPayload). The high-water-mark date IS
+    // synced so wiping/reinstalling the app on one device can't roll back the
+    // anti-clock-tamper guard for the whole family.
+    if(data.hwmDate){
+      const remote=dateToNum(data.hwmDate);
+      if(_hwmDate==null||remote>dateToNum(_hwmDate)){ _hwmDate=data.hwmDate; await DB.set('cs_hwm_date',_hwmDate); }
+    }
     if(data.kids){
+      // Sanity-bound whatever comes back: the DB is in open test-mode, so this
+      // is defense in depth against a corrupted or maliciously-written balance
+      // (e.g. NaN, Infinity, or a huge/negative number), not a full guarantee —
+      // real protection requires Firebase auth + server-side validation rules.
       for(const [id,kid] of Object.entries(data.kids)){
+        if(!kid||typeof kid!=='object') continue;
+        const balOk=Number.isFinite(kid.balance);
+        kid.balance=balOk?Math.max(0,Math.min(1000000,Math.round(kid.balance))):0;
+        if(!Array.isArray(kid.history)) kid.history=[];
+        if(!kid.daily||typeof kid.daily!=='object') kid.daily={date:'',counts:{}};
+        if(!kid.mathDaily||typeof kid.mathDaily!=='object') kid.mathDaily={date:'',done:0};
         state.kid[id]=kid;
         await DB.set('cs_bal_'+id,kid.balance);
         await DB.set('cs_hist_'+id,kid.history);
@@ -1943,108 +2045,6 @@ function fillSyncSettings(){
   if(codeEl) codeEl.value=FB_CODE;
   if(FB_URL&&FB_CODE) showSyncStatus('✅ סנכרון פעיל','var(--mint)');
 }
-
-/* ===== GOOGLE DRIVE SYNC ===== */
-const GD={
-  fileId:null, accessToken:null,
-  async init(){
-    this.fileId=await DB.get('cs_gd_fileid');
-    this.accessToken=await DB.get('cs_gd_token');
-  },
-  async authGoogle(){
-    const clientId='1065661847825-d7j8q8v0j0m1n2p3q4r5s6t7u8v9w0x.apps.googleusercontent.com';
-    const redirectUri=window.location.origin+window.location.pathname;
-    const scope='https://www.googleapis.com/auth/drive.file';
-    const authUrl=`https://accounts.google.com/o/oauth2/v2/auth?client_id=${clientId}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=token&scope=${encodeURIComponent(scope)}&prompt=consent`;
-    window.location.href=authUrl;
-  },
-  async handleCallback(){
-    const hash=window.location.hash.substring(1);
-    const params=new URLSearchParams(hash);
-    const token=params.get('access_token');
-    if(token){ this.accessToken=token; await DB.set('cs_gd_token',token); return true; }
-    return false;
-  },
-  async syncToGoogleDrive(){
-    if(!this.accessToken){ toast('אתחול עם Google Drive קודם'); return false; }
-    try{
-      const data={
-        children:state.children,
-        chores:state.chores,
-        actions:state.actions,
-        rewards:state.rewards,
-        math:state.math,
-        streak:state.streak,
-        pin:state.pin,
-        kids:{}
-      };
-      for(const ch of state.children){
-        if(state.kid[ch.id]){
-          data.kids[ch.id]={
-            balance:state.kid[ch.id].balance,
-            history:state.kid[ch.id].history,
-            daily:state.kid[ch.id].daily,
-            mathDaily:state.kid[ch.id].mathDaily
-          };
-        }
-      }
-      const body=JSON.stringify(data);
-      if(!this.fileId){
-        const res=await fetch('https://www.googleapis.com/drive/v3/files?supportsAllDrives=true',{
-          method:'POST',
-          headers:{'Authorization':`Bearer ${this.accessToken}`,'Content-Type':'application/json'},
-          body:JSON.stringify({name:'CoinQuest_Backup.json',mimeType:'application/json',parents:['root']})
-        });
-        const file=await res.json();
-        if(file.id){ this.fileId=file.id; await DB.set('cs_gd_fileid',file.id); }
-      }
-      if(this.fileId){
-        await fetch(`https://www.googleapis.com/upload/drive/v3/files/${this.fileId}?uploadType=media&supportsAllDrives=true`,{
-          method:'PATCH',
-          headers:{'Authorization':`Bearer ${this.accessToken}`,'Content-Type':'application/json'},
-          body
-        });
-        toast('סנכרון עם Google Drive בוצע ✓');
-        return true;
-      }
-    }catch(e){ console.error(e); toast('שגיאה בסנכרון: '+e.message); return false; }
-  },
-  async syncFromGoogleDrive(){
-    if(!this.accessToken){ toast('אתחול עם Google Drive קודם'); return false; }
-    if(!this.fileId){ toast('אין קובץ גיבוי'); return false; }
-    try{
-      const res=await fetch(`https://www.googleapis.com/drive/v3/files/${this.fileId}?alt=media&supportsAllDrives=true`,{
-        headers:{'Authorization':`Bearer ${this.accessToken}`}
-      });
-      const data=await res.json();
-      if(data.children) state.children=data.children;
-      if(data.chores) state.chores=data.chores;
-      if(data.actions) state.actions=data.actions;
-      if(data.rewards) state.rewards=data.rewards;
-      if(data.math) state.math=data.math;
-      if(data.streak) state.streak=data.streak;
-      if(data.pin) state.pin=data.pin;
-      if(data.kids){
-        for(const [id,kid] of Object.entries(data.kids)){
-          state.kid[id]=kid;
-          await DB.set('cs_bal_'+id,kid.balance);
-          await DB.set('cs_hist_'+id,kid.history);
-          await DB.set('cs_daily_'+id,kid.daily);
-          await DB.set('cs_mathd_'+id,kid.mathDaily);
-        }
-      }
-      await DB.set('cs_children',state.children);
-      await DB.set('cs_chores',state.chores);
-      await DB.set('cs_actions',state.actions);
-      await DB.set('cs_rewards',state.rewards);
-      await DB.set('cs_math',state.math);
-      await DB.set('cs_streak',state.streak);
-      await DB.set('cs_pin',state.pin);
-      toast('נטענו נתונים מ-Google Drive ✓');
-      return true;
-    }catch(e){ console.error(e); toast('שגיאה בטעינה: '+e.message); return false; }
-  }
-};
 
 /* ===== DAILY EVENTS ===== */
 let shownReminderIds=new Set();
@@ -2209,8 +2209,6 @@ function closeEventReminder(){
   FB_URL=localStorage.getItem('cs_fb_url')||'';
   FB_CODE=localStorage.getItem('cs_fb_code')||'';
   await detectBackend();
-  await GD.init();
-  if(await GD.handleCallback()){ await loadState(); }
   await loadState();
   // Pull from Firebase on startup (overrides local if newer data exists)
   if(FB_URL&&FB_CODE){
