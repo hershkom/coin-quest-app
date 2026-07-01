@@ -941,9 +941,11 @@ const DB={
     return (k in mem)?mem[k]:null;
   },
   async set(k,v){ const s=JSON.stringify(v);
-    if(backend==='cloud'){ try{ await window.storage.set(k,s); return; }catch(e){} }
-    if(backend==='local'){ try{ localStorage.setItem(k,s); return; }catch(e){} }
-    mem[k]=v;
+    // Any persisted change schedules a debounced cloud push, so no mutation can
+    // be forgotten (previously many admin edits saved locally but never synced).
+    if(backend==='cloud'){ try{ await window.storage.set(k,s); scheduleSync(); return; }catch(e){} }
+    if(backend==='local'){ try{ localStorage.setItem(k,s); scheduleSync(); return; }catch(e){} }
+    mem[k]=v; scheduleSync();
   },
   async del(k){
     if(backend==='cloud'){ try{ await window.storage.delete(k); return; }catch(e){} }
@@ -1066,6 +1068,7 @@ async function loadState(){
   state.pin     =(await DB.get('cs_pin'))     ??'0525622636';
   state.calmMode=(await DB.get('cs_calm'))    ??false;
   state.badgeDefs=(await DB.get('cs_badgedefs'))??DEFAULT_BADGE_DEFS;
+  state.events=(await DB.get('cs_events'))??[];
   state.familyId=(await DB.get('cs_familyid'))??null;
   _hwmDate=(await DB.get('cs_hwm_date'))??todayStr();
   _hwmAdvanceMono=performance.now();
@@ -2318,6 +2321,9 @@ async function sendChatMessage(){
 
 /* ===== FIREBASE AUTO-SYNC (family data, keyed by state.familyId) ===== */
 let fbSyncTimer=null, fbSyncing=false;
+// Pushes are suspended until the initial load + pull settles, so a slow pull on
+// a mobile connection can't be clobbered by an early push of pre-pull state.
+let syncReady=false;
 
 function showSyncStatus(msg,color){
   const el=document.getElementById('syncStatus');
@@ -2330,7 +2336,8 @@ function buildSyncPayload(){
   // "test mode", so anything synced here is readable by anyone who knows the
   // family code. The PIN stays device-local; set it separately on each device.
   const payload={children:state.children,chores:state.chores,actions:state.actions,
-    rewards:state.rewards,math:state.math,streak:state.streak,badgeDefs:state.badgeDefs,hwmDate:_hwmDate,kids:{}};
+    rewards:state.rewards,math:state.math,streak:state.streak,badgeDefs:state.badgeDefs,
+    anchored:state.anchored,events:state.events||[],hwmDate:_hwmDate,kids:{}};
   for(const ch of state.children){
     const k=state.kid[ch.id];
     if(k){
@@ -2371,6 +2378,13 @@ async function pullFromFirebase(){
       await DB.set('cs_streak',state.streak);
     }
     if(data.badgeDefs){ state.badgeDefs=data.badgeDefs; await DB.set('cs_badgedefs',data.badgeDefs); }
+    if(data.anchored){
+      state.anchored=data.anchored;
+      // Firebase drops empty period arrays; renderAnchoredAdmin does a[period].forEach.
+      for(const p of ['morning','afternoon','evening']) if(!Array.isArray(state.anchored[p])) state.anchored[p]=[];
+      await DB.set('cs_anchored',state.anchored);
+    }
+    if(data.events){ state.events=data.events; await DB.set('cs_events',data.events); }
     // PIN is never synced (see buildSyncPayload). The high-water-mark date IS
     // synced so wiping/reinstalling the app on one device can't roll back the
     // anti-clock-tamper guard for the whole family.
@@ -2423,6 +2437,7 @@ async function forceSyncNow(){
 }
 
 function scheduleSync(){
+  if(!syncReady||!state.familyId) return; // suspended during load; no-op in local-only mode
   clearTimeout(fbSyncTimer);
   fbSyncTimer=setTimeout(pushToFirebase,3000);
 }
@@ -2524,6 +2539,7 @@ function authErrorText(e){
 
 async function handleSignedInUser(user){
   authUser=user;
+  syncReady=false; // suspend pushes while we read + pull, so nothing clobbers the cloud mid-load
   try{
     authStep('⏳ בודק את החשבון שלך...','#F5B82E');
     const rec=(await withTimeout(fbDb.ref('users/'+user.uid).once('value'),15000,'קריאת חשבון')).val();
@@ -2551,6 +2567,9 @@ async function handleSignedInUser(user){
     go('welcome');
     authStep('שגיאה בטעינה: '+authErrorText(e)+' — ודא שכללי האבטחה של Firebase פורסמו ונסה שוב','var(--coral)');
     toast('⚠️ שגיאת התחברות');
+  }finally{
+    // Load settled (success or fail) — now allow edits to auto-push to the cloud.
+    syncReady=true;
   }
 }
 
@@ -2695,7 +2714,7 @@ let shownReminderIds=new Set();
 function todayDateStr(){ const d=new Date(); return d.getFullYear()+'-'+(d.getMonth()+1)+'-'+d.getDate(); }
 
 async function loadEvents(){ return (await DB.get('cs_events'))||[]; }
-async function saveEvents(evs){ await DB.set('cs_events',evs); scheduleSync(); }
+async function saveEvents(evs){ state.events=evs; await DB.set('cs_events',evs); }
 
 function resizeImageToBase64(file, maxPx, cb){
   const reader=new FileReader();
@@ -2881,6 +2900,7 @@ window.addEventListener('unhandledrejection', (ev)=>{
     checkEventReminders();
 
     if(localStorage.getItem('cs_local_only')==='1'){
+      syncReady=true; // local-only: no familyId, so pushes stay no-ops anyway
       goHomeOrPicker();
       return;
     }
@@ -2891,8 +2911,9 @@ window.addEventListener('unhandledrejection', (ev)=>{
       const unsub=fbAuth.onAuthStateChanged(u=>{ unsub(); resolve(u); });
     });
     if(firstUser){
-      await handleSignedInUser(firstUser);
+      await handleSignedInUser(firstUser); // sets syncReady=true in its finally
     }else{
+      syncReady=true; // on the welcome screen with no account yet; sign-in will re-suspend via handleSignedInUser
       go('welcome');
     }
     // Keep listening for sign-ins triggered from the welcome screen (popup or
