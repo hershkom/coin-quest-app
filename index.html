@@ -391,6 +391,59 @@
   @keyframes pulse-mic{0%,100%{transform:scale(1);}50%{transform:scale(1.12);}}
   .chat-speak-btn{width:30px;height:30px;border-radius:50%;border:none;cursor:pointer;font-size:.9rem;background:#EEF0FF;margin-right:4px;flex-shrink:0;}
   .chat-speak-btn.playing{background:var(--mint);animation:pulse-mic .7s ease-in-out infinite;}
+
+  /* ---- Day strip (visual schedule) ---- */
+  .day-strip{display:flex;gap:6px;margin-top:14px;}
+  .day-step{flex:1;background:var(--card);border-radius:16px;padding:10px 4px;text-align:center;box-shadow:0 4px 12px rgba(124,92,252,.08);opacity:.5;transition:all .2s;}
+  .day-step.now{opacity:1;background:linear-gradient(140deg,var(--purple),var(--sky));color:#fff;box-shadow:0 8px 20px rgba(124,92,252,.3);transform:scale(1.05);}
+  .day-step.past{opacity:.35;}
+  .day-step .ds-ic{font-size:1.3rem;display:block;}
+  .day-step .ds-lbl{font-size:.62rem;font-weight:800;margin-top:2px;}
+
+  /* ---- First -> Then card ---- */
+  .ft-card{display:flex;align-items:center;gap:10px;background:var(--card);border-radius:22px;padding:16px;margin-top:14px;box-shadow:0 8px 22px rgba(124,92,252,.1);}
+  .ft-box{flex:1;text-align:center;border-radius:18px;padding:14px 8px;}
+  .ft-box.first{background:linear-gradient(135deg,var(--mint),var(--mint-d));color:#fff;}
+  .ft-box.then{background:#F2F0FB;color:var(--ink);}
+  .ft-box .ft-lbl{font-size:.68rem;font-weight:800;opacity:.85;margin-bottom:6px;}
+  .ft-box .ft-ic{font-size:1.8rem;display:block;}
+  .ft-box .ft-t{font-weight:800;font-size:.85rem;margin-top:4px;}
+  .ft-arrow{font-size:1.3rem;color:var(--muted);flex-shrink:0;}
+  .ft-done{text-align:center;background:linear-gradient(135deg,#FFE9B0,#FFC55C);border-radius:22px;padding:18px;margin-top:14px;font-weight:800;color:#5a3400;}
+
+  /* ---- Calm break button + breathing modal ---- */
+  .break-btn{width:38px;height:38px;border-radius:50%;background:linear-gradient(135deg,var(--mint),var(--mint-d));border:none;display:flex;align-items:center;justify-content:center;font-size:1.05rem;box-shadow:0 4px 12px rgba(39,201,154,.25);cursor:pointer;flex-shrink:0;}
+  .break-btn:active{transform:scale(.9);}
+  .calm-modal{position:fixed;inset:0;background:linear-gradient(160deg,#DFF5EE,#EAF6FF);display:none;align-items:center;justify-content:center;z-index:250;flex-direction:column;padding:24px;}
+  .calm-modal.show{display:flex;animation:fade .3s;}
+  .breath-circle{width:150px;height:150px;border-radius:50%;background:radial-gradient(circle at 35% 30%,var(--mint),var(--mint-d));box-shadow:0 10px 30px rgba(39,201,154,.35);animation:breathe 5.2s ease-in-out infinite;}
+  @keyframes breathe{0%,100%{transform:scale(.72);}50%{transform:scale(1);}}
+  .breath-txt{margin-top:26px;font-size:1.3rem;font-weight:800;color:#1a6b52;}
+  .calm-modal .cm-sub{margin-top:8px;color:#3a7d68;font-size:.92rem;font-weight:700;}
+
+  /* ---- Calm mode: dampen decorative motion/sound cues (breathing modal excluded) ---- */
+  .app.calm-mode .streak-banner,
+  .app.calm-mode .kid-card,
+  .app.calm-mode .hero .big-coin,
+  .app.calm-mode .picker-logo,
+  .app.calm-mode .chat-mic-btn.recording,
+  .app.calm-mode .chat-speak-btn.playing,
+  .app.calm-mode .event-card.imminent{animation:none!important;}
+
+  /* ---- Badges ---- */
+  .badges-banner{border:none;width:100%;text-align:right;font-family:inherit;cursor:pointer;border-radius:22px;padding:14px 18px;margin-top:12px;background:linear-gradient(135deg,#E6E1FF,#D9F0FF);box-shadow:0 6px 18px rgba(124,92,252,.14);display:flex;align-items:center;gap:12px;}
+  .badges-banner .bb-ic{font-size:1.7rem;flex-shrink:0;}
+  .badges-banner .bb-text{flex:1;font-weight:800;font-size:.95rem;color:var(--ink);}
+  .badges-banner .bb-arrow{color:var(--muted);}
+  .badge-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-top:10px;}
+  .badge-cell{background:var(--card);border-radius:20px;padding:16px 6px;text-align:center;box-shadow:0 6px 16px rgba(124,92,252,.1);}
+  .badge-cell.locked{opacity:.4;filter:grayscale(1);}
+  .badge-cell .bc-ic{font-size:2.1rem;display:block;}
+  .badge-cell .bc-lbl{font-size:.72rem;font-weight:800;margin-top:6px;color:var(--ink);}
+
+  /* ---- Reward savings progress ---- */
+  .rw-progress{background:#F2F0FB;border-radius:20px;height:8px;overflow:hidden;margin-top:6px;}
+  .rw-progress .fill{height:100%;border-radius:20px;background:linear-gradient(90deg,var(--gold),var(--gold-d));}
 </style>
 </head>
 <body>
@@ -401,6 +454,7 @@
       <span class="ps-text"><span class="ps-name" id="psName">—</span><span class="ps-sub">החלף ילד ▾</span></span>
     </button>
     <div class="top-right">
+      <button class="break-btn" id="breakBtn" title="הפסקה קטנה">🌿</button>
       <div class="balance-pill" id="balPill"><span class="coin">🪙</span><b id="balTop">0</b></div>
       <button class="gear" id="gearBtn" title="הורים">⚙️</button>
     </div>
@@ -424,6 +478,9 @@
         <div class="amount" id="balHero">0</div>
         <div class="amount-label">מטבעות שהרווחת</div>
       </div>
+      <div id="dayStripWrap"></div>
+      <div id="firstThenWrap"></div>
+
       <div class="section-title">⚡ מה עושים?</div>
       <div class="grid2">
         <button class="bigbtn scan" onclick="go('scan')"><span class="ic">📷</span>סורק QR<span class="sub">סרוק קוד וקבל מטבעות</span></button>
@@ -434,9 +491,17 @@
 
       <div id="eventsWrap"></div>
       <div id="streakBannerWrap"></div>
+      <div id="badgesBannerWrap"></div>
 
       <div class="section-title">🧹 המטלות של היום</div>
       <div id="choresList"></div>
+    </div>
+
+    <div class="view" id="view-badges">
+      <button class="backbtn" onclick="go('home')">→ חזרה</button>
+      <div class="section-title">🏅 התגים שלי</div>
+      <div class="card" id="badgesSummary" style="text-align:center;"></div>
+      <div class="badge-grid" id="badgeGrid"></div>
     </div>
 
     <div class="view" id="view-streak">
@@ -723,6 +788,13 @@
       </div>
       <div class="admin-pane" id="pane-settings" style="display:none;">
         <div class="card">
+          <div class="field" style="display:flex;align-items:center;justify-content:space-between;">
+            <label style="margin:0;">🌿 מצב רגוע (פחות אנימציות וצלילים)</label>
+            <button class="btn sm" id="calmToggle" onclick="toggleCalmMode()">כבוי</button>
+          </div>
+          <div class="card-sub" style="margin-top:8px;">מתאים לרגעים של עומס חושי. כפתור 🌿 בראש המסך פתוח לילד תמיד, בלי קשר להגדרה הזו.</div>
+        </div>
+        <div class="card">
           <div class="field"><label>שנה קוד הורים (PIN)</label><input id="setPin" type="number" placeholder="קוד חדש"></div>
           <button class="btn primary" onclick="savePin()">שמור קוד</button>
         </div>
@@ -796,6 +868,12 @@
     <button class="btn primary" style="font-size:1.1rem;padding:16px;" onclick="closeEventReminder()">👍 הבנתי!</button>
   </div>
 </div>
+<div class="calm-modal" id="calmModal">
+  <div class="breath-circle"></div>
+  <div class="breath-txt" id="breathTxt">שאיפה... 🌬️</div>
+  <div class="cm-sub">בוא ננשום לאט, ביחד</div>
+  <button class="btn mint" style="margin-top:30px;font-size:1.05rem;padding:16px 28px;width:auto;" onclick="closeCalmBreak()">😊 אני מוכן/ה להמשיך</button>
+</div>
 <div id="toast"></div>
 <script>
 /* ===== STORAGE: artifact window.storage + localStorage fallback ===== */
@@ -851,6 +929,53 @@ const DEFAULT_ANCHORED_TASKS={
   evening:[{id:'at_e1',label:'צחצוח שיניים',emoji:'🦷',points:5,max:2},{id:'at_e2',label:'אמבטיה',emoji:'🛁',points:5,max:1},{id:'at_e3',label:'קריאה לפני שינה',emoji:'📖',points:3,max:1}],
   sleep_time:20
 };
+const BADGE_DEFS=[
+  {id:'first_coin',  emoji:'🥇', label:'המטבע הראשון',    check:k=>k.balance>0||k.history.length>0},
+  {id:'streak_7',    emoji:'🔥', label:'שבוע ברצף',       check:()=>state.streak.best>=7},
+  {id:'streak_goal', emoji:'🏆', label:'אלוף האתגר',      check:()=>state.streak.best>=state.streak.goal},
+  {id:'math_50',     emoji:'🧮', label:'מלך החשבון',      check:k=>k.mathTotal>=50},
+  {id:'tasks_100',   emoji:'🧹', label:'גיבור המטלות',    check:k=>k.taskTotal>=100},
+  {id:'first_reward',emoji:'🎁', label:'הקנייה הראשונה',  check:k=>k.rewardsTotal>=1},
+];
+async function checkBadges(){
+  const k=cur(); if(!k) return;
+  const have=new Set(k.badges.map(b=>b.id));
+  let changed=false;
+  for(const b of BADGE_DEFS){
+    if(have.has(b.id)) continue;
+    if(b.check(k)){
+      k.badges.push({id:b.id,ts:Date.now()});
+      changed=true;
+      toast('🏅 תג חדש: '+b.label+' '+b.emoji);
+    }
+  }
+  if(changed) await DB.set('cs_badges_'+state.current,k.badges);
+  renderBadgesBanner();
+}
+function renderBadgesBanner(){
+  const wrap=document.getElementById('badgesBannerWrap'); if(!wrap) return;
+  const k=cur(); if(!k){ wrap.innerHTML=''; return; }
+  wrap.innerHTML=`<button class="badges-banner" onclick="go('badges')">
+    <span class="bb-ic">🏅</span>
+    <span class="bb-text">אספת ${k.badges.length} מתוך ${BADGE_DEFS.length} תגים</span>
+    <span class="bb-arrow">›</span>
+  </button>`;
+}
+function renderBadgesView(){
+  const k=cur(); if(!k) return;
+  const have=new Set(k.badges.map(b=>b.id));
+  document.getElementById('badgesSummary').innerHTML=
+    `<div style="font-size:2rem;font-weight:900;color:var(--purple);">🏅 ${k.badges.length} / ${BADGE_DEFS.length}</div>
+     <div class="card-sub">תגים שאספת עד היום</div>`;
+  const grid=document.getElementById('badgeGrid'); grid.innerHTML='';
+  BADGE_DEFS.forEach(b=>{
+    const got=have.has(b.id);
+    const cell=document.createElement('div');
+    cell.className='badge-cell'+(got?'':' locked');
+    cell.innerHTML=`<span class="bc-ic">${got?b.emoji:'❓'}</span><div class="bc-lbl">${esc(b.label)}</div>`;
+    grid.appendChild(cell);
+  });
+}
 
 /* ===== STATE ===== */
 let state={};
@@ -864,6 +989,7 @@ async function loadState(){
   state.streak  =(await DB.get('cs_streak'))  ??DEFAULT_STREAK;
   state.anchored=(await DB.get('cs_anchored'))??DEFAULT_ANCHORED_TASKS;
   state.pin     =(await DB.get('cs_pin'))     ??'0525622636';
+  state.calmMode=(await DB.get('cs_calm'))    ??false;
   _hwmDate=(await DB.get('cs_hwm_date'))??todayStr();
   _hwmAdvanceMono=performance.now();
   await DB.set('cs_hwm_date',_hwmDate);
@@ -876,6 +1002,10 @@ async function loadKid(id){
     history:  (await DB.get('cs_hist_'+id)) ??[],
     daily:    (await DB.get('cs_daily_'+id))??{date:'',counts:{}},
     mathDaily:(await DB.get('cs_mathd_'+id))??{date:'',done:0},
+    badges:   (await DB.get('cs_badges_'+id))??[],
+    mathTotal:(await DB.get('cs_matht_'+id)) ??0,
+    taskTotal:(await DB.get('cs_taskt_'+id)) ??0,
+    rewardsTotal:(await DB.get('cs_rwt_'+id))??0,
   };
   ensureTodayKid(id); return state.kid[id];
 }
@@ -991,8 +1121,10 @@ async function addPoints(n,label,type){
   if(k.history.length>120) k.history.pop();
   await DB.set('cs_bal_'+id,k.balance);
   await DB.set('cs_hist_'+id,k.history);
+  if(type==='spend'){ k.rewardsTotal=(k.rewardsTotal||0)+1; await DB.set('cs_rwt_'+id,k.rewardsTotal); }
   renderBalance(); coinBurst(); chime(type==='spend');
   scheduleSync();
+  checkBadges();
 }
 
 /* ===== NAV ===== */
@@ -1008,17 +1140,19 @@ function go(v){
   const onPicker=(v==='picker');
   document.getElementById('profileSwitch').style.visibility=onPicker?'hidden':'visible';
   document.getElementById('balPill').style.visibility=onPicker?'hidden':'visible';
-  document.getElementById('bottomnav').style.display=(onPicker||v==='admin'||v==='streak')?'none':'flex';
+  document.getElementById('breakBtn').style.visibility=onPicker?'hidden':'visible';
+  document.getElementById('bottomnav').style.display=(onPicker||v==='admin'||v==='streak'||v==='badges')?'none':'flex';
   // Update chores when switching to home view
   if(v==='home'&&state.current==='ariel') renderChores();
   window.scrollTo(0,0);
   if(v==='picker') renderPicker();
-  if(v==='home'){ renderChores(); renderStreakBanner(); renderEventsHome(); }
+  if(v==='home'){ renderChores(); renderStreakBanner(); renderEventsHome(); renderDayStrip(); renderFirstThen(); renderBadgesBanner(); }
   if(v==='scan') startCamera();
   if(v==='math') initMath();
   if(v==='rewards') renderRewards();
   if(v==='history') renderHistory();
   if(v==='streak') renderStreakView();
+  if(v==='badges') renderBadgesView();
 }
 
 /* ===== PROFILE PICKER ===== */
@@ -1165,8 +1299,10 @@ function redeemToken(raw){
   const used=k.daily.counts[id]||0;
   if(used>=maxd){ stopCamera(); modalMsg('🌟','כל הכבוד!','כבר השלמת את "'+label+'" '+maxd+' פעמים היום. נסה שוב מחר!'); return; }
   k.daily.counts[id]=used+1; DB.set('cs_daily_'+state.current,k.daily);
+  k.taskTotal=(k.taskTotal||0)+1; DB.set('cs_taskt_'+state.current,k.taskTotal);
   stopCamera();
   addPoints(pts,label,'scan');
+  renderFirstThen(); renderDayStrip();
   const emoji=task.emoji||'⭐';
   modalMsg('🎉','+'+pts+' מטבעות!','השלמת: '+label+' '+emoji);
 }
@@ -1202,6 +1338,7 @@ function mathCheck(){
   if(parseInt(mathStr)===mathCur.ans){
     if(k.mathDaily.done>=state.math.daily){ modalMsg('🏆','סיימת להיום!','פתרת את כל '+state.math.daily+' התרגילים המזכים. כל הכבוד!'); newProblem(); return; }
     k.mathDaily.done++; DB.set('cs_mathd_'+state.current,k.mathDaily);
+    k.mathTotal=(k.mathTotal||0)+1; DB.set('cs_matht_'+state.current,k.mathTotal);
     addPoints(state.math.pts,'תרגיל חשבון','math');
     toast('נכון! +'+state.math.pts+' 🪙');
     if(k.mathDaily.done>=state.math.daily){ setTimeout(()=>modalMsg('🏆','כל הכבוד!','סיימת את כל התרגילים המזכים להיום!'),300); }
@@ -1247,14 +1384,65 @@ function renderChores(){
     wrap.appendChild(row);
   });
 }
+
+/* ===== VISUAL DAY SCHEDULE + FIRST->THEN (for Ariel) ===== */
+function currentPeriodKey(){
+  const hour=new Date().getHours();
+  if(!state.anchored) return 'morning';
+  if(hour>=state.anchored.sleep_time||hour<5) return 'sleep';
+  return getTimeOfDay(hour);
+}
+function periodTaskList(period){
+  if(period==='sleep') return [{id:'night_sleep',label:'זמן שינה',emoji:'😴',points:2,max:1}];
+  return (state.anchored&&state.anchored[period])||[];
+}
+function renderDayStrip(){
+  const wrap=document.getElementById('dayStripWrap'); if(!wrap) return;
+  if(state.current!=='ariel'||currentView!=='home'){ wrap.innerHTML=''; return; }
+  const order=['morning','afternoon','evening','sleep'];
+  const labels={morning:['🌅','בוקר'],afternoon:['☀️','צהריים'],evening:['🌆','ערב'],sleep:['🛏️','שינה']};
+  const curIdx=order.indexOf(currentPeriodKey());
+  let html='<div class="day-strip">';
+  order.forEach((p,i)=>{
+    const cls=i===curIdx?'now':(i<curIdx?'past':'');
+    html+=`<div class="day-step ${cls}"><span class="ds-ic">${labels[p][0]}</span><span class="ds-lbl">${labels[p][1]}</span></div>`;
+  });
+  wrap.innerHTML=html+'</div>';
+}
+function renderFirstThen(){
+  const wrap=document.getElementById('firstThenWrap'); if(!wrap) return;
+  const k=cur();
+  if(state.current!=='ariel'||currentView!=='home'||!k){ wrap.innerHTML=''; return; }
+  ensureTodayKid(state.current);
+  const order=['morning','afternoon','evening','sleep'];
+  const curIdx=order.indexOf(currentPeriodKey());
+  let remaining=[];
+  for(let i=curIdx;i<order.length;i++){
+    remaining.push(...periodTaskList(order[i]).filter(t=>(k.daily.counts[t.id]||0)<t.max));
+  }
+  if(remaining.length===0){
+    wrap.innerHTML='<div class="ft-done">🎉 סיימת את כל המטלות של היום! כל הכבוד אריאל!</div>';
+    return;
+  }
+  const first=remaining[0], then=remaining[1];
+  wrap.innerHTML=`<div class="ft-card">
+    <div class="ft-box first"><div class="ft-lbl">קודם</div><span class="ft-ic">${first.emoji}</span><div class="ft-t">${esc(first.label)}</div></div>
+    <div class="ft-arrow">←</div>
+    <div class="ft-box then">${then
+      ?`<div class="ft-lbl">אחר כך</div><span class="ft-ic">${then.emoji}</span><div class="ft-t">${esc(then.label)}</div>`
+      :`<div class="ft-lbl">אחר כך</div><span class="ft-ic">🎉</span><div class="ft-t">סיימת!</div>`}</div>
+  </div>`;
+}
+
 function markChore(id){
   const ch=findTaskById(id); if(!ch) return;
   const k=cur(); ensureTodayKid(state.current);
   const used=k.daily.counts[id]||0;
   if(used>=ch.max) return;
   k.daily.counts[id]=used+1; DB.set('cs_daily_'+state.current,k.daily);
+  k.taskTotal=(k.taskTotal||0)+1; DB.set('cs_taskt_'+state.current,k.taskTotal);
   addPoints(ch.points, ch.label, 'chore');
-  renderChores();
+  renderChores(); renderFirstThen(); renderDayStrip();
 }
 
 /* ===== STREAK CHALLENGE (30-day clean streak) ===== */
@@ -1296,6 +1484,7 @@ async function markStreakCleanToday(){
   renderStreakBanner();
   if(currentView==='streak') renderStreakView();
   coinBurst();
+  checkBadges();
   if(justWon){
     modalMsg(s.rewardEmoji,'🏆 ניצחת באתגר!','השלמת '+s.goal+' ימים נקיים ברצף!\nהפרס שלך: '+s.rewardLabel+' '+s.rewardEmoji+'\nכל הכבוד גדול/ה!');
   } else {
@@ -1353,8 +1542,9 @@ function renderRewards(){
   const bal=cur().balance;
   state.rewards.forEach(rw=>{
     const can=bal>=rw.cost;
+    const pct=Math.min(100,Math.round((bal/rw.cost)*100));
     const row=document.createElement('div'); row.className='row';
-    row.innerHTML=`<div class="emoji">${rw.emoji}</div><div class="info"><div class="t">${esc(rw.label)}</div><div class="d">${rw.cost} מטבעות</div></div>`;
+    row.innerHTML=`<div class="emoji">${rw.emoji}</div><div class="info"><div class="t">${esc(rw.label)}</div><div class="d">${bal} / ${rw.cost} מטבעות</div>${can?'':`<div class="rw-progress"><div class="fill" style="width:${pct}%"></div></div>`}</div>`;
     const btn=document.createElement('button');
     btn.className='btn '+(can?'gold':'ghost')+' sm'; btn.textContent=can?'החלף':'אין מספיק'; btn.disabled=!can; btn.onclick=()=>redeemReward(rw);
     row.appendChild(btn); c.appendChild(row);
@@ -1400,7 +1590,12 @@ function adminTab(t){
   if(t==='math') fillMathConfig();
   if(t==='rewards') renderRewardsAdmin();
   if(t==='events') renderEventsAdmin();
-  if(t==='settings') fillSyncSettings();
+  if(t==='settings'){ fillSyncSettings(); fillCalmToggle(); }
+}
+function fillCalmToggle(){
+  const btn=document.getElementById('calmToggle'); if(!btn) return;
+  btn.textContent=state.calmMode?'פעיל ✓':'כבוי';
+  btn.className='btn sm '+(state.calmMode?'mint':'ghost');
 }
 function renderAnchoredAdmin(){
   const a=state.anchored;
@@ -1747,10 +1942,39 @@ function modalPin(onOk){
 }
 document.getElementById('gearBtn').onclick=openAdmin;
 
+/* ===== CALM MODE + BREAK BUTTON ===== */
+// The break button is deliberately NOT PIN-gated and does not touch coins/state —
+// a child needs self-regulation tools available instantly, with zero friction and
+// zero economic effect (so it can never be confused with, or abused as, a reward).
+let _breathTimer=null;
+function openCalmBreak(){
+  document.getElementById('calmModal').classList.add('show');
+  const txt=document.getElementById('breathTxt');
+  let phase=0;
+  const cycle=()=>{ txt.textContent=phase%2===0?'שאיפה... 🌬️':'נשיפה... 💨'; phase++; };
+  cycle();
+  clearInterval(_breathTimer);
+  _breathTimer=setInterval(cycle,2600);
+}
+function closeCalmBreak(){
+  document.getElementById('calmModal').classList.remove('show');
+  clearInterval(_breathTimer); _breathTimer=null;
+}
+document.getElementById('breakBtn').onclick=openCalmBreak;
+function applyCalmModeClass(){ document.querySelector('.app').classList.toggle('calm-mode',!!state.calmMode); }
+async function toggleCalmMode(){
+  state.calmMode=!state.calmMode;
+  await DB.set('cs_calm',state.calmMode);
+  applyCalmModeClass();
+  const btn=document.getElementById('calmToggle');
+  if(btn){ btn.textContent=state.calmMode?'פעיל ✓':'כבוי'; btn.className='btn sm '+(state.calmMode?'mint':'ghost'); }
+}
+
 /* ===== FX ===== */
 function coinBurst(){
   const E=['🪙','⭐','✨','🌟','💫'];
-  for(let i=0;i<14;i++){
+  const n=state.calmMode?4:14; // fewer particles in calm mode — less visual intensity
+  for(let i=0;i<n;i++){
     const s=document.createElement('div'); s.className='burst'; s.textContent=E[Math.floor(Math.random()*E.length)];
     s.style.left=(50+(Math.random()*30-15))+'%'; s.style.top='30%'; document.body.appendChild(s);
     const dx=(Math.random()*260-130), dy=-(Math.random()*180+80), rot=Math.random()*720-360;
@@ -1761,8 +1985,9 @@ let actx=null;
 function chime(low){
   try{ actx=actx||new (window.AudioContext||window.webkitAudioContext)();
     const notes=low?[392,330]:[523,659,784];
+    const vol=state.calmMode?0.07:0.18; // quieter in calm mode — less sensory intensity
     notes.forEach((f,i)=>{ const o=actx.createOscillator(),g=actx.createGain(); o.type='triangle'; o.frequency.value=f; o.connect(g); g.connect(actx.destination);
-      const t=actx.currentTime+i*0.09; g.gain.setValueAtTime(0,t); g.gain.linearRampToValueAtTime(.18,t+.02); g.gain.exponentialRampToValueAtTime(.001,t+.22); o.start(t); o.stop(t+.24); });
+      const t=actx.currentTime+i*0.09; g.gain.setValueAtTime(0,t); g.gain.linearRampToValueAtTime(vol,t+.02); g.gain.exponentialRampToValueAtTime(.001,t+.22); o.start(t); o.stop(t+.24); });
   }catch(e){}
 }
 let toastTimer=null;
@@ -2216,6 +2441,7 @@ function closeEventReminder(){
     if(pulled){ showSyncStatus('✅ נטען מהענן','var(--mint)'); }
   }
   const app=document.querySelector('.app');
+  applyCalmModeClass();
   // Start event reminder checker every minute
   setInterval(checkEventReminders, 60000);
   checkEventReminders();
