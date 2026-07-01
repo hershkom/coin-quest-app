@@ -2483,15 +2483,35 @@ async function signOutOfAccount(){
   });
 }
 
+// Race any promise against a timeout so a Realtime Database call that never
+// resolves AND never rejects (e.g. the socket can't reach the DB, or an auth
+// token isn't accepted) can't silently stall the whole sign-in forever.
+function withTimeout(promise, ms, label){
+  return Promise.race([
+    promise,
+    new Promise((_,rej)=>setTimeout(()=>{ const e=new Error('הפעולה נתקעה ('+label+', '+(ms/1000)+' שניות)'); e.code='app/timeout'; rej(e); }, ms))
+  ]);
+}
+// Persistent, visible status on the welcome screen. Unlike a toast it does NOT
+// auto-hide, so if the flow stalls the user can still read exactly where.
+function authStep(msg,color){
+  const el=document.getElementById('welcomeStatus');
+  if(el){ el.textContent=msg; el.style.color=color||'var(--ink2)'; }
+}
+function authErrorText(e){
+  return (e&&e.code?('['+e.code+'] '):'')+(e&&e.message||'שגיאה לא ידועה');
+}
+
 async function handleSignedInUser(user){
   authUser=user;
   try{
-    const rec=(await fbDb.ref('users/'+user.uid).once('value')).val();
+    authStep('⏳ בודק את החשבון שלך...','#F5B82E');
+    const rec=(await withTimeout(fbDb.ref('users/'+user.uid).once('value'),15000,'קריאת חשבון')).val();
     if(rec&&rec.familyId){
       state.familyId=rec.familyId;
       await DB.set('cs_familyid',state.familyId);
-      showSyncStatus('⏳ טוען את המשפחה שלך...','#F5B82E');
-      await pullFromFirebase();
+      authStep('⏳ טוען את המשפחה שלך...','#F5B82E');
+      await withTimeout(pullFromFirebase(),15000,'טעינת נתוני משפחה');
       showSyncStatus('✅ מחובר כ-'+(user.email||''),'var(--mint)');
       if(state.current&&state.children.find(c=>c.id===state.current)){
         await loadKid(state.current); renderBalance(); go('home');
@@ -2499,20 +2519,18 @@ async function handleSignedInUser(user){
         if(state.current==='ariel'){ app.classList.add('minecraft-mode'); addMinecraftDecorations(); }
       }else{ state.current=null; go('picker'); }
     }else{
+      authStep('');
       showOnboardChoice();
     }
   }catch(e){
-    // Any failure here (e.g. Realtime DB permission-denied for a brand-new
-    // user, or a flaky read) must NEVER be a silent unhandled rejection —
-    // this runs detached from signInWithGoogle()'s own try/catch (it's also
-    // invoked from the persistent onAuthStateChanged listener), so if we
-    // don't catch it here nothing else ever surfaces it to the user.
+    // Any failure here (permission-denied, a stalled read, etc.) must NEVER be
+    // a silent hang: this runs detached from signInWithGoogle()'s try/catch
+    // (it's invoked from the onAuthStateChanged listener), so surface it loudly
+    // and stay on a usable screen instead of a blank/idle one.
     console.error('handleSignedInUser failed', e);
     go('welcome');
-    const msg='שגיאה בטעינת החשבון: '+(e&&e.message||'נסה שוב')+' 🔁';
-    const el=document.getElementById('welcomeStatus');
-    if(el) el.textContent=msg;
-    toast('⚠️ '+msg);
+    authStep('שגיאה בטעינה: '+authErrorText(e)+' — ודא שכללי האבטחה של Firebase פורסמו ונסה שוב','var(--coral)');
+    toast('⚠️ שגיאת התחברות');
   }
 }
 
@@ -2535,30 +2553,44 @@ function showJoinFamily(){
 async function doJoinFamily(){
   const code=document.getElementById('joinCode').value.trim().toUpperCase();
   if(!code){ toast('הזן קוד'); return; }
-  const familyId=(await fbDb.ref('inviteCodes/'+code).once('value')).val();
-  if(!familyId){ toast('קוד לא נמצא 🤔'); return; }
-  await fbDb.ref('users/'+authUser.uid).set({familyId,role:'member',email:authUser.email||'',name:authUser.displayName||''});
-  state.familyId=familyId; await DB.set('cs_familyid',familyId);
-  closeModal();
-  showSyncStatus('⏳ טוען...','#F5B82E');
-  await pullFromFirebase();
-  toast('הצטרפת למשפחה! ✓');
-  go('picker');
+  const btn=document.getElementById('joinOk'); if(btn){ btn.disabled=true; btn.textContent='⏳ מצטרף...'; }
+  try{
+    const familyId=(await withTimeout(fbDb.ref('inviteCodes/'+code).once('value'),15000,'בדיקת קוד')).val();
+    if(!familyId){ toast('קוד לא נמצא 🤔'); if(btn){ btn.disabled=false; btn.textContent='הצטרף'; } return; }
+    await withTimeout(fbDb.ref('users/'+authUser.uid).set({familyId,role:'member',email:authUser.email||'',name:authUser.displayName||''}),15000,'שמירת חשבון');
+    state.familyId=familyId; await DB.set('cs_familyid',familyId);
+    closeModal();
+    await withTimeout(pullFromFirebase(),15000,'טעינת נתונים');
+    toast('הצטרפת למשפחה! ✓');
+    go('picker');
+  }catch(e){
+    console.error('doJoinFamily failed', e);
+    if(btn){ btn.disabled=false; btn.textContent='הצטרף'; }
+    toast('⚠️ שגיאה: '+authErrorText(e));
+  }
 }
 async function createNewFamily(){
-  const familyId='fam_'+randomId(14);
-  await fbDb.ref('users/'+authUser.uid).set({familyId,role:'owner',email:authUser.email||'',name:authUser.displayName||''});
-  state.familyId=familyId; await DB.set('cs_familyid',familyId);
-  closeModal();
-  if(hasExistingLocalData()){
-    // This device already has real family data (e.g. the app was used before
-    // accounts existed) — carry it into the new cloud family instead of
-    // wiping it with an empty onboarding wizard.
-    await pushToFirebase();
-    toast('המשפחה נוצרה עם הנתונים הקיימים במכשיר זה ✓');
-    go('picker');
-  }else{
-    showSetupWizard();
+  const btn=document.getElementById('obNew'); if(btn){ btn.disabled=true; btn.textContent='⏳ יוצר משפחה...'; }
+  try{
+    const familyId='fam_'+randomId(14);
+    await withTimeout(fbDb.ref('users/'+authUser.uid).set({familyId,role:'owner',email:authUser.email||'',name:authUser.displayName||''}),15000,'יצירת חשבון');
+    state.familyId=familyId; await DB.set('cs_familyid',familyId);
+    closeModal();
+    if(hasExistingLocalData()){
+      // This device already has real family data (e.g. the app was used before
+      // accounts existed) — carry it into the new cloud family instead of
+      // wiping it with an empty onboarding wizard.
+      await withTimeout(pushToFirebase(),15000,'שמירת נתונים');
+      toast('המשפחה נוצרה עם הנתונים הקיימים במכשיר זה ✓');
+      go('picker');
+    }else{
+      showSetupWizard();
+    }
+  }catch(e){
+    console.error('createNewFamily failed', e);
+    go('welcome');
+    authStep('שגיאה ביצירת המשפחה: '+authErrorText(e)+' — ודא שכללי האבטחה של Firebase פורסמו','var(--coral)');
+    toast('⚠️ שגיאה: '+authErrorText(e));
   }
 }
 
