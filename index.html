@@ -595,6 +595,7 @@
         <button class="atab" data-atab="math" onclick="adminTab('math')">➗ חשבון</button>
         <button class="atab" data-atab="rewards" onclick="adminTab('rewards')">🎁 פרסים</button>
         <button class="atab" data-atab="events" onclick="adminTab('events')">📅 אירועים</button>
+        <button class="atab" data-atab="badges" onclick="adminTab('badges')">🏅 תגים</button>
         <button class="atab" data-atab="settings" onclick="adminTab('settings')">🔧 הגדרות</button>
       </div>
       <div class="admin-pane" id="pane-children">
@@ -786,6 +787,22 @@
           <button class="btn primary" onclick="addEvent()">➕ הוסף אירוע</button>
         </div>
       </div>
+      <div class="admin-pane" id="pane-badges" style="display:none;">
+        <div class="card"><div class="card-h">תגי הישג</div><div class="card-sub">כל תג עוקב אחרי מדד אחד ומתי הוא נחשב "הושג". התגים משותפים לכל הילדים.</div></div>
+        <div id="badgesAdmin"></div>
+        <div class="card">
+          <div class="card-h" style="margin-bottom:10px;">➕ הוסף תג</div>
+          <div class="field"><label>שם התג</label><input id="newBdgLabel" placeholder="לדוגמה: אלוף השבוע"></div>
+          <div class="inline-row" style="margin-bottom:12px;">
+            <div class="field"><label>אימוג'י</label><input id="newBdgEmoji" placeholder="⭐" maxlength="2"></div>
+            <div class="field"><label>מדד</label>
+              <select id="newBdgMetric" onchange="onBdgMetricChange()"></select>
+            </div>
+            <div class="field" id="newBdgThresholdField"><label>סף להשגה</label><input id="newBdgThreshold" type="number" value="10" min="1"></div>
+          </div>
+          <button class="btn primary" onclick="addBadgeDef()">הוסף תג</button>
+        </div>
+      </div>
       <div class="admin-pane" id="pane-settings" style="display:none;">
         <div class="card">
           <div class="field" style="display:flex;align-items:center;justify-content:space-between;">
@@ -903,9 +920,13 @@ const DB={
 
 /* ===== DEFAULTS ===== */
 const DEFAULT_CHILDREN=[
-  {id:'ariel', name:'אריאל', emoji:'🦊', color:'#7C5CFC'},
-  {id:'noa',   name:'נועה',  emoji:'🐰', color:'#FF6B6B'},
+  {id:'ariel', name:'אריאל', emoji:'🦊', color:'#7C5CFC', useSchedule:true},
+  {id:'noa',   name:'נועה',  emoji:'🐰', color:'#FF6B6B', useSchedule:false},
 ];
+// Children saved before this field existed don't have it — fall back to the
+// original hardcoded behavior (schedule shown only for 'ariel') so upgrading
+// doesn't silently change anyone's home screen until the parent opts in.
+function childUsesSchedule(ch){ return ch?.useSchedule??(ch?.id==='ariel'); }
 const DEFAULT_CHORES=[
   {id:'chore_teeth', label:'צחצוח שיניים', emoji:'🦷', points:5, max:2},
   {id:'chore_toilet', label:'לשבת בשירותים', emoji:'🚽', points:3, max:6},
@@ -929,35 +950,55 @@ const DEFAULT_ANCHORED_TASKS={
   evening:[{id:'at_e1',label:'צחצוח שיניים',emoji:'🦷',points:5,max:2},{id:'at_e2',label:'אמבטיה',emoji:'🛁',points:5,max:1},{id:'at_e3',label:'קריאה לפני שינה',emoji:'📖',points:3,max:1}],
   sleep_time:20
 };
-const BADGE_DEFS=[
-  {id:'first_coin',  emoji:'🥇', label:'המטבע הראשון',    check:k=>k.balance>0||k.history.length>0},
-  {id:'streak_7',    emoji:'🔥', label:'שבוע ברצף',       check:()=>state.streak.best>=7},
-  {id:'streak_goal', emoji:'🏆', label:'אלוף האתגר',      check:()=>state.streak.best>=state.streak.goal},
-  {id:'math_50',     emoji:'🧮', label:'מלך החשבון',      check:k=>k.mathTotal>=50},
-  {id:'tasks_100',   emoji:'🧹', label:'גיבור המטלות',    check:k=>k.taskTotal>=100},
-  {id:'first_reward',emoji:'🎁', label:'הקנייה הראשונה',  check:k=>k.rewardsTotal>=1},
+// Fixed set of measurable things a badge can track. 'threshold' metrics compare
+// a running number to an admin-set target; 'goal' metrics are a fixed yes/no
+// condition (no threshold to configure). The parent picks metric+threshold —
+// the underlying formula stays in code so it can't be broken by a typo.
+const BADGE_METRICS={
+  totalEarned: {label:'סה״כ מטבעות שהרוויח (אי פעם)', kind:'threshold', get:k=>(k.history||[]).reduce((s,h)=>s+(h.points>0?h.points:0),0)},
+  streakBest:  {label:'שיא ימים נקיים ברצף',            kind:'threshold', get:()=>state.streak.best},
+  mathTotal:   {label:'תרגילי חשבון שנפתרו (סה״כ)',     kind:'threshold', get:k=>k.mathTotal||0},
+  taskTotal:   {label:'מטלות/פעולות שהושלמו (סה״כ)',    kind:'threshold', get:k=>k.taskTotal||0},
+  rewardsTotal:{label:'פרסים שנקנו (סה״כ)',              kind:'threshold', get:k=>k.rewardsTotal||0},
+  streakGoal:  {label:'השלמת את כל אתגר הרצף',           kind:'goal',      get:()=>state.streak.best>=state.streak.goal},
+};
+const DEFAULT_BADGE_DEFS=[
+  {id:'first_coin',  emoji:'🥇', label:'המטבע הראשון',   metric:'totalEarned',  threshold:1},
+  {id:'streak_7',    emoji:'🔥', label:'שבוע ברצף',      metric:'streakBest',   threshold:7},
+  {id:'streak_goal', emoji:'🏆', label:'אלוף האתגר',     metric:'streakGoal',   threshold:null},
+  {id:'math_50',     emoji:'🧮', label:'מלך החשבון',     metric:'mathTotal',    threshold:50},
+  {id:'tasks_100',   emoji:'🧹', label:'גיבור המטלות',   metric:'taskTotal',    threshold:100},
+  {id:'first_reward',emoji:'🎁', label:'הקנייה הראשונה', metric:'rewardsTotal', threshold:1},
 ];
+function badgeIsEarned(def,k){
+  const m=BADGE_METRICS[def.metric]; if(!m) return false;
+  return m.kind==='goal' ? !!m.get(k) : m.get(k)>=(def.threshold||0);
+}
 async function checkBadges(){
   const k=cur(); if(!k) return;
   const have=new Set(k.badges.map(b=>b.id));
   let changed=false;
-  for(const b of BADGE_DEFS){
-    if(have.has(b.id)) continue;
-    if(b.check(k)){
-      k.badges.push({id:b.id,ts:Date.now()});
+  for(const def of state.badgeDefs){
+    if(have.has(def.id)) continue;
+    if(badgeIsEarned(def,k)){
+      k.badges.push({id:def.id,ts:Date.now()});
       changed=true;
-      toast('🏅 תג חדש: '+b.label+' '+b.emoji);
+      toast('🏅 תג חדש: '+def.label+' '+def.emoji);
     }
   }
   if(changed) await DB.set('cs_badges_'+state.current,k.badges);
   renderBadgesBanner();
+}
+function earnedBadgeCount(k){
+  const ids=new Set(state.badgeDefs.map(d=>d.id));
+  return k.badges.filter(b=>ids.has(b.id)).length;
 }
 function renderBadgesBanner(){
   const wrap=document.getElementById('badgesBannerWrap'); if(!wrap) return;
   const k=cur(); if(!k){ wrap.innerHTML=''; return; }
   wrap.innerHTML=`<button class="badges-banner" onclick="go('badges')">
     <span class="bb-ic">🏅</span>
-    <span class="bb-text">אספת ${k.badges.length} מתוך ${BADGE_DEFS.length} תגים</span>
+    <span class="bb-text">אספת ${earnedBadgeCount(k)} מתוך ${state.badgeDefs.length} תגים</span>
     <span class="bb-arrow">›</span>
   </button>`;
 }
@@ -965,10 +1006,10 @@ function renderBadgesView(){
   const k=cur(); if(!k) return;
   const have=new Set(k.badges.map(b=>b.id));
   document.getElementById('badgesSummary').innerHTML=
-    `<div style="font-size:2rem;font-weight:900;color:var(--purple);">🏅 ${k.badges.length} / ${BADGE_DEFS.length}</div>
+    `<div style="font-size:2rem;font-weight:900;color:var(--purple);">🏅 ${earnedBadgeCount(k)} / ${state.badgeDefs.length}</div>
      <div class="card-sub">תגים שאספת עד היום</div>`;
   const grid=document.getElementById('badgeGrid'); grid.innerHTML='';
-  BADGE_DEFS.forEach(b=>{
+  state.badgeDefs.forEach(b=>{
     const got=have.has(b.id);
     const cell=document.createElement('div');
     cell.className='badge-cell'+(got?'':' locked');
@@ -990,6 +1031,7 @@ async function loadState(){
   state.anchored=(await DB.get('cs_anchored'))??DEFAULT_ANCHORED_TASKS;
   state.pin     =(await DB.get('cs_pin'))     ??'0525622636';
   state.calmMode=(await DB.get('cs_calm'))    ??false;
+  state.badgeDefs=(await DB.get('cs_badgedefs'))??DEFAULT_BADGE_DEFS;
   _hwmDate=(await DB.get('cs_hwm_date'))??todayStr();
   _hwmAdvanceMono=performance.now();
   await DB.set('cs_hwm_date',_hwmDate);
@@ -1142,8 +1184,6 @@ function go(v){
   document.getElementById('balPill').style.visibility=onPicker?'hidden':'visible';
   document.getElementById('breakBtn').style.visibility=onPicker?'hidden':'visible';
   document.getElementById('bottomnav').style.display=(onPicker||v==='admin'||v==='streak'||v==='badges')?'none':'flex';
-  // Update chores when switching to home view
-  if(v==='home'&&state.current==='ariel') renderChores();
   window.scrollTo(0,0);
   if(v==='picker') renderPicker();
   if(v==='home'){ renderChores(); renderStreakBanner(); renderEventsHome(); renderDayStrip(); renderFirstThen(); renderBadgesBanner(); }
@@ -1358,9 +1398,9 @@ function renderChores(){
   wrap.innerHTML='';
   const k=cur(); if(!k) return;
   ensureTodayKid(state.current);
-  // Use time-based tasks if current view is home and it's for Ariel
+  // Use time-based tasks if current view is home and this child has the schedule enabled
   let tasks=state.chores;
-  if(state.current==='ariel'&&currentView==='home'){
+  if(childUsesSchedule(curChild())&&currentView==='home'){
     tasks=getTasksForTimeOfDay();
     const timeHour=new Date().getHours();
     const hour=String(timeHour).padStart(2,'0');
@@ -1398,7 +1438,7 @@ function periodTaskList(period){
 }
 function renderDayStrip(){
   const wrap=document.getElementById('dayStripWrap'); if(!wrap) return;
-  if(state.current!=='ariel'||currentView!=='home'){ wrap.innerHTML=''; return; }
+  if(!childUsesSchedule(curChild())||currentView!=='home'){ wrap.innerHTML=''; return; }
   const order=['morning','afternoon','evening','sleep'];
   const labels={morning:['🌅','בוקר'],afternoon:['☀️','צהריים'],evening:['🌆','ערב'],sleep:['🛏️','שינה']};
   const curIdx=order.indexOf(currentPeriodKey());
@@ -1412,7 +1452,7 @@ function renderDayStrip(){
 function renderFirstThen(){
   const wrap=document.getElementById('firstThenWrap'); if(!wrap) return;
   const k=cur();
-  if(state.current!=='ariel'||currentView!=='home'||!k){ wrap.innerHTML=''; return; }
+  if(!childUsesSchedule(curChild())||currentView!=='home'||!k){ wrap.innerHTML=''; return; }
   ensureTodayKid(state.current);
   const order=['morning','afternoon','evening','sleep'];
   const curIdx=order.indexOf(currentPeriodKey());
@@ -1590,6 +1630,7 @@ function adminTab(t){
   if(t==='math') fillMathConfig();
   if(t==='rewards') renderRewardsAdmin();
   if(t==='events') renderEventsAdmin();
+  if(t==='badges') renderBadgesAdmin();
   if(t==='settings'){ fillSyncSettings(); fillCalmToggle(); }
 }
 function fillCalmToggle(){
@@ -1669,16 +1710,28 @@ async function addChild(){
 }
 function editChild(id){
   const ch=state.children.find(c=>c.id===id);
+  const usesSchedule=childUsesSchedule(ch);
   modalContent.innerHTML=`<div class="m-emoji">${ch.emoji}</div><h3>עריכת ${esc(ch.name)}</h3>
     <div class="field" style="text-align:right;"><label>שם</label><input id="ecName" value="${esc(ch.name)}" style="width:100%;border:2px solid var(--line);border-radius:13px;padding:11px;font-family:inherit;"></div>
     <div class="field" style="text-align:right;"><label>אימוג'י</label><input id="ecEmoji" value="${ch.emoji}" maxlength="2" style="width:100%;border:2px solid var(--line);border-radius:13px;padding:11px;font-family:inherit;"></div>
+    <div class="field" style="display:flex;align-items:center;justify-content:space-between;">
+      <label style="margin:0;">🕐 לוח יום ויזואלי (קודם→אחר כך)</label>
+      <button class="btn sm ${usesSchedule?'mint':'ghost'}" id="ecSchedule" type="button">${usesSchedule?'פעיל ✓':'כבוי'}</button>
+    </div>
     <div style="display:flex;gap:8px;margin-top:6px;"><button class="btn ghost" onclick="closeModal()">ביטול</button><button class="btn primary" id="ecOk">שמור</button></div>`;
   modalBg.classList.add('show');
+  let scheduleOn=usesSchedule;
+  document.getElementById('ecSchedule').onclick=()=>{
+    scheduleOn=!scheduleOn;
+    const b=document.getElementById('ecSchedule');
+    b.textContent=scheduleOn?'פעיל ✓':'כבוי'; b.className='btn sm '+(scheduleOn?'mint':'ghost');
+  };
   document.getElementById('ecOk').onclick=async()=>{
     ch.name=document.getElementById('ecName').value.trim()||ch.name;
     ch.emoji=document.getElementById('ecEmoji').value.trim()||ch.emoji;
+    ch.useSchedule=scheduleOn;
     await DB.set('cs_children',state.children);
-    if(id===state.current) renderBalance();
+    if(id===state.current){ renderBalance(); renderDayStrip(); renderFirstThen(); renderChores(); }
     closeModal(); renderChildrenAdmin(); toast('נשמר ✓');
   };
 }
@@ -1895,6 +1948,54 @@ async function addReward(){
   scheduleSync();
   document.getElementById('newRwLabel').value=''; document.getElementById('newRwEmoji').value=''; renderRewardsAdmin(); toast('נוסף! ✓');
 }
+
+/* ===== BADGES ADMIN ===== */
+function fillBadgeMetricSelect(sel,selected){
+  sel.innerHTML='';
+  Object.entries(BADGE_METRICS).forEach(([key,m])=>{
+    const o=document.createElement('option'); o.value=key; o.textContent=m.label;
+    if(key===selected) o.selected=true;
+    sel.appendChild(o);
+  });
+}
+function onBdgMetricChange(){
+  const metric=document.getElementById('newBdgMetric').value;
+  document.getElementById('newBdgThresholdField').style.display=BADGE_METRICS[metric].kind==='goal'?'none':'block';
+}
+function renderBadgesAdmin(){
+  const c=document.getElementById('badgesAdmin'); c.innerHTML='';
+  state.badgeDefs.forEach((b,i)=>{
+    const m=BADGE_METRICS[b.metric];
+    const row=document.createElement('div'); row.className='admin-row';
+    row.innerHTML=`<span class="emoji">${b.emoji}</span><span class="t">${esc(b.label)}<br><span style="font-size:.72rem;color:var(--muted);font-weight:400;">${esc(m?m.label:b.metric)}${m&&m.kind==='threshold'?' ≥ '+b.threshold:''}</span></span>`;
+    if(m&&m.kind==='threshold'){
+      const input=document.createElement('input');
+      input.type='number'; input.min='1'; input.value=b.threshold;
+      input.style.cssText='width:62px;border:2px solid var(--line);border-radius:10px;padding:7px;text-align:center;font-family:inherit;font-weight:700;';
+      input.onchange=()=>updateBadgeThreshold(i,input.value);
+      row.appendChild(input);
+    }
+    const del=document.createElement('button'); del.className='icon-btn'; del.textContent='🗑️'; del.onclick=()=>delBadgeDef(i);
+    row.appendChild(del);
+    c.appendChild(row);
+  });
+  fillBadgeMetricSelect(document.getElementById('newBdgMetric'));
+  onBdgMetricChange();
+}
+async function updateBadgeThreshold(i,v){ state.badgeDefs[i].threshold=parseInt(v)||1; await DB.set('cs_badgedefs',state.badgeDefs); scheduleSync(); toast('עודכן ✓'); }
+async function delBadgeDef(i){ state.badgeDefs.splice(i,1); await DB.set('cs_badgedefs',state.badgeDefs); scheduleSync(); renderBadgesAdmin(); toast('נמחק'); }
+async function addBadgeDef(){
+  const label=document.getElementById('newBdgLabel').value.trim(); if(!label){ toast('צריך שם לתג'); return; }
+  const emoji=document.getElementById('newBdgEmoji').value.trim()||'⭐';
+  const metric=document.getElementById('newBdgMetric').value;
+  const threshold=BADGE_METRICS[metric].kind==='goal'?null:(parseInt(document.getElementById('newBdgThreshold').value)||1);
+  state.badgeDefs.push({id:'bdg'+Date.now().toString(36),label,emoji,metric,threshold});
+  await DB.set('cs_badgedefs',state.badgeDefs);
+  scheduleSync();
+  document.getElementById('newBdgLabel').value=''; document.getElementById('newBdgEmoji').value='';
+  renderBadgesAdmin(); toast('נוסף! ✓');
+}
+
 async function savePin(){ const v=document.getElementById('setPin').value.trim(); if(v.length<3){ toast('קוד קצר מדי'); return; } state.pin=v; await DB.set('cs_pin',v); scheduleSync(); document.getElementById('setPin').value=''; toast('הקוד עודכן ✓'); }
 async function saveGroqKey(){ const v=document.getElementById('setGroqKey').value.trim(); if(!v){ toast('הכנס מפתח'); return; } GROQ_API_KEY=v; localStorage.setItem('cs_groq_key',v); document.getElementById('setGroqKey').value=''; document.getElementById('groqKeyStatus').textContent='✅ מפתח שמור'; toast('מפתח Groq נשמר ✓'); }
 
@@ -2185,7 +2286,7 @@ function buildSyncPayload(){
   // "test mode", so anything synced here is readable by anyone who knows the
   // family code. The PIN stays device-local; set it separately on each device.
   const payload={children:state.children,chores:state.chores,actions:state.actions,
-    rewards:state.rewards,math:state.math,streak:state.streak,hwmDate:_hwmDate,kids:{}};
+    rewards:state.rewards,math:state.math,streak:state.streak,badgeDefs:state.badgeDefs,hwmDate:_hwmDate,kids:{}};
   for(const ch of state.children){
     if(state.kid[ch.id]){
       payload.kids[ch.id]={balance:state.kid[ch.id].balance,history:state.kid[ch.id].history,
@@ -2219,6 +2320,7 @@ async function pullFromFirebase(){
     if(data.rewards){ state.rewards=data.rewards; await DB.set('cs_rewards',data.rewards); }
     if(data.math){ state.math=data.math; await DB.set('cs_math',data.math); }
     if(data.streak){ state.streak=data.streak; await DB.set('cs_streak',data.streak); }
+    if(data.badgeDefs){ state.badgeDefs=data.badgeDefs; await DB.set('cs_badgedefs',data.badgeDefs); }
     // PIN is never synced (see buildSyncPayload). The high-water-mark date IS
     // synced so wiping/reinstalling the app on one device can't roll back the
     // anti-clock-tamper guard for the whole family.
