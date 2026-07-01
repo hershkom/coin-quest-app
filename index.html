@@ -849,6 +849,20 @@
         <div class="card">
           <div class="card-h">☁️ החשבון שלי</div>
           <div id="accountStatus" style="font-size:.9rem;font-weight:700;margin-bottom:10px;"></div>
+          <div id="signInBox" style="display:none;">
+            <button class="btn primary" style="margin-bottom:8px;" onclick="signInWithGoogle('settingsAuthStatus')">
+              <span style="display:inline-flex;align-items:center;gap:10px;justify-content:center;">
+                <svg width="18" height="18" viewBox="0 0 48 48" style="flex-shrink:0;">
+                  <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/>
+                  <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/>
+                  <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/>
+                  <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/>
+                </svg>
+                התחברות עם Google
+              </span>
+            </button>
+            <div id="settingsAuthStatus" style="font-size:.82rem;color:var(--ink2);min-height:18px;margin-bottom:6px;"></div>
+          </div>
           <div id="syncStatus" style="font-size:.85rem;font-weight:700;margin-bottom:10px;min-height:20px;"></div>
           <div id="accountInviteBox" style="display:none;margin-bottom:12px;">
             <div class="card-sub" style="margin-bottom:6px;">קוד הזמנה להורה נוסף — כל מי שמזין אותו מצטרף לאותה משפחה:</div>
@@ -857,7 +871,7 @@
               <button class="icon-btn" onclick="copyInviteCode()" title="העתק">📋</button>
             </div>
           </div>
-          <button class="btn mint sm" style="margin-bottom:8px;" onclick="forceSyncNow().then(()=>toast('סונכרן ✓'))">🔄 סנכרן עכשיו</button>
+          <button class="btn mint sm" id="forceSyncBtn" style="margin-bottom:8px;display:none;" onclick="forceSyncNow().then(()=>toast('סונכרן ✓'))">🔄 סנכרן עכשיו</button>
           <button class="btn coral sm" id="signOutBtn" onclick="signOutOfAccount()" style="display:none;">🚪 התנתקות</button>
         </div>
       </div>
@@ -2461,13 +2475,17 @@ function randomInviteCode(){
   let s=''; for(let i=0;i<6;i++) s+=chars[Math.floor(Math.random()*chars.length)];
   return s;
 }
-async function signInWithGoogle(){
+async function signInWithGoogle(statusElId){
+  // statusElId lets this be called both from the welcome screen (#welcomeStatus)
+  // and from Admin Settings (#settingsAuthStatus) for a parent upgrading from
+  // local-only mode without ever seeing the welcome screen again.
+  const statusEl=()=>document.getElementById(statusElId||'welcomeStatus');
   // Deliberately popup-only, no signInWithRedirect fallback: the redirect flow
   // depends on sessionStorage surviving a full navigation away and back, which
   // breaks with "missing initial state" on mobile Chrome due to storage
   // partitioning. Popup has no such dependency and works reliably on modern
   // mobile browsers for a real user-gesture-triggered click like this one.
-  document.getElementById('welcomeStatus').textContent='⏳ מתחבר... (אם החלון שנפתח נשאר לבן, סגור אותו וחזור לכאן)';
+  if(statusEl()) statusEl().textContent='⏳ מתחבר... (אם החלון שנפתח נשאר לבן, סגור אותו וחזור לכאן)';
   const provider=new firebase.auth.GoogleAuthProvider();
   // signInWithPopup's promise can simply never settle — never resolve, never
   // reject — if the popup itself hangs blank (a known mobile-Chrome failure
@@ -2487,23 +2505,22 @@ async function signInWithGoogle(){
     // detached from this try/catch, so it has its OWN try/catch and its
     // own visible-error handling; don't assume "no error here" means the
     // sign-in fully completed.
-    document.getElementById('welcomeStatus').textContent='';
+    if(statusEl()) statusEl().textContent='';
   }catch(e){
     if(e&&e.code==='auth/popup-closed-by-user'){
-      document.getElementById('welcomeStatus').textContent='';
+      if(statusEl()) statusEl().textContent='';
     }else if(e&&e.code==='auth/popup-blocked'){
-      document.getElementById('welcomeStatus').textContent='הדפדפן חסם את חלון ההתחברות. אפשר חלונות קופצים לאתר הזה ונסה שוב.';
+      if(statusEl()) statusEl().textContent='הדפדפן חסם את חלון ההתחברות. אפשר חלונות קופצים לאתר הזה ונסה שוב.';
     }else if(e&&e.code==='app/popup-timeout'){
       // Promise.race doesn't cancel signInWithPopup or close the popup, so
       // the stuck popup window may still be open — tell the user to close it.
-      document.getElementById('welcomeStatus').textContent='ההתחברות נתקעה. סגור את החלון שנפתח (אם יש כזה) ונסה שוב, או בדוק שהדפדפן לא חוסם עוגיות של צד שלישי.';
+      if(statusEl()) statusEl().textContent='ההתחברות נתקעה. סגור את החלון שנפתח (אם יש כזה) ונסה שוב, או בדוק שהדפדפן לא חוסם עוגיות של צד שלישי.';
     }else{
-      document.getElementById('welcomeStatus').textContent='שגיאת התחברות: '+(e&&e.message||'נסה שוב');
+      if(statusEl()) statusEl().textContent='שגיאת התחברות: '+(e&&e.message||'נסה שוב');
     }
   }finally{
-    // Belt-and-suspenders: whatever happened above, guarantee some view is
-    // visible. signInWithGoogle() is user-gesture-triggered from
-    // view-welcome, so this is safe to call unconditionally.
+    // Belt-and-suspenders: guarantee some view is visible. Safe to call
+    // unconditionally — it only acts if literally zero views are active.
     ensureActiveView();
   }
 }
@@ -2539,6 +2556,11 @@ function authErrorText(e){
 
 async function handleSignedInUser(user){
   authUser=user;
+  // Reaching this function at all means we now have a real authenticated
+  // session — stop treating this device as local-only from here on (matters
+  // when a parent links an account later from Admin Settings, not just on
+  // first-ever load).
+  localStorage.removeItem('cs_local_only');
   syncReady=false; // suspend pushes while we read + pull, so nothing clobbers the cloud mid-load
   try{
     authStep('⏳ בודק את החשבון שלך...','#F5B82E');
@@ -2682,12 +2704,17 @@ async function fillAccountSettings(){
   const el=document.getElementById('accountStatus'); if(!el) return;
   const inviteBox=document.getElementById('accountInviteBox');
   if(!authUser){
-    el.innerHTML='🔒 מצב מקומי (לא מחובר לחשבון) — המידע נשמר רק במכשיר הזה';
+    el.innerHTML='🔒 לא מחובר לחשבון Google — המידע נשמר רק במכשיר הזה';
+    document.getElementById('signInBox').style.display='block';
+    document.getElementById('settingsAuthStatus').textContent='';
+    document.getElementById('forceSyncBtn').style.display='none';
     document.getElementById('signOutBtn').style.display='none';
     inviteBox.style.display='none';
     return;
   }
   el.innerHTML='✅ מחובר כ-<b>'+esc(authUser.email||authUser.displayName||'')+'</b>';
+  document.getElementById('signInBox').style.display='none';
+  document.getElementById('forceSyncBtn').style.display='block';
   document.getElementById('signOutBtn').style.display='block';
   const rec=(await fbDb.ref('users/'+authUser.uid).once('value')).val();
   if(rec&&rec.role==='owner'&&state.familyId){
@@ -2899,28 +2926,23 @@ window.addEventListener('unhandledrejection', (ev)=>{
     setInterval(checkEventReminders, 60000);
     checkEventReminders();
 
-    if(localStorage.getItem('cs_local_only')==='1'){
-      syncReady=true; // local-only: no familyId, so pushes stay no-ops anyway
-      goHomeOrPicker();
-      return;
-    }
-    // Ask Firebase Auth whether a session is already persisted on this device
-    // (resolves fast, no manual sign-in needed if so — this IS the "returning
-    // user gets everything automatically" behavior).
-    const firstUser=await new Promise(resolve=>{
-      const unsub=fbAuth.onAuthStateChanged(u=>{ unsub(); resolve(u); });
-    });
-    if(firstUser){
-      await handleSignedInUser(firstUser); // sets syncReady=true in its finally
-    }else{
-      syncReady=true; // on the welcome screen with no account yet; sign-in will re-suspend via handleSignedInUser
-      go('welcome');
-    }
-    // Keep listening for sign-ins triggered from the welcome screen (popup or
-    // redirect return) after this first check.
+    const localOnly=localStorage.getItem('cs_local_only')==='1';
+    // ONE persistent listener drives every sign-in, both the initial check on
+    // load and any later sign-in triggered from Admin Settings (a parent
+    // upgrading from local-only mode without ever seeing the welcome screen).
+    // Deliberately not a one-shot promise + a second ongoing listener: two
+    // separate registrations would both fire for the very first auth state
+    // and call handleSignedInUser twice concurrently.
+    let firstAuthCheckDone=false;
     fbAuth.onAuthStateChanged(async(u)=>{
       try{
-        if(u&&u.uid!==authUser?.uid) await handleSignedInUser(u);
+        if(u){
+          if(u.uid!==authUser?.uid) await handleSignedInUser(u);
+        }else if(!firstAuthCheckDone&&!localOnly){
+          // No persisted session on first load, and not in local-only mode.
+          syncReady=true;
+          go('welcome');
+        }
       }catch(e){
         // Belt-and-suspenders: handleSignedInUser already catches its own
         // errors, but this listener callback's promise is otherwise
@@ -2930,8 +2952,16 @@ window.addEventListener('unhandledrejection', (ev)=>{
         console.error('onAuthStateChanged handler failed', e);
         ensureActiveView();
         toast('⚠️ שגיאה בהתחברות: '+(e&&e.message||'נסה שוב'));
+      }finally{
+        firstAuthCheckDone=true;
       }
     });
+
+    if(localOnly){
+      syncReady=true; // no familyId yet; pushes stay no-ops unless/until an account gets linked
+      goHomeOrPicker();
+    }
+    // If not local-only, the listener above handles first-load navigation.
   }catch(e){
     // Startup itself failed (detectBackend/loadState threw, etc.) before any
     // go() call ever happened — without this, the page would be stuck on
