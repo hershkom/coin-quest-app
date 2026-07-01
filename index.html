@@ -1212,7 +1212,17 @@ function go(v){
   if((v!=='picker'&&v!=='admin'&&v!=='welcome') && !cur()){ v='picker'; }
   currentView=v;
   document.querySelectorAll('.view').forEach(el=>el.classList.remove('active'));
-  document.getElementById('view-'+v).classList.add('active');
+  const target=document.getElementById('view-'+v);
+  if(target){
+    target.classList.add('active');
+  }else{
+    // Unknown/missing view id: never leave the screen with nothing active —
+    // fall back to the welcome view rather than a blank page.
+    console.error('go(): no such view', v);
+    currentView='welcome';
+    const fallback=document.getElementById('view-welcome');
+    if(fallback) fallback.classList.add('active');
+  }
   document.querySelectorAll('.navbtn').forEach(b=>b.classList.toggle('active', b.dataset.nav===v));
   const onPicker=(v==='picker'||v==='welcome');
   document.getElementById('profileSwitch').style.visibility=onPicker?'hidden':'visible';
@@ -1228,6 +1238,18 @@ function go(v){
   if(v==='history') renderHistory();
   if(v==='streak') renderStreakView();
   if(v==='badges') renderBadgesView();
+}
+// Self-heal: if something upstream (a thrown error mid-render, a race
+// between two go() calls, etc.) ever leaves zero .view elements with
+// class="active", fall back to view-welcome with a visible error rather
+// than a blank screen. Call this from any catch-all error handler.
+function ensureActiveView(){
+  if(!document.querySelector('.view.active')){
+    console.error('ensureActiveView: no active view, self-healing to welcome');
+    go('welcome');
+    const el=document.getElementById('welcomeStatus');
+    if(el) el.textContent='משהו השתבש. נסה להתחבר שוב.';
+  }
 }
 
 /* ===== PROFILE PICKER ===== */
@@ -2410,19 +2432,44 @@ async function signInWithGoogle(){
   // breaks with "missing initial state" on mobile Chrome due to storage
   // partitioning. Popup has no such dependency and works reliably on modern
   // mobile browsers for a real user-gesture-triggered click like this one.
-  document.getElementById('welcomeStatus').textContent='⏳ מתחבר...';
+  document.getElementById('welcomeStatus').textContent='⏳ מתחבר... (אם החלון שנפתח נשאר לבן, סגור אותו וחזור לכאן)';
   const provider=new firebase.auth.GoogleAuthProvider();
+  // signInWithPopup's promise can simply never settle — never resolve, never
+  // reject — if the popup itself hangs blank (a known mobile-Chrome failure
+  // mode: storage-partitioning/third-party-cookie blocking can prevent the
+  // OAuth handler page's postMessage handshake back to this tab from ever
+  // completing). In that case NO catch branch below would ever run and the
+  // status line would say "מתחבר..." forever with zero visible error. Race
+  // against a timeout so this always resolves to a visible message.
+  const timeout=new Promise((_,rej)=>setTimeout(()=>rej({code:'app/popup-timeout'}),20000));
   try{
-    await fbAuth.signInWithPopup(provider);
+    await Promise.race([fbAuth.signInWithPopup(provider), timeout]);
+    // NOTE: signInWithPopup resolving successfully only means the OAuth
+    // handshake worked. The actual app takeover (reading users/{uid},
+    // pulling family data, etc.) happens in handleSignedInUser(), which is
+    // invoked asynchronously and independently by the onAuthStateChanged
+    // listener below/elsewhere — NOT by this function. That call is
+    // detached from this try/catch, so it has its OWN try/catch and its
+    // own visible-error handling; don't assume "no error here" means the
+    // sign-in fully completed.
     document.getElementById('welcomeStatus').textContent='';
   }catch(e){
     if(e&&e.code==='auth/popup-closed-by-user'){
       document.getElementById('welcomeStatus').textContent='';
     }else if(e&&e.code==='auth/popup-blocked'){
       document.getElementById('welcomeStatus').textContent='הדפדפן חסם את חלון ההתחברות. אפשר חלונות קופצים לאתר הזה ונסה שוב.';
+    }else if(e&&e.code==='app/popup-timeout'){
+      // Promise.race doesn't cancel signInWithPopup or close the popup, so
+      // the stuck popup window may still be open — tell the user to close it.
+      document.getElementById('welcomeStatus').textContent='ההתחברות נתקעה. סגור את החלון שנפתח (אם יש כזה) ונסה שוב, או בדוק שהדפדפן לא חוסם עוגיות של צד שלישי.';
     }else{
       document.getElementById('welcomeStatus').textContent='שגיאת התחברות: '+(e&&e.message||'נסה שוב');
     }
+  }finally{
+    // Belt-and-suspenders: whatever happened above, guarantee some view is
+    // visible. signInWithGoogle() is user-gesture-triggered from
+    // view-welcome, so this is safe to call unconditionally.
+    ensureActiveView();
   }
 }
 function continueLocalOnly(){
@@ -2438,20 +2485,34 @@ async function signOutOfAccount(){
 
 async function handleSignedInUser(user){
   authUser=user;
-  const rec=(await fbDb.ref('users/'+user.uid).once('value')).val();
-  if(rec&&rec.familyId){
-    state.familyId=rec.familyId;
-    await DB.set('cs_familyid',state.familyId);
-    showSyncStatus('⏳ טוען את המשפחה שלך...','#F5B82E');
-    await pullFromFirebase();
-    showSyncStatus('✅ מחובר כ-'+(user.email||''),'var(--mint)');
-    if(state.current&&state.children.find(c=>c.id===state.current)){
-      await loadKid(state.current); renderBalance(); go('home');
-      const app=document.querySelector('.app');
-      if(state.current==='ariel'){ app.classList.add('minecraft-mode'); addMinecraftDecorations(); }
-    }else{ state.current=null; go('picker'); }
-  }else{
-    showOnboardChoice();
+  try{
+    const rec=(await fbDb.ref('users/'+user.uid).once('value')).val();
+    if(rec&&rec.familyId){
+      state.familyId=rec.familyId;
+      await DB.set('cs_familyid',state.familyId);
+      showSyncStatus('⏳ טוען את המשפחה שלך...','#F5B82E');
+      await pullFromFirebase();
+      showSyncStatus('✅ מחובר כ-'+(user.email||''),'var(--mint)');
+      if(state.current&&state.children.find(c=>c.id===state.current)){
+        await loadKid(state.current); renderBalance(); go('home');
+        const app=document.querySelector('.app');
+        if(state.current==='ariel'){ app.classList.add('minecraft-mode'); addMinecraftDecorations(); }
+      }else{ state.current=null; go('picker'); }
+    }else{
+      showOnboardChoice();
+    }
+  }catch(e){
+    // Any failure here (e.g. Realtime DB permission-denied for a brand-new
+    // user, or a flaky read) must NEVER be a silent unhandled rejection —
+    // this runs detached from signInWithGoogle()'s own try/catch (it's also
+    // invoked from the persistent onAuthStateChanged listener), so if we
+    // don't catch it here nothing else ever surfaces it to the user.
+    console.error('handleSignedInUser failed', e);
+    go('welcome');
+    const msg='שגיאה בטעינת החשבון: '+(e&&e.message||'נסה שוב')+' 🔁';
+    const el=document.getElementById('welcomeStatus');
+    if(el) el.textContent=msg;
+    toast('⚠️ '+msg);
   }
 }
 
@@ -2743,32 +2804,72 @@ function goHomeOrPicker(){
     });
   }else{ state.current=null; go('picker'); }
 }
+// Last-resort global safety net: if ANY uncaught exception or unhandled
+// promise rejection reaches here (a bug in code we didn't anticipate,
+// a third-party script, etc.), never leave the user staring at a blank
+// screen with no feedback. This is intentionally broad/generic since it
+// exists to catch things the more specific try/catches above did not.
+window.addEventListener('error', (ev)=>{
+  console.error('Uncaught error', ev.error||ev.message);
+  ensureActiveView();
+  toast('⚠️ שגיאה: '+((ev.error&&ev.error.message)||ev.message||'נסה לרענן את הדף'));
+});
+window.addEventListener('unhandledrejection', (ev)=>{
+  console.error('Unhandled promise rejection', ev.reason);
+  ensureActiveView();
+  toast('⚠️ שגיאה: '+((ev.reason&&ev.reason.message)||'נסה לרענן את הדף'));
+});
 (async function(){
-  GROQ_API_KEY=localStorage.getItem('cs_groq_key')||'';
-  await detectBackend();
-  await loadState();
-  applyCalmModeClass();
-  setInterval(checkEventReminders, 60000);
-  checkEventReminders();
+  try{
+    GROQ_API_KEY=localStorage.getItem('cs_groq_key')||'';
+    await detectBackend();
+    await loadState();
+    applyCalmModeClass();
+    setInterval(checkEventReminders, 60000);
+    checkEventReminders();
 
-  if(localStorage.getItem('cs_local_only')==='1'){
-    goHomeOrPicker();
-    return;
+    if(localStorage.getItem('cs_local_only')==='1'){
+      goHomeOrPicker();
+      return;
+    }
+    // Ask Firebase Auth whether a session is already persisted on this device
+    // (resolves fast, no manual sign-in needed if so — this IS the "returning
+    // user gets everything automatically" behavior).
+    const firstUser=await new Promise(resolve=>{
+      const unsub=fbAuth.onAuthStateChanged(u=>{ unsub(); resolve(u); });
+    });
+    if(firstUser){
+      await handleSignedInUser(firstUser);
+    }else{
+      go('welcome');
+    }
+    // Keep listening for sign-ins triggered from the welcome screen (popup or
+    // redirect return) after this first check.
+    fbAuth.onAuthStateChanged(async(u)=>{
+      try{
+        if(u&&u.uid!==authUser?.uid) await handleSignedInUser(u);
+      }catch(e){
+        // Belt-and-suspenders: handleSignedInUser already catches its own
+        // errors, but this listener callback's promise is otherwise
+        // unobserved by any caller, so a throw here (or one from a future
+        // edit that forgets the inner try/catch) would again be a silent
+        // unhandled rejection. Never let that happen invisibly.
+        console.error('onAuthStateChanged handler failed', e);
+        ensureActiveView();
+        toast('⚠️ שגיאה בהתחברות: '+(e&&e.message||'נסה שוב'));
+      }
+    });
+  }catch(e){
+    // Startup itself failed (detectBackend/loadState threw, etc.) before any
+    // go() call ever happened — without this, the page would be stuck on
+    // whatever the raw HTML rendered (no .view has "active" yet at this
+    // point), i.e. exactly the silent blank-screen symptom.
+    console.error('App init failed', e);
+    ensureActiveView();
+    const el=document.getElementById('welcomeStatus');
+    if(el) el.textContent='שגיאה בטעינת האפליקציה: '+(e&&e.message||'נסה לרענן את הדף');
+    toast('⚠️ שגיאה בטעינת האפליקציה');
   }
-  // Ask Firebase Auth whether a session is already persisted on this device
-  // (resolves fast, no manual sign-in needed if so — this IS the "returning
-  // user gets everything automatically" behavior).
-  const firstUser=await new Promise(resolve=>{
-    const unsub=fbAuth.onAuthStateChanged(u=>{ unsub(); resolve(u); });
-  });
-  if(firstUser){
-    await handleSignedInUser(firstUser);
-  }else{
-    go('welcome');
-  }
-  // Keep listening for sign-ins triggered from the welcome screen (popup or
-  // redirect return) after this first check.
-  fbAuth.onAuthStateChanged(async(u)=>{ if(u&&u.uid!==authUser?.uid) await handleSignedInUser(u); });
 })();
 </script>
 </body>
