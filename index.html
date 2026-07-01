@@ -7,6 +7,9 @@
 <link href="https://fonts.googleapis.com/css2?family=Varela+Round&family=Heebo:wght@400;500;700;800;900&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jsQR/1.4.0/jsQR.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
 <style>
   :root{
     --gold:#F5B82E; --gold-d:#D99409; --gold-l:#FFE38A;
@@ -462,6 +465,27 @@
 
   <div class="main">
 
+    <div class="view" id="view-welcome">
+      <div class="picker" style="padding-top:70px;">
+        <div class="picker-logo">🪙</div>
+        <h2 class="picker-title">כספת המטבעות</h2>
+        <div class="picker-sub">התחבר כדי לשמור ולסנכרן את המשפחה שלך בין מכשירים</div>
+        <button class="btn primary" style="margin-top:26px;font-size:1.02rem;padding:16px;" onclick="signInWithGoogle()">
+          <span style="display:inline-flex;align-items:center;gap:10px;justify-content:center;">
+            <svg width="20" height="20" viewBox="0 0 48 48" style="flex-shrink:0;">
+              <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/>
+              <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/>
+              <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/>
+              <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/>
+            </svg>
+            התחברות עם Google
+          </span>
+        </button>
+        <button class="btn ghost" style="margin-top:10px;" onclick="continueLocalOnly()">המשך בלי חשבון (במכשיר הזה בלבד)</button>
+        <div id="welcomeStatus" style="margin-top:14px;font-size:.85rem;color:var(--ink2);min-height:20px;"></div>
+      </div>
+    </div>
+
     <div class="view" id="view-picker">
       <div class="picker">
         <div class="picker-logo">🪙</div>
@@ -823,22 +847,18 @@
           <button class="btn primary" onclick="saveGroqKey()">שמור מפתח</button>
         </div>
         <div class="card">
-          <div class="card-h">☁️ סנכרון בין מכשירים</div>
-          <div class="card-sub" style="margin-bottom:12px;">הגדר פעם אחת — ישמר אוטומטית בכל מכשיר</div>
+          <div class="card-h">☁️ החשבון שלי</div>
+          <div id="accountStatus" style="font-size:.9rem;font-weight:700;margin-bottom:10px;"></div>
           <div id="syncStatus" style="font-size:.85rem;font-weight:700;margin-bottom:10px;min-height:20px;"></div>
-          <div class="field"><label>Firebase Database URL</label><input id="setFbUrl" type="url" placeholder="https://xxx-default-rtdb.firebaseio.com"></div>
-          <div class="field"><label>קוד משפחה (סיסמה משותפת לכל המכשירים)</label><input id="setFamilyCode" type="text" placeholder="לדוגמה: הרש2024"></div>
-          <button class="btn primary" onclick="saveSyncSettings()">💾 שמור והפעל סנכרון</button>
-          <button class="btn mint" style="margin-top:8px;" onclick="forceSyncNow()">🔄 סנכרן עכשיו</button>
-        </div>
-        <div class="card" style="background:#F7F6FC;">
-          <div class="card-sub" style="font-size:.82rem;line-height:1.7;">
-            💡 <b>הוראות:</b><br>
-            1. כנס ל-console.firebase.google.com<br>
-            2. צור פרויקט → Realtime Database → Test mode<br>
-            3. הדבק את ה-URL + בחר קוד משפחה<br>
-            4. כל המכשירים עם אותו קוד מסתנכרנים אוטומטית
+          <div id="accountInviteBox" style="display:none;margin-bottom:12px;">
+            <div class="card-sub" style="margin-bottom:6px;">קוד הזמנה להורה נוסף — כל מי שמזין אותו מצטרף לאותה משפחה:</div>
+            <div style="display:flex;gap:8px;align-items:center;">
+              <div class="qr-token" id="inviteCodeText" style="flex:1;font-size:1.15rem;text-align:center;letter-spacing:3px;font-weight:800;"></div>
+              <button class="icon-btn" onclick="copyInviteCode()" title="העתק">📋</button>
+            </div>
           </div>
+          <button class="btn mint sm" style="margin-bottom:8px;" onclick="forceSyncNow().then(()=>toast('סונכרן ✓'))">🔄 סנכרן עכשיו</button>
+          <button class="btn coral sm" id="signOutBtn" onclick="signOutOfAccount()" style="display:none;">🚪 התנתקות</button>
         </div>
       </div>
     </div>
@@ -893,6 +913,20 @@
 </div>
 <div id="toast"></div>
 <script>
+/* ===== FIREBASE APP INIT (shared by every family — see AUTH section below) ===== */
+const firebaseConfig={
+  apiKey:"AIzaSyAc2Wqz_WHR_AisyUzUm-6-U9EvBFhjrPo",
+  authDomain:"coin-quest-app.firebaseapp.com",
+  databaseURL:"https://coin-quest-app-default-rtdb.europe-west1.firebasedatabase.app",
+  projectId:"coin-quest-app",
+  storageBucket:"coin-quest-app.firebasestorage.app",
+  messagingSenderId:"370682774257",
+  appId:"1:370682774257:web:cdb665285cc7b14e1f9f50",
+};
+firebase.initializeApp(firebaseConfig);
+const fbAuth=firebase.auth(), fbDb=firebase.database();
+let authUser=null;
+
 /* ===== STORAGE: artifact window.storage + localStorage fallback ===== */
 const mem={}; let backend='mem';
 async function detectBackend(){
@@ -1032,6 +1066,7 @@ async function loadState(){
   state.pin     =(await DB.get('cs_pin'))     ??'0525622636';
   state.calmMode=(await DB.get('cs_calm'))    ??false;
   state.badgeDefs=(await DB.get('cs_badgedefs'))??DEFAULT_BADGE_DEFS;
+  state.familyId=(await DB.get('cs_familyid'))??null;
   _hwmDate=(await DB.get('cs_hwm_date'))??todayStr();
   _hwmAdvanceMono=performance.now();
   await DB.set('cs_hwm_date',_hwmDate);
@@ -1174,12 +1209,12 @@ let currentView='picker';
 let clockInterval=null;
 function go(v){
   if(currentView==='scan' && v!=='scan') stopCamera();
-  if((v!=='picker'&&v!=='admin') && !cur()){ v='picker'; }
+  if((v!=='picker'&&v!=='admin'&&v!=='welcome') && !cur()){ v='picker'; }
   currentView=v;
   document.querySelectorAll('.view').forEach(el=>el.classList.remove('active'));
   document.getElementById('view-'+v).classList.add('active');
   document.querySelectorAll('.navbtn').forEach(b=>b.classList.toggle('active', b.dataset.nav===v));
-  const onPicker=(v==='picker');
+  const onPicker=(v==='picker'||v==='welcome');
   document.getElementById('profileSwitch').style.visibility=onPicker?'hidden':'visible';
   document.getElementById('balPill').style.visibility=onPicker?'hidden':'visible';
   document.getElementById('breakBtn').style.visibility=onPicker?'hidden':'visible';
@@ -1631,7 +1666,7 @@ function adminTab(t){
   if(t==='rewards') renderRewardsAdmin();
   if(t==='events') renderEventsAdmin();
   if(t==='badges') renderBadgesAdmin();
-  if(t==='settings'){ fillSyncSettings(); fillCalmToggle(); }
+  if(t==='settings'){ fillAccountSettings(); fillCalmToggle(); }
 }
 function fillCalmToggle(){
   const btn=document.getElementById('calmToggle'); if(!btn) return;
@@ -2259,27 +2294,14 @@ async function sendChatMessage(){
   }
 }
 
-/* ===== FIREBASE AUTO-SYNC ===== */
-let FB_URL='', FB_CODE='', fbSyncTimer=null, fbSyncing=false;
-
-function fbPath(){ return FB_URL+'/families/'+encodeURIComponent(FB_CODE)+'/data.json'; }
+/* ===== FIREBASE AUTO-SYNC (family data, keyed by state.familyId) ===== */
+let fbSyncTimer=null, fbSyncing=false;
 
 function showSyncStatus(msg,color){
   const el=document.getElementById('syncStatus');
   if(el){ el.textContent=msg; el.style.color=color||'var(--mint)'; }
 }
-
-async function saveSyncSettings(){
-  const url=(document.getElementById('setFbUrl')?.value||'').trim().replace(/\/$/,'');
-  const code=(document.getElementById('setFamilyCode')?.value||'').trim();
-  if(!url||!code){ toast('מלא URL וקוד משפחה'); return; }
-  FB_URL=url; FB_CODE=code;
-  localStorage.setItem('cs_fb_url',url);
-  localStorage.setItem('cs_fb_code',code);
-  showSyncStatus('⏳ מתחבר...','#F5B82E');
-  const ok=await forceSyncNow();
-  if(ok) toast('סנכרון הופעל! ✓');
-}
+function familyRef(){ return state.familyId?fbDb.ref('families/'+state.familyId+'/data'):null; }
 
 function buildSyncPayload(){
   // The parent PIN is intentionally NOT included: the Firebase DB is in open
@@ -2297,22 +2319,20 @@ function buildSyncPayload(){
 }
 
 async function pushToFirebase(){
-  if(!FB_URL||!FB_CODE||fbSyncing) return;
+  const ref=familyRef(); if(!ref||fbSyncing) return;
   fbSyncing=true;
   try{
-    const r=await fetch(fbPath(),{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(buildSyncPayload())});
-    if(r.ok) showSyncStatus('✅ מסונכרן '+new Date().toLocaleTimeString('he-IL',{hour:'2-digit',minute:'2-digit'}),'var(--mint)');
-    else showSyncStatus('⚠️ שגיאת שמירה','var(--coral)');
-  }catch(e){ showSyncStatus('⚠️ אין חיבור','var(--coral)'); }
+    await ref.set(buildSyncPayload());
+    showSyncStatus('✅ מסונכרן '+new Date().toLocaleTimeString('he-IL',{hour:'2-digit',minute:'2-digit'}),'var(--mint)');
+  }catch(e){ showSyncStatus('⚠️ שגיאת שמירה','var(--coral)'); }
   fbSyncing=false;
 }
 
 async function pullFromFirebase(){
-  if(!FB_URL||!FB_CODE) return false;
+  const ref=familyRef(); if(!ref) return false;
   try{
-    const r=await fetch(fbPath());
-    if(!r.ok) return false;
-    const data=await r.json();
+    const snap=await ref.once('value');
+    const data=snap.val();
     if(!data||typeof data!=='object') return false;
     if(data.children){ state.children=data.children; await DB.set('cs_children',data.children); }
     if(data.chores){ state.chores=data.chores; await DB.set('cs_chores',data.chores); }
@@ -2365,12 +2385,189 @@ function scheduleSync(){
   fbSyncTimer=setTimeout(pushToFirebase,3000);
 }
 
-function fillSyncSettings(){
-  const urlEl=document.getElementById('setFbUrl');
-  const codeEl=document.getElementById('setFamilyCode');
-  if(urlEl) urlEl.value=FB_URL;
-  if(codeEl) codeEl.value=FB_CODE;
-  if(FB_URL&&FB_CODE) showSyncStatus('✅ סנכרון פעיל','var(--mint)');
+/* ===== ACCOUNTS: Google sign-in, family auto-provisioning, invite codes =====
+   One Google account = one family. A family is an opaque familyId; users/{uid}
+   maps a signed-in account to the familyId it belongs to (role owner|member),
+   so a second parent can join the SAME family via an invite code without ever
+   sharing a Google login. See the security rules doc for how this is enforced
+   server-side (auth.uid must resolve to $familyId via users/{uid}/familyId). */
+function hasExistingLocalData(){
+  return localStorage.getItem('cs_children')!==null || localStorage.getItem('cs_bal_ariel')!==null;
+}
+function randomId(len){
+  const chars='abcdefghjkmnpqrstuvwxyz23456789';
+  let s=''; for(let i=0;i<len;i++) s+=chars[Math.floor(Math.random()*chars.length)];
+  return s;
+}
+function randomInviteCode(){
+  const chars='ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // no ambiguous chars (0/O, 1/I)
+  let s=''; for(let i=0;i<6;i++) s+=chars[Math.floor(Math.random()*chars.length)];
+  return s;
+}
+async function signInWithGoogle(){
+  document.getElementById('welcomeStatus').textContent='⏳ מתחבר...';
+  const provider=new firebase.auth.GoogleAuthProvider();
+  try{
+    await fbAuth.signInWithPopup(provider);
+  }catch(e){
+    if(e&&(e.code==='auth/popup-blocked'||e.code==='auth/cancelled-popup-request')){
+      try{ await fbAuth.signInWithRedirect(provider); }catch(e2){ document.getElementById('welcomeStatus').textContent='שגיאת התחברות: '+(e2.message||''); }
+    }else if(e&&e.code!=='auth/popup-closed-by-user'){
+      document.getElementById('welcomeStatus').textContent='שגיאת התחברות: '+(e.message||'');
+    }else{
+      document.getElementById('welcomeStatus').textContent='';
+    }
+  }
+}
+function continueLocalOnly(){
+  localStorage.setItem('cs_local_only','1');
+  go('picker');
+}
+async function signOutOfAccount(){
+  modalConfirm('🚪','להתנתק?','תוכל להתחבר שוב בכל עת עם אותו חשבון Google ולראות את כל המידע שלך.', async()=>{
+    await fbAuth.signOut();
+    location.reload();
+  });
+}
+
+async function handleSignedInUser(user){
+  authUser=user;
+  const rec=(await fbDb.ref('users/'+user.uid).once('value')).val();
+  if(rec&&rec.familyId){
+    state.familyId=rec.familyId;
+    await DB.set('cs_familyid',state.familyId);
+    showSyncStatus('⏳ טוען את המשפחה שלך...','#F5B82E');
+    await pullFromFirebase();
+    showSyncStatus('✅ מחובר כ-'+(user.email||''),'var(--mint)');
+    if(state.current&&state.children.find(c=>c.id===state.current)){
+      await loadKid(state.current); renderBalance(); go('home');
+      const app=document.querySelector('.app');
+      if(state.current==='ariel'){ app.classList.add('minecraft-mode'); addMinecraftDecorations(); }
+    }else{ state.current=null; go('picker'); }
+  }else{
+    showOnboardChoice();
+  }
+}
+
+function showOnboardChoice(){
+  modalContent.innerHTML=`<div class="m-emoji">👋</div><h3>ברוך הבא!</h3><p>זו הפעם הראשונה שלך כאן. איך תרצה להתחיל?</p>
+    <button class="btn primary" id="obNew" style="margin-bottom:8px;">🆕 יצירת משפחה חדשה</button>
+    <button class="btn ghost" id="obJoin">🔗 הצטרפות עם קוד הזמנה</button>`;
+  modalBg.classList.add('show');
+  document.getElementById('obNew').onclick=createNewFamily;
+  document.getElementById('obJoin').onclick=showJoinFamily;
+}
+function showJoinFamily(){
+  modalContent.innerHTML=`<div class="m-emoji">🔗</div><h3>הצטרפות למשפחה</h3><p>הזן את קוד ההזמנה שקיבלת מההורה השני</p>
+    <input id="joinCode" style="width:100%;border:2px solid var(--line);border-radius:13px;padding:12px;text-align:center;font-size:1.4rem;font-weight:800;letter-spacing:3px;font-family:inherit;" maxlength="6" placeholder="ABC123">
+    <div style="display:flex;gap:8px;margin-top:14px;"><button class="btn ghost" onclick="showOnboardChoice()">חזרה</button><button class="btn primary" id="joinOk">הצטרף</button></div>`;
+  modalBg.classList.add('show');
+  document.getElementById('joinOk').onclick=doJoinFamily;
+  setTimeout(()=>document.getElementById('joinCode').focus(),100);
+}
+async function doJoinFamily(){
+  const code=document.getElementById('joinCode').value.trim().toUpperCase();
+  if(!code){ toast('הזן קוד'); return; }
+  const familyId=(await fbDb.ref('inviteCodes/'+code).once('value')).val();
+  if(!familyId){ toast('קוד לא נמצא 🤔'); return; }
+  await fbDb.ref('users/'+authUser.uid).set({familyId,role:'member',email:authUser.email||'',name:authUser.displayName||''});
+  state.familyId=familyId; await DB.set('cs_familyid',familyId);
+  closeModal();
+  showSyncStatus('⏳ טוען...','#F5B82E');
+  await pullFromFirebase();
+  toast('הצטרפת למשפחה! ✓');
+  go('picker');
+}
+async function createNewFamily(){
+  const familyId='fam_'+randomId(14);
+  await fbDb.ref('users/'+authUser.uid).set({familyId,role:'owner',email:authUser.email||'',name:authUser.displayName||''});
+  state.familyId=familyId; await DB.set('cs_familyid',familyId);
+  closeModal();
+  if(hasExistingLocalData()){
+    // This device already has real family data (e.g. the app was used before
+    // accounts existed) — carry it into the new cloud family instead of
+    // wiping it with an empty onboarding wizard.
+    await pushToFirebase();
+    toast('המשפחה נוצרה עם הנתונים הקיימים במכשיר זה ✓');
+    go('picker');
+  }else{
+    showSetupWizard();
+  }
+}
+
+let wizKids=[], wizPinVal='';
+function showSetupWizard(){ wizKids=[]; wizPinVal=''; renderWizard(); modalBg.classList.add('show'); }
+function renderWizard(){
+  modalContent.innerHTML=`<div class="m-emoji">🎉</div><h3>הקמת המשפחה שלך</h3>
+    <div class="field" style="text-align:right;"><label>קוד הורים (PIN) — רק אתה תדע אותו</label>
+      <input id="wizPin" type="number" value="${esc(wizPinVal)}" placeholder="לדוגמה: 1234" style="width:100%;border:2px solid var(--line);border-radius:13px;padding:11px;font-family:inherit;text-align:center;font-size:1.2rem;font-weight:800;">
+    </div>
+    <div class="field" style="text-align:right;margin-top:10px;margin-bottom:4px;"><label>הילדים שלך</label></div>
+    <div id="wizKidsList" style="margin-bottom:10px;">${
+      wizKids.length===0
+        ? '<div class="card-sub" style="text-align:center;">עדיין לא הוספת ילדים</div>'
+        : wizKids.map((k,i)=>`<div class="admin-row"><span class="emoji">${k.emoji}</span><span class="t">${esc(k.name)}</span><button class="icon-btn" onclick="removeWizKid(${i})">🗑️</button></div>`).join('')
+    }</div>
+    <div class="inline-row" style="margin-bottom:12px;">
+      <div class="field"><input id="wizKidName" placeholder="שם הילד/ה"></div>
+      <div class="field" style="max-width:70px;"><input id="wizKidEmoji" placeholder="🦄" maxlength="2"></div>
+    </div>
+    <button class="btn mint sm" id="wizAddKid" style="width:100%;margin-bottom:14px;">➕ הוסף ילד/ה</button>
+    <div style="display:flex;gap:8px;"><button class="btn ghost" onclick="closeModal()">בטל</button><button class="btn primary" id="wizFinish">סיום והתחלה! 🚀</button></div>`;
+  document.getElementById('wizPin').addEventListener('input',e=>{ wizPinVal=e.target.value; });
+  document.getElementById('wizAddKid').onclick=()=>{
+    const name=document.getElementById('wizKidName').value.trim();
+    if(!name){ toast('צריך שם'); return; }
+    const emoji=document.getElementById('wizKidEmoji').value.trim()||'🙂';
+    wizKids.push({name,emoji});
+    renderWizard();
+  };
+  document.getElementById('wizFinish').onclick=finishWizard;
+}
+function removeWizKid(i){ wizKids.splice(i,1); renderWizard(); }
+async function finishWizard(){
+  const pin=wizPinVal.trim();
+  if(pin.length<3){ toast('בחר קוד הורים עם לפחות 3 ספרות'); return; }
+  if(wizKids.length===0){ toast('הוסף לפחות ילד אחד'); return; }
+  const palette=['#7C5CFC','#FF6B6B','#27C99A','#4DABF7','#F5B82E','#FF8FCB'];
+  state.children=wizKids.map((k,i)=>({id:'k'+Date.now().toString(36)+i,name:k.name,emoji:k.emoji,color:palette[i%palette.length]}));
+  state.pin=pin;
+  await DB.set('cs_children',state.children);
+  await DB.set('cs_pin',pin);
+  await pushToFirebase();
+  closeModal();
+  toast('המשפחה מוכנה! ברוכים הבאים 🎉');
+  go('picker');
+}
+
+async function fillAccountSettings(){
+  const el=document.getElementById('accountStatus'); if(!el) return;
+  const inviteBox=document.getElementById('accountInviteBox');
+  if(!authUser){
+    el.innerHTML='🔒 מצב מקומי (לא מחובר לחשבון) — המידע נשמר רק במכשיר הזה';
+    document.getElementById('signOutBtn').style.display='none';
+    inviteBox.style.display='none';
+    return;
+  }
+  el.innerHTML='✅ מחובר כ-<b>'+esc(authUser.email||authUser.displayName||'')+'</b>';
+  document.getElementById('signOutBtn').style.display='block';
+  const rec=(await fbDb.ref('users/'+authUser.uid).once('value')).val();
+  if(rec&&rec.role==='owner'&&state.familyId){
+    let code=(await fbDb.ref('families/'+state.familyId+'/inviteCode').once('value')).val();
+    if(!code){
+      code=randomInviteCode();
+      await fbDb.ref('inviteCodes/'+code).set(state.familyId);
+      await fbDb.ref('families/'+state.familyId+'/inviteCode').set(code);
+    }
+    document.getElementById('inviteCodeText').textContent=code;
+    inviteBox.style.display='block';
+  }else{
+    inviteBox.style.display='none';
+  }
+}
+function copyInviteCode(){
+  const code=document.getElementById('inviteCodeText').textContent;
+  if(navigator.clipboard) navigator.clipboard.writeText(code).then(()=>toast('הקוד הועתק! 📋')).catch(()=>{});
 }
 
 /* ===== DAILY EVENTS ===== */
@@ -2531,30 +2728,41 @@ function closeEventReminder(){
 }
 
 /* ===== INIT ===== */
+function goHomeOrPicker(){
+  const app=document.querySelector('.app');
+  if(state.current&&state.children.find(c=>c.id===state.current)){
+    loadKid(state.current).then(()=>{
+      renderBalance(); go('home');
+      if(state.current==='ariel'){ app.classList.add('minecraft-mode'); addMinecraftDecorations(); }
+    });
+  }else{ state.current=null; go('picker'); }
+}
 (async function(){
   GROQ_API_KEY=localStorage.getItem('cs_groq_key')||'';
-  FB_URL=localStorage.getItem('cs_fb_url')||'';
-  FB_CODE=localStorage.getItem('cs_fb_code')||'';
   await detectBackend();
   await loadState();
-  // Pull from Firebase on startup (overrides local if newer data exists)
-  if(FB_URL&&FB_CODE){
-    const pulled=await pullFromFirebase();
-    if(pulled){ showSyncStatus('✅ נטען מהענן','var(--mint)'); }
-  }
-  const app=document.querySelector('.app');
   applyCalmModeClass();
-  // Start event reminder checker every minute
   setInterval(checkEventReminders, 60000);
   checkEventReminders();
-  if(state.current && state.children.find(c=>c.id===state.current)){
-    await loadKid(state.current); renderBalance(); go('home');
-    if(state.current==='ariel'){
-      app.classList.add('minecraft-mode');
-      addMinecraftDecorations();
-    }
+
+  if(localStorage.getItem('cs_local_only')==='1'){
+    goHomeOrPicker();
+    return;
   }
-  else { state.current=null; go('picker'); }
+  // Ask Firebase Auth whether a session is already persisted on this device
+  // (resolves fast, no manual sign-in needed if so — this IS the "returning
+  // user gets everything automatically" behavior).
+  const firstUser=await new Promise(resolve=>{
+    const unsub=fbAuth.onAuthStateChanged(u=>{ unsub(); resolve(u); });
+  });
+  if(firstUser){
+    await handleSignedInUser(firstUser);
+  }else{
+    go('welcome');
+  }
+  // Keep listening for sign-ins triggered from the welcome screen (popup or
+  // redirect return) after this first check.
+  fbAuth.onAuthStateChanged(async(u)=>{ if(u&&u.uid!==authUser?.uid) await handleSignedInUser(u); });
 })();
 </script>
 </body>
