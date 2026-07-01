@@ -2332,9 +2332,10 @@ function buildSyncPayload(){
   const payload={children:state.children,chores:state.chores,actions:state.actions,
     rewards:state.rewards,math:state.math,streak:state.streak,badgeDefs:state.badgeDefs,hwmDate:_hwmDate,kids:{}};
   for(const ch of state.children){
-    if(state.kid[ch.id]){
-      payload.kids[ch.id]={balance:state.kid[ch.id].balance,history:state.kid[ch.id].history,
-        daily:state.kid[ch.id].daily,mathDaily:state.kid[ch.id].mathDaily};
+    const k=state.kid[ch.id];
+    if(k){
+      payload.kids[ch.id]={balance:k.balance,history:k.history,daily:k.daily,mathDaily:k.mathDaily,
+        badges:k.badges,mathTotal:k.mathTotal,taskTotal:k.taskTotal,rewardsTotal:k.rewardsTotal};
     }
   }
   return payload;
@@ -2361,7 +2362,14 @@ async function pullFromFirebase(){
     if(data.actions){ state.actions=data.actions; await DB.set('cs_actions',data.actions); }
     if(data.rewards){ state.rewards=data.rewards; await DB.set('cs_rewards',data.rewards); }
     if(data.math){ state.math=data.math; await DB.set('cs_math',data.math); }
-    if(data.streak){ state.streak=data.streak; await DB.set('cs_streak',data.streak); }
+    if(data.streak){
+      state.streak=data.streak;
+      // Firebase RTDB drops empty objects/arrays on write, so streak.days can
+      // come back undefined even though we wrote {}. Restore it, or code like
+      // renderStreakBanner's s.days[dateKey(new Date())] crashes on load.
+      if(!state.streak.days||typeof state.streak.days!=='object') state.streak.days={};
+      await DB.set('cs_streak',state.streak);
+    }
     if(data.badgeDefs){ state.badgeDefs=data.badgeDefs; await DB.set('cs_badgedefs',data.badgeDefs); }
     // PIN is never synced (see buildSyncPayload). The high-water-mark date IS
     // synced so wiping/reinstalling the app on one device can't roll back the
@@ -2380,13 +2388,25 @@ async function pullFromFirebase(){
         const balOk=Number.isFinite(kid.balance);
         kid.balance=balOk?Math.max(0,Math.min(1000000,Math.round(kid.balance))):0;
         if(!Array.isArray(kid.history)) kid.history=[];
+        // Every map/array below can be dropped by Firebase when empty, which
+        // would later crash reads like k.daily.counts[id] or k.badges.map(...).
+        // Restore all of them to the same defaults loadKid() uses.
         if(!kid.daily||typeof kid.daily!=='object') kid.daily={date:'',counts:{}};
+        if(!kid.daily.counts||typeof kid.daily.counts!=='object') kid.daily.counts={};
         if(!kid.mathDaily||typeof kid.mathDaily!=='object') kid.mathDaily={date:'',done:0};
+        if(!Array.isArray(kid.badges)) kid.badges=[];
+        if(!Number.isFinite(kid.mathTotal)) kid.mathTotal=0;
+        if(!Number.isFinite(kid.taskTotal)) kid.taskTotal=0;
+        if(!Number.isFinite(kid.rewardsTotal)) kid.rewardsTotal=0;
         state.kid[id]=kid;
         await DB.set('cs_bal_'+id,kid.balance);
         await DB.set('cs_hist_'+id,kid.history);
         await DB.set('cs_daily_'+id,kid.daily);
         await DB.set('cs_mathd_'+id,kid.mathDaily);
+        await DB.set('cs_badges_'+id,kid.badges);
+        await DB.set('cs_matht_'+id,kid.mathTotal);
+        await DB.set('cs_taskt_'+id,kid.taskTotal);
+        await DB.set('cs_rwt_'+id,kid.rewardsTotal);
       }
     }
     return true;
