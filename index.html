@@ -423,6 +423,15 @@
   @keyframes breathe{0%,100%{transform:scale(.72);}50%{transform:scale(1);}}
   .breath-txt{margin-top:26px;font-size:1.3rem;font-weight:800;color:#1a6b52;}
   .calm-modal .cm-sub{margin-top:8px;color:#3a7d68;font-size:.92rem;font-weight:700;}
+  .calm-menu-btn{width:260px;padding:16px;margin-bottom:12px;font-size:1.05rem;border:none;border-radius:20px;cursor:pointer;font-family:inherit;font-weight:800;color:#1a6b52;background:rgba(255,255,255,.75);box-shadow:0 6px 16px rgba(39,201,154,.15);transition:transform .12s;}
+  .calm-menu-btn:active{transform:scale(.96);}
+  .calm-visual{position:relative;width:260px;height:220px;border-radius:26px;overflow:hidden;background:linear-gradient(135deg,#a8e6cf,#dcedc1,#ffd3b6,#a8e6cf);background-size:300% 300%;animation:calmgradient 14s ease-in-out infinite;box-shadow:0 10px 26px rgba(0,0,0,.1);}
+  @keyframes calmgradient{0%,100%{background-position:0% 50%;}50%{background-position:100% 50%;}}
+  .calm-bubble{position:absolute;border-radius:50%;background:rgba(255,255,255,.4);animation:calmfloat ease-in-out infinite;}
+  @keyframes calmfloat{0%,100%{transform:translateY(0) scale(1);}50%{transform:translateY(-22px) scale(1.15);}}
+  .calm-music-icon{font-size:4rem;animation:calmpulse 3s ease-in-out infinite;}
+  @keyframes calmpulse{0%,100%{transform:scale(1);opacity:.85;}50%{transform:scale(1.12);opacity:1;}}
+  .calm-back-row{display:flex;gap:10px;margin-top:26px;}
 
   /* ---- Calm mode: dampen decorative motion/sound cues (breathing modal excluded) ---- */
   .app.calm-mode .streak-banner,
@@ -457,7 +466,7 @@
       <span class="ps-text"><span class="ps-name" id="psName">—</span><span class="ps-sub">החלף ילד ▾</span></span>
     </button>
     <div class="top-right">
-      <button class="break-btn" id="breakBtn" title="הפסקה קטנה">🌿</button>
+      <button class="break-btn" id="breakBtn" title="מרגיש/ה לא טוב? כועס/ת? לחץ כאן">🌿</button>
       <div class="balance-pill" id="balPill"><span class="coin">🪙</span><b id="balTop">0</b></div>
       <button class="gear" id="gearBtn" title="הורים">⚙️</button>
     </div>
@@ -920,10 +929,30 @@
   </div>
 </div>
 <div class="calm-modal" id="calmModal">
-  <div class="breath-circle"></div>
-  <div class="breath-txt" id="breathTxt">שאיפה... 🌬️</div>
-  <div class="cm-sub">בוא ננשום לאט, ביחד</div>
-  <button class="btn mint" style="margin-top:30px;font-size:1.05rem;padding:16px 28px;width:auto;" onclick="closeCalmBreak()">😊 אני מוכן/ה להמשיך</button>
+  <div id="calmMenu">
+    <div style="font-size:3rem;">🌿</div>
+    <h3 style="margin:10px 0 4px;color:#1a6b52;">מרגיש/ה לא טוב? כועס/ת?</h3>
+    <div class="cm-sub" style="margin-bottom:20px;">בחר/י מה יעזור לך עכשיו</div>
+    <button class="calm-menu-btn" onclick="openCalmActivity('breathe')">🫁 נשימות ביחד</button>
+    <button class="calm-menu-btn" onclick="openCalmActivity('music')">🎵 מוזיקה מרגיעה</button>
+    <button class="calm-menu-btn" onclick="openCalmActivity('visual')">✨ מסך מרגיע</button>
+  </div>
+  <div id="calmBreathe" style="display:none;text-align:center;">
+    <div class="breath-circle"></div>
+    <div class="breath-txt" id="breathTxt">שאיפה... 🌬️</div>
+    <div class="cm-sub">בוא ננשום לאט, ביחד</div>
+  </div>
+  <div id="calmMusic" style="display:none;text-align:center;">
+    <div class="calm-music-icon">🎵</div>
+    <div class="cm-sub" style="margin-top:14px;">מוזיקה מרגיעה מתנגנת...</div>
+  </div>
+  <div id="calmVisual" style="display:none;text-align:center;">
+    <div class="calm-visual" id="calmVisualBox"></div>
+  </div>
+  <div class="calm-back-row">
+    <button class="btn ghost" id="calmBackBtn" onclick="showCalmMenu()" style="display:none;width:auto;padding:14px 20px;">← תפריט</button>
+    <button class="btn mint" style="font-size:1.05rem;padding:16px 28px;width:auto;" onclick="closeCalmBreak()">😊 אני מוכן/ה להמשיך</button>
+  </div>
 </div>
 <div id="toast"></div>
 <script>
@@ -2121,19 +2150,96 @@ document.getElementById('gearBtn').onclick=openAdmin;
 // The break button is deliberately NOT PIN-gated and does not touch coins/state —
 // a child needs self-regulation tools available instantly, with zero friction and
 // zero economic effect (so it can never be confused with, or abused as, a reward).
-let _breathTimer=null;
+// Three self-regulation options (breathing / calming sound / calming visual),
+// chosen from a menu so the child can pick whichever helps in the moment.
+let _breathTimer=null, _calmMusicNodes=null, _calmActive=null;
+
 function openCalmBreak(){
   document.getElementById('calmModal').classList.add('show');
-  const txt=document.getElementById('breathTxt');
-  let phase=0;
-  const cycle=()=>{ txt.textContent=phase%2===0?'שאיפה... 🌬️':'נשיפה... 💨'; phase++; };
-  cycle();
-  clearInterval(_breathTimer);
-  _breathTimer=setInterval(cycle,2600);
+  showCalmMenu();
+}
+function showCalmMenu(){
+  stopCalmActivity();
+  document.getElementById('calmMenu').style.display='block';
+  document.getElementById('calmBreathe').style.display='none';
+  document.getElementById('calmMusic').style.display='none';
+  document.getElementById('calmVisual').style.display='none';
+  document.getElementById('calmBackBtn').style.display='none';
+}
+function openCalmActivity(kind){
+  stopCalmActivity();
+  document.getElementById('calmMenu').style.display='none';
+  document.getElementById('calmBackBtn').style.display='block';
+  _calmActive=kind;
+  if(kind==='breathe'){
+    document.getElementById('calmBreathe').style.display='block';
+    const txt=document.getElementById('breathTxt');
+    let phase=0;
+    const cycle=()=>{ txt.textContent=phase%2===0?'שאיפה... 🌬️':'נשיפה... 💨'; phase++; };
+    cycle();
+    _breathTimer=setInterval(cycle,2600);
+  }else if(kind==='music'){
+    document.getElementById('calmMusic').style.display='block';
+    startCalmMusic();
+  }else if(kind==='visual'){
+    document.getElementById('calmVisual').style.display='block';
+    renderCalmBubbles();
+  }
+}
+function stopCalmActivity(){
+  clearInterval(_breathTimer); _breathTimer=null;
+  stopCalmMusic();
+  _calmActive=null;
+}
+function renderCalmBubbles(){
+  const box=document.getElementById('calmVisualBox'); box.innerHTML='';
+  for(let i=0;i<7;i++){
+    const b=document.createElement('div'); b.className='calm-bubble';
+    const size=20+Math.random()*40;
+    b.style.width=size+'px'; b.style.height=size+'px';
+    b.style.left=(Math.random()*85)+'%'; b.style.top=(Math.random()*70)+'%';
+    b.style.animationDuration=(5+Math.random()*4)+'s';
+    b.style.animationDelay=(Math.random()*3)+'s';
+    box.appendChild(b);
+  }
+}
+// Gentle synthesized ambient pad (no external audio files, works fully offline) —
+// a few soft detuned tones with a slow volume swell, reusing the AudioContext
+// pattern already used by chime().
+function startCalmMusic(){
+  stopCalmMusic();
+  try{
+    actx=actx||new (window.AudioContext||window.webkitAudioContext)();
+    const notes=[196.00,246.94,293.66,392.00]; // G3, B3, D4, G4 — soft, consonant
+    const oscs=[], gains=[];
+    notes.forEach((f,i)=>{
+      const o=actx.createOscillator(), g=actx.createGain();
+      o.type='sine'; o.frequency.value=f; o.detune.value=(Math.random()*6-3);
+      g.gain.value=0;
+      o.connect(g); g.connect(actx.destination);
+      o.start();
+      oscs.push(o); gains.push(g);
+    });
+    let t=0;
+    const swell=setInterval(()=>{
+      t+=0.5;
+      gains.forEach((g,i)=>{
+        const target=0.045+0.02*Math.sin(t*0.3+i);
+        g.gain.linearRampToValueAtTime(Math.max(0,target),actx.currentTime+0.6);
+      });
+    },600);
+    _calmMusicNodes={oscs,swell};
+  }catch(e){}
+}
+function stopCalmMusic(){
+  if(!_calmMusicNodes) return;
+  clearInterval(_calmMusicNodes.swell);
+  _calmMusicNodes.oscs.forEach(o=>{ try{ o.stop(); }catch(e){} });
+  _calmMusicNodes=null;
 }
 function closeCalmBreak(){
   document.getElementById('calmModal').classList.remove('show');
-  clearInterval(_breathTimer); _breathTimer=null;
+  stopCalmActivity();
 }
 document.getElementById('breakBtn').onclick=openCalmBreak;
 function applyCalmModeClass(){ document.querySelector('.app').classList.toggle('calm-mode',!!state.calmMode); }
