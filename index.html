@@ -1091,14 +1091,17 @@
 /* ===== FIREBASE APP INIT (shared by every family — see AUTH section below) ===== */
 const firebaseConfig={
   apiKey:"AIzaSyAc2Wqz_WHR_AisyUzUm-6-U9EvBFhjrPo",
-  // web.app (not firebaseapp.com): the app itself is served from Firebase
-  // Hosting at coin-quest-app.web.app, so the whole OAuth redirect flow stays
-  // SAME-ORIGIN there — this is Firebase's documented fix for mobile Chrome's
-  // storage partitioning, which silently dropped the sign-in result when the
-  // app lived on hershkom.github.io (the sign-in→white-screen→welcome loop
-  // seen on a real device). The GitHub Pages copy still works: desktop popup
-  // flow is cross-origin-tolerant, and mobile users are steered to web.app.
-  authDomain:"coin-quest-app.web.app",
+  // The app is served from Firebase Hosting, which answers on BOTH
+  // coin-quest-app.web.app and coin-quest-app.firebaseapp.com. The canonical
+  // URL is the firebaseapp.com one and authDomain matches it, so the whole
+  // OAuth redirect flow is SAME-ORIGIN — Firebase's documented fix for
+  // mobile Chrome's storage partitioning, which silently dropped the sign-in
+  // result when the app lived on hershkom.github.io (sign-in→welcome loop on
+  // a real device). firebaseapp.com specifically (not web.app) because only
+  // it is pre-registered as an authorized redirect URI on the project's
+  // Google OAuth client — web.app gave redirect_uri_mismatch on a real
+  // device, and adding it would require a manual Cloud Console step.
+  authDomain:"coin-quest-app.firebaseapp.com",
   databaseURL:"https://coin-quest-app-default-rtdb.europe-west1.firebasedatabase.app",
   projectId:"coin-quest-app",
   storageBucket:"coin-quest-app.firebasestorage.app",
@@ -3362,12 +3365,12 @@ async function signInWithGoogle(statusElId){
   // by the getRedirectResult handler at startup rather than hidden.
   if(isMobileBrowser()){
     // The redirect result only survives the round-trip when the app runs on
-    // the SAME origin as authDomain (coin-quest-app.web.app). On any other
-    // host (github.io), hop to web.app first; #signin makes the sign-in
-    // resume automatically there, so it stays a one-tap flow for the user.
-    if(location.hostname!=='coin-quest-app.web.app'){
+    // the SAME origin as authDomain (coin-quest-app.firebaseapp.com). On any
+    // other host (github.io, web.app), hop there first; #signin makes the
+    // sign-in resume automatically, so it stays a one-tap flow for the user.
+    if(location.hostname!=='coin-quest-app.firebaseapp.com'){
       if(statusEl()) statusEl().textContent='⏳ עובר לכתובת המאובטחת להתחברות...';
-      location.href='https://coin-quest-app.web.app/#signin';
+      location.href='https://coin-quest-app.firebaseapp.com/#signin';
       return;
     }
     if(statusEl()) statusEl().textContent='⏳ עובר לדף ההתחברות של Google...';

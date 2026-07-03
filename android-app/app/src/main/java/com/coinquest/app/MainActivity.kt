@@ -25,7 +25,8 @@ class MainActivity : AppCompatActivity() {
     private val PERMISSION_REQUEST = 101
     // Firebase Hosting (same-origin with authDomain) — required for Google
     // sign-in to survive the OAuth redirect round-trip on mobile browsers.
-    private val APP_URL = "https://coin-quest-app.web.app/"
+    // firebaseapp.com, not web.app: only it is pre-authorized on the OAuth client.
+    private val APP_URL = "https://coin-quest-app.firebaseapp.com/"
 
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
