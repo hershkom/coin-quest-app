@@ -70,6 +70,11 @@ class MainActivity : AppCompatActivity() {
 
         webView.webViewClient = object : WebViewClient() {
             override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
+                // Subframe navigations (e.g. the in-app game portal's iframe
+                // loading classic.minecraft.net) must stay inside the WebView —
+                // kicking them to an external browser would both break the game
+                // and escape the app's screen-time enforcement.
+                if (!request.isForMainFrame) return false
                 val url = request.url.toString()
                 // Stay in-app only for the coin-quest domain
                 if (url.startsWith("https://hershkom.github.io") ||

@@ -351,6 +351,21 @@
   .streak-hero .sh-goal{margin-top:12px;font-size:.95rem;font-weight:800;background:rgba(0,0,0,.18);border-radius:14px;padding:9px 16px;display:inline-block;text-shadow:0 1px 2px rgba(0,0,0,.2);}
   .streak-today-btn{margin-top:14px;}
 
+  /* ---- game time ---- */
+  .gt-banner{border:none;width:100%;text-align:right;font-family:inherit;cursor:pointer;border-radius:22px;padding:16px 18px;margin-top:14px;background:linear-gradient(135deg,#D9F5E8,#7EE0B8);box-shadow:0 8px 22px rgba(22,163,96,.22);display:flex;align-items:center;gap:14px;transition:transform .12s;}
+  .gt-banner:active{transform:scale(.98);}
+  .gt-banner .sb-title{font-weight:900;font-size:1.1rem;color:#0c4f32;}
+  .gt-banner .sb-sub{font-size:.88rem;color:#166b45;margin-top:2px;font-weight:700;}
+  #gameTimerChip{position:absolute;top:10px;left:50%;transform:translateX(-50%);display:flex;align-items:center;gap:10px;background:rgba(20,16,40,.85);color:#fff;border-radius:30px;padding:8px 10px 8px 16px;font-weight:900;font-size:1.05rem;box-shadow:0 4px 16px rgba(0,0,0,.4);direction:ltr;}
+  #gameTimerChip.warning{background:rgba(200,60,40,.92);animation:gtPulse 1s infinite;}
+  @keyframes gtPulse{0%,100%{transform:translateX(-50%) scale(1);}50%{transform:translateX(-50%) scale(1.06);}}
+  #gtExitBtn{border:none;background:rgba(255,255,255,.18);color:#fff;border-radius:50%;width:30px;height:30px;font-size:.9rem;cursor:pointer;}
+  #gtWarnBanner{position:absolute;top:60px;left:50%;transform:translateX(-50%);background:#FFC55C;color:#5a3400;font-weight:900;border-radius:16px;padding:10px 20px;box-shadow:0 6px 18px rgba(0,0,0,.35);font-size:1rem;white-space:nowrap;}
+  .game-row{display:flex;align-items:center;gap:14px;background:#fff;border-radius:18px;padding:14px 16px;margin-bottom:10px;box-shadow:0 4px 14px rgba(42,36,64,.07);border:none;width:100%;text-align:right;font-family:inherit;cursor:pointer;}
+  .game-row .g-emoji{font-size:2rem;}
+  .game-row .g-label{flex:1;font-weight:800;font-size:1.05rem;}
+  .game-row[disabled]{opacity:.5;cursor:not-allowed;}
+
   .cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:6px;margin-top:6px;}
   .cal-dow{text-align:center;font-size:.68rem;color:var(--muted);font-weight:700;padding-bottom:2px;}
   .cal-cell{aspect-ratio:1;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:.78rem;font-weight:700;background:#F2F0FB;color:var(--ink2);position:relative;}
@@ -533,6 +548,7 @@
       </div>
 
       <div id="eventsWrap"></div>
+      <div id="gameTimeWrap"></div>
       <div id="streakBannerWrap"></div>
       <div id="badgesBannerWrap"></div>
 
@@ -561,6 +577,27 @@
           <span><i style="background:#F2F0FB;"></i>לא סומן</span>
         </div>
       </div>
+    </div>
+
+    <div class="view" id="view-games">
+      <button class="backbtn" onclick="go('home')">→ חזרה</button>
+      <div class="section-title">🎮 המשחקים שלי</div>
+      <div class="card" id="gtWalletCard" style="text-align:center;">
+        <div style="font-size:2.2rem;font-weight:900;color:var(--gold-d);" id="gtWalletBig">—</div>
+        <div class="card-sub">זמן משחק שנשאר לך. מרוויחים עוד בחנות הפרסים! 🎁</div>
+      </div>
+      <div id="gamesList"></div>
+    </div>
+
+    <!-- Fullscreen game session overlay: the game runs inside an iframe the app
+         fully controls, so time enforcement can't be escaped from inside it. -->
+    <div id="gameOverlay" style="display:none;position:fixed;inset:0;z-index:900;background:#000;">
+      <iframe id="gameFrame" style="position:absolute;inset:0;width:100%;height:100%;border:none;" allow="fullscreen; gamepad; autoplay"></iframe>
+      <div id="gameTimerChip">
+        <span id="gtClock">--:--</span>
+        <button id="gtExitBtn" onclick="endGameSession(false)" title="יציאה (הזמן שנשאר נשמר)">✖</button>
+      </div>
+      <div id="gtWarnBanner" style="display:none;"></div>
     </div>
 
     <div class="view" id="view-scan">
@@ -637,6 +674,7 @@
         <button class="atab" data-atab="qr" onclick="adminTab('qr')">🔳 QR</button>
         <button class="atab" data-atab="math" onclick="adminTab('math')">➗ חשבון</button>
         <button class="atab" data-atab="rewards" onclick="adminTab('rewards')">🎁 פרסים</button>
+        <button class="atab" data-atab="games" onclick="adminTab('games')">🎮 משחקים</button>
         <button class="atab" data-atab="events" onclick="adminTab('events')">📅 אירועים</button>
         <button class="atab" data-atab="badges" onclick="adminTab('badges')">🏅 תגים</button>
         <button class="atab" data-atab="settings" onclick="adminTab('settings')">🔧 הגדרות</button>
@@ -800,8 +838,31 @@
           <div class="inline-row" style="margin-bottom:12px;">
             <div class="field"><label>אימוג'י</label><input id="newRwEmoji" placeholder="🍿" maxlength="2"></div>
             <div class="field"><label>מחיר (מטבעות)</label><input id="newRwCost" type="number" value="30" min="1"></div>
+            <div class="field"><label>דקות משחק (0=פרס רגיל)</label><input id="newRwMinutes" type="number" value="0" min="0"></div>
           </div>
           <button class="btn primary" onclick="addReward()">הוסף פרס</button>
+        </div>
+      </div>
+      <div class="admin-pane" id="pane-games" style="display:none;">
+        <div class="card"><div class="card-h">🎮 משחקים ברשת</div><div class="card-sub">משחקי דפדפן שהילד יכול לשחק בתוך האפליקציה עם זמן שקנה במטבעות. הזמן נאכף אוטומטית — טיימר צף, התראות לפני הסוף, וסגירה כשנגמר.</div></div>
+        <div id="gamesAdmin"></div>
+        <div class="card">
+          <div class="card-h" style="margin-bottom:10px;">➕ הוסף משחק</div>
+          <div class="field"><label>שם המשחק</label><input id="newGameLabel" placeholder="לדוגמה: מיינקראפט בדפדפן"></div>
+          <div class="inline-row" style="margin-bottom:12px;">
+            <div class="field"><label>אימוג'י</label><input id="newGameEmoji" placeholder="⛏️" maxlength="2"></div>
+          </div>
+          <div class="field"><label>כתובת (URL)</label><input id="newGameUrl" placeholder="https://..." style="direction:ltr;text-align:left;"></div>
+          <button class="btn primary" onclick="addGame()">הוסף משחק</button>
+        </div>
+        <div class="card">
+          <div class="card-h" style="margin-bottom:6px;">💰 חבילות זמן</div>
+          <div class="card-sub">חבילות "דקות משחק" מוגדרות בלשונית 🎁 פרסים — פרס עם שדה "דקות משחק" נזקף אוטומטית לארנק הזמן של הילד ברגע ההמרה, בלי שום אישור נוסף.</div>
+        </div>
+        <div class="card">
+          <div class="card-h" style="margin-bottom:6px;">⏱️ תיקון ארנק זמן</div>
+          <div class="card-sub" style="margin-bottom:10px;">להוסיף/להוריד דקות ידנית לילד הנוכחי בבית (לפיצוי או קנס):</div>
+          <div id="gtAdminWallets"></div>
         </div>
       </div>
       <div class="admin-pane" id="pane-events" style="display:none;">
@@ -1039,6 +1100,12 @@ const DEFAULT_REWARDS=[
   {id:'movie', label:'ערב סרט', emoji:'🍿', cost:80},
 ];
 const DEFAULT_MATH={enabled:true, ops:['+','-'], maxNum:20, pts:2, daily:10};
+// Default game must be frame-embeddable (no X-Frame-Options/frame-ancestors
+// blocking) — verified live: classic.minecraft.net loads in an iframe;
+// eaglercraft.com refuses framing entirely and can't be used here.
+const DEFAULT_GAMES=[
+  {id:'mcclassic', label:'מיינקראפט קלאסי', emoji:'⛏️', url:'https://classic.minecraft.net/'},
+];
 const DEFAULT_STREAKS=[
   {id:'clean',    title:'יום נקי',       dayWord:'יום נקי',      icon:'🧼', childId:'ariel', goal:30, rewardLabel:'Nintendo Switch 2', rewardEmoji:'🎮', days:{}, current:0, best:0, wonAt:null},
   {id:'behavior', title:'התנהגות טובה', dayWord:'התנהגות טובה', icon:'😊', childId:'ariel', goal:14, rewardLabel:'יום כיף',           rewardEmoji:'🎉', days:{}, current:0, best:0, wonAt:null},
@@ -1142,6 +1209,18 @@ async function loadState(){
     await DB.set('cs_streaks',state.streaks);
   }
   state.anchored=(await DB.get('cs_anchored'))??DEFAULT_ANCHORED_TASKS;
+  state.games   =(await DB.get('cs_games'))   ??DEFAULT_GAMES;
+  // One-time seed: make sure at least one coins→minutes package exists in the
+  // rewards shop, so the whole buy-time flow works out of the box with zero
+  // parent setup. The flag (not the package's presence) guards re-seeding, so
+  // a parent who deletes the package isn't fighting the app re-adding it.
+  if(!(await DB.get('cs_gtime_seeded'))){
+    if(!state.rewards.some(r=>r.minutes)){
+      state.rewards.push({id:'gtime15', label:'15 דקות משחק', emoji:'🎮', cost:30, minutes:15});
+      await DB.set('cs_rewards',state.rewards);
+    }
+    await DB.set('cs_gtime_seeded',true);
+  }
   state.pin     =(await DB.get('cs_pin'))     ??'1234';
   state.calmMode=(await DB.get('cs_calm'))    ??false;
   state.badgeDefs=(await DB.get('cs_badgedefs'))??DEFAULT_BADGE_DEFS;
@@ -1163,6 +1242,7 @@ async function loadKid(id){
     mathTotal:(await DB.get('cs_matht_'+id)) ??0,
     taskTotal:(await DB.get('cs_taskt_'+id)) ??0,
     rewardsTotal:(await DB.get('cs_rwt_'+id))??0,
+    gtime:    (await DB.get('cs_gtime_'+id)) ??0, // game-time wallet, in seconds
   };
   ensureTodayKid(id); return state.kid[id];
 }
@@ -1318,7 +1398,7 @@ function go(v){
   clearInterval(clockInterval); clockInterval=null;
   if(v==='picker') renderPicker();
   if(v==='home'){
-    renderChores(); renderStreakBanner(); renderEventsHome(); renderDayStrip(); renderFirstThen(); renderBadgesBanner();
+    renderChores(); renderStreakBanner(); renderGameTimeBanner(); renderEventsHome(); renderDayStrip(); renderFirstThen(); renderBadgesBanner();
     if(childUsesSchedule(curChild())){
       clockInterval=setInterval(()=>{ renderChores(); renderDayStrip(); renderFirstThen(); },45000);
     }
@@ -1329,6 +1409,7 @@ function go(v){
   if(v==='history') renderHistory();
   if(v==='streak') renderStreakView();
   if(v==='badges') renderBadgesView();
+  if(v==='games') renderGamesView();
 }
 // Self-heal: if something upstream (a thrown error mid-render, a race
 // between two go() calls, etc.) ever leaves zero .view elements with
@@ -1729,6 +1810,140 @@ function renderStreakView(){
   const legend=document.getElementById('calLegendClean'); if(legend) legend.textContent=s.dayWord;
 }
 
+/* ===== GAME TIME (coins -> minutes wallet -> in-app game portal with enforced countdown) ===== */
+function fmtGT(sec){
+  sec=Math.max(0,Math.floor(sec));
+  const m=Math.floor(sec/60), s=sec%60;
+  return m+':'+String(s).padStart(2,'0');
+}
+function fmtGTLong(sec){
+  sec=Math.max(0,Math.floor(sec));
+  const m=Math.floor(sec/60);
+  return m>0 ? m+' דקות' : sec+' שניות';
+}
+function renderGameTimeBanner(){
+  const wrap=document.getElementById('gameTimeWrap'); if(!wrap) return;
+  wrap.innerHTML='';
+  const k=cur(); if(!k||!state.games.length) return;
+  const has=(k.gtime||0)>0;
+  const banner=document.createElement('button');
+  banner.className='gt-banner'; banner.onclick=()=>go('games');
+  banner.innerHTML=`
+    <span class="sb-flame">🎮</span>
+    <span class="sb-text">
+      <div class="sb-title">${has?'יש לך '+fmtGTLong(k.gtime)+' משחק!':'המשחקים שלי'}</div>
+      <div class="sb-sub">${has?'לחץ כדי לבחור משחק ולהתחיל':'המר מטבעות בחנות הפרסים כדי לקבל זמן משחק'}</div>
+    </span>
+    <span class="sb-arrow">›</span>`;
+  wrap.appendChild(banner);
+}
+function renderGamesView(){
+  const k=cur(); if(!k) return;
+  document.getElementById('gtWalletBig').textContent='⏱️ '+fmtGT(k.gtime||0);
+  const list=document.getElementById('gamesList'); list.innerHTML='';
+  if(!state.games.length){ list.innerHTML='<div class="empty"><span class="e-ic">🎮</span>אין משחקים עדיין — אמא או אבא יכולים להוסיף בהגדרות</div>'; return; }
+  const has=(k.gtime||0)>0;
+  state.games.forEach(g=>{
+    const row=document.createElement('button'); row.className='game-row';
+    if(!has) row.setAttribute('disabled','');
+    row.innerHTML=`<span class="g-emoji">${g.emoji}</span><span class="g-label">${esc(g.label)}</span><span style="font-weight:800;color:var(--mint-d);">${has?'▶ שחק':'🔒'}</span>`;
+    row.onclick=()=>{ if(has) startGameSession(g.id); else toast('אין זמן משחק — המר מטבעות בפרסים 🎁'); };
+    list.appendChild(row);
+  });
+}
+
+/* ---- session engine ----
+   Time is measured with performance.now() (monotonic — the device clock can't
+   rewind it), drains only while the game is actually visible (backgrounding
+   the app pauses the drain: bought time is never lost to an interruption,
+   which matters a lot for a child who struggles with unexpected transitions),
+   and the remaining balance is persisted every few seconds so closing the
+   app mid-game can't mint time back. */
+let _gt=null; // {gameId, baseMono, baseWallet, warned:{}, interval, paused}
+const GT_WARN_STEPS=[300,60,10]; // seconds-left marks that trigger a warning
+async function startGameSession(gameId){
+  const k=cur(), g=state.games.find(x=>x.id===gameId);
+  if(!k||!g||(k.gtime||0)<=0) return;
+  document.getElementById('gameFrame').src=g.url;
+  document.getElementById('gameOverlay').style.display='block';
+  document.getElementById('gtWarnBanner').style.display='none';
+  document.getElementById('gameTimerChip').classList.remove('warning');
+  _gt={gameId, baseMono:performance.now(), baseWallet:k.gtime, warned:{}, paused:false,
+       lastPersist:performance.now(), interval:setInterval(gtTick,1000)};
+  gtTick();
+  // Some sites refuse to be embedded (X-Frame-Options / frame-ancestors) —
+  // the iframe then silently stays an empty same-origin document. Detect that
+  // (a page that DID load is cross-origin, so contentDocument throws/returns
+  // null) and bail out with a full time refund instead of draining the wallet
+  // over a black screen.
+  setTimeout(()=>{
+    if(!_gt||_gt.gameId!==gameId) return;
+    let blocked=false;
+    try{ const d=document.getElementById('gameFrame').contentDocument; blocked=!!(d&&!d.body.childElementCount); }catch(e){ blocked=false; }
+    if(blocked){
+      _gt.baseMono=performance.now(); // zero the drain -> exact refund
+      endGameSession(false);
+      modalMsg('🚧','המשחק לא נפתח','האתר של המשחק הזה לא מאפשר פתיחה בתוך האפליקציה.\nהזמן שלך לא ירד! בקש מאמא או אבא לבחור משחק אחר בהגדרות.');
+    }
+  },8000);
+}
+function gtRemaining(){
+  if(!_gt) return 0;
+  if(_gt.paused) return _gt.baseWallet;
+  return _gt.baseWallet-Math.floor((performance.now()-_gt.baseMono)/1000);
+}
+async function gtPersist(){
+  if(!_gt) return;
+  const k=cur(); if(!k) return;
+  k.gtime=Math.max(0,gtRemaining());
+  await DB.set('cs_gtime_'+state.current,k.gtime);
+}
+function gtTick(){
+  if(!_gt||_gt.paused) return;
+  const left=gtRemaining();
+  document.getElementById('gtClock').textContent=fmtGT(left);
+  for(const w of GT_WARN_STEPS){
+    if(left<=w&&!_gt.warned[w]&&left>0){
+      _gt.warned[w]=true;
+      const banner=document.getElementById('gtWarnBanner');
+      banner.textContent=w>=60 ? '⏳ נשארו '+Math.round(w/60)+' דקות משחק' : '⏰ עוד רגע נגמר הזמן!';
+      banner.style.display='block';
+      setTimeout(()=>{ if(_gt) banner.style.display='none'; },6000);
+      if(w<=60) document.getElementById('gameTimerChip').classList.add('warning');
+      try{ chime(true); }catch(e){}
+    }
+  }
+  // Persist every ~10s so a hard app-kill mid-game loses at most a few
+  // seconds of drain (in the child's favor, never the parent's problem).
+  if(performance.now()-_gt.lastPersist>10000){ _gt.lastPersist=performance.now(); gtPersist(); }
+  if(left<=0) endGameSession(true);
+}
+async function endGameSession(expired){
+  if(!_gt) return;
+  clearInterval(_gt.interval);
+  await gtPersist();
+  _gt=null;
+  document.getElementById('gameFrame').src='about:blank'; // actually stop the game
+  document.getElementById('gameOverlay').style.display='none';
+  renderGamesView(); renderGameTimeBanner();
+  scheduleSync();
+  if(expired){
+    modalMsg('⏰','הזמן נגמר!','זמן המשחק שקנית הסתיים.\nאפשר להרוויח עוד מטבעות ולהמיר אותם לזמן משחק חדש! 💪');
+  }
+}
+// Pause the drain while the app is backgrounded / screen off: the child only
+// "spends" time actually spent playing. On return, restart the baseline.
+document.addEventListener('visibilitychange',()=>{
+  if(!_gt) return;
+  if(document.hidden){
+    const left=Math.max(0,gtRemaining());
+    _gt.baseWallet=left; _gt.paused=true;
+    gtPersist();
+  } else {
+    _gt.baseMono=performance.now(); _gt.paused=false;
+  }
+});
+
 /* ===== REWARDS ===== */
 function renderRewards(){
   renderBalance();
@@ -1750,7 +1965,18 @@ function redeemReward(rw){
   modalConfirm('🎁','להחליף את "'+rw.label+'"?','זה יעלה '+rw.cost+' מטבעות.', async()=>{
     if(cur().balance<rw.cost){ toast('אין מספיק מטבעות 🪙'); renderRewards(); return; }
     await addPoints(-rw.cost,'פרס: '+rw.label,'spend'); renderRewards();
-    modalMsg(rw.emoji,'מזל טוב! 🎉','החלפת את: '+rw.label+'\nהראה את המסך להורים.');
+    if(rw.minutes){
+      // Game-time package: credit the wallet immediately — no parent approval
+      // step, the coins themselves are the approval (they were parent-verified
+      // when earned). The child can start playing right away.
+      const k=cur();
+      k.gtime=(k.gtime||0)+rw.minutes*60;
+      await DB.set('cs_gtime_'+state.current,k.gtime);
+      renderGameTimeBanner();
+      modalMsg('🎮','יש לך זמן משחק!','קיבלת '+rw.minutes+' דקות משחק.\nסה"כ עכשיו: '+fmtGT(k.gtime)+'.\nלחץ על "המשחקים שלי" במסך הבית כדי לשחק!');
+    } else {
+      modalMsg(rw.emoji,'מזל טוב! 🎉','החלפת את: '+rw.label+'\nהראה את המסך להורים.');
+    }
   });
 }
 
@@ -1784,6 +2010,7 @@ function adminTab(t){
   if(t==='qr') fillQRSelect();
   if(t==='math') fillMathConfig();
   if(t==='rewards') renderRewardsAdmin();
+  if(t==='games') renderGamesAdmin();
   if(t==='events') renderEventsAdmin();
   if(t==='badges') renderBadgesAdmin();
   if(t==='settings'){ fillAccountSettings(); fillCalmToggle(); }
@@ -1960,7 +2187,7 @@ async function adminDelChild(id){
   const ch=state.children.find(c=>c.id===id);
   modalConfirm('🗑️','למחוק את '+ch.name+'?','כל הנתונים של '+ch.name+' יימחקו לצמיתות.', async()=>{
     state.children=state.children.filter(c=>c.id!==id); await DB.set('cs_children',state.children);
-    for(const p of ['cs_bal_','cs_hist_','cs_daily_','cs_mathd_','cs_badges_','cs_matht_','cs_taskt_','cs_rwt_']){
+    for(const p of ['cs_bal_','cs_hist_','cs_daily_','cs_mathd_','cs_badges_','cs_matht_','cs_taskt_','cs_rwt_','cs_gtime_']){
       await DB.del(p+id);
     }
     delete state.kid[id];
@@ -2182,7 +2409,7 @@ function renderRewardsAdmin(){
   const c=document.getElementById('rewardsAdmin'); c.innerHTML='';
   state.rewards.forEach((r,i)=>{
     const row=document.createElement('div'); row.className='admin-row';
-    row.innerHTML=`<span class="emoji">${r.emoji}</span><span class="t">${esc(r.label)}</span>
+    row.innerHTML=`<span class="emoji">${r.emoji}</span><span class="t">${esc(r.label)}${r.minutes?`<br><span style="font-size:.72rem;color:var(--mint-d);font-weight:700;">🎮 ${r.minutes} דקות משחק אוטומטית</span>`:''}</span>
       <input type="number" value="${r.cost}" min="1" style="width:62px;border:2px solid var(--line);border-radius:10px;padding:7px;text-align:center;font-family:inherit;font-weight:700;" onchange="updateRewardCost(${i},this.value)">
       <button class="icon-btn" onclick="delReward(${i})">🗑️</button>`;
     c.appendChild(row);
@@ -2193,9 +2420,51 @@ async function delReward(i){ state.rewards.splice(i,1); await DB.set('cs_rewards
 async function addReward(){
   const label=document.getElementById('newRwLabel').value.trim(); if(!label){ toast('צריך שם לפרס'); return; }
   const emoji=document.getElementById('newRwEmoji').value.trim()||'🎁', cost=parseInt(document.getElementById('newRwCost').value)||30;
-  state.rewards.push({id:'r'+Date.now().toString(36),label,emoji,cost}); await DB.set('cs_rewards',state.rewards);
+  const minutes=parseInt(document.getElementById('newRwMinutes').value)||0;
+  const rw={id:'r'+Date.now().toString(36),label,emoji,cost};
+  if(minutes>0) rw.minutes=minutes;
+  state.rewards.push(rw); await DB.set('cs_rewards',state.rewards);
   scheduleSync();
-  document.getElementById('newRwLabel').value=''; document.getElementById('newRwEmoji').value=''; renderRewardsAdmin(); toast('נוסף! ✓');
+  document.getElementById('newRwLabel').value=''; document.getElementById('newRwEmoji').value=''; document.getElementById('newRwMinutes').value=''; renderRewardsAdmin(); toast('נוסף! ✓');
+}
+
+/* ===== GAMES ADMIN ===== */
+function renderGamesAdmin(){
+  const c=document.getElementById('gamesAdmin'); c.innerHTML='';
+  if(!state.games.length) c.innerHTML='<div class="empty"><span class="e-ic">🎮</span>אין משחקים</div>';
+  state.games.forEach((g,i)=>{
+    const row=document.createElement('div'); row.className='admin-row';
+    row.innerHTML=`<span class="emoji">${g.emoji}</span><span class="t">${esc(g.label)}<br><span style="font-size:.68rem;color:var(--muted);font-weight:400;direction:ltr;display:inline-block;">${esc(g.url)}</span></span>
+      <button class="icon-btn" onclick="delGame(${i})">🗑️</button>`;
+    c.appendChild(row);
+  });
+  // per-child wallet adjustment
+  const w=document.getElementById('gtAdminWallets'); w.innerHTML='';
+  state.children.forEach(ch=>{
+    const row=document.createElement('div'); row.className='admin-row';
+    row.innerHTML=`<span class="emoji">${ch.emoji}</span><span class="t">${esc(ch.name)}<br><span style="font-size:.72rem;color:var(--muted);font-weight:400;" id="gtw_${ch.id}">—</span></span>
+      <button class="btn sm ghost" onclick="adminAdjustGT('${ch.id}',5)">+5 דק'</button>
+      <button class="btn sm ghost" onclick="adminAdjustGT('${ch.id}',-5)">-5 דק'</button>`;
+    w.appendChild(row);
+    DB.get('cs_gtime_'+ch.id).then(v=>{ const el=document.getElementById('gtw_'+ch.id); if(el) el.textContent='בארנק: '+fmtGT(v??0); });
+  });
+}
+async function delGame(i){ state.games.splice(i,1); await DB.set('cs_games',state.games); renderGamesAdmin(); }
+async function addGame(){
+  const label=document.getElementById('newGameLabel').value.trim(); if(!label){ toast('צריך שם למשחק'); return; }
+  let url=document.getElementById('newGameUrl').value.trim();
+  if(!/^https:\/\//i.test(url)){ toast('הכתובת חייבת להתחיל ב-https://'); return; }
+  const emoji=document.getElementById('newGameEmoji').value.trim()||'🎮';
+  state.games.push({id:'g'+Date.now().toString(36),label,emoji,url});
+  await DB.set('cs_games',state.games);
+  document.getElementById('newGameLabel').value=''; document.getElementById('newGameEmoji').value=''; document.getElementById('newGameUrl').value='';
+  renderGamesAdmin(); toast('נוסף! ✓');
+}
+async function adminAdjustGT(childId,minutes){
+  const v=Math.max(0,((await DB.get('cs_gtime_'+childId))??0)+minutes*60);
+  await DB.set('cs_gtime_'+childId,v);
+  if(state.kid[childId]) state.kid[childId].gtime=v;
+  renderGamesAdmin(); toast('עודכן ✓');
 }
 
 /* ===== BADGES ADMIN ===== */
@@ -2613,12 +2882,14 @@ function buildSyncPayload(){
   // device last set it rather than staying under each device's own control.
   const payload={children:state.children,chores:state.chores,actions:state.actions,
     rewards:state.rewards,math:state.math,streaks:state.streaks,badgeDefs:state.badgeDefs,
-    anchored:state.anchored,events:state.events||[],hwmDate:_hwmDate,calmMode:state.calmMode,kids:{}};
+    anchored:state.anchored,events:state.events||[],hwmDate:_hwmDate,calmMode:state.calmMode,
+    games:state.games,kids:{}};
   for(const ch of state.children){
     const k=state.kid[ch.id];
     if(k){
       payload.kids[ch.id]={balance:k.balance,history:k.history,daily:k.daily,mathDaily:k.mathDaily,
-        badges:k.badges,mathTotal:k.mathTotal,taskTotal:k.taskTotal,rewardsTotal:k.rewardsTotal};
+        badges:k.badges,mathTotal:k.mathTotal,taskTotal:k.taskTotal,rewardsTotal:k.rewardsTotal,
+        gtime:k.gtime||0};
     }
   }
   return payload;
@@ -2677,6 +2948,7 @@ async function pullFromFirebase(){
       await DB.set('cs_anchored',state.anchored);
     }
     if(data.events){ state.events=data.events; await DB.set('cs_events',data.events); }
+    if(data.games){ state.games=data.games; await DB.set('cs_games',data.games); }
     // Use !==undefined (not truthiness) so an explicit false — calm mode
     // turned OFF on another device — still overwrites a local true.
     if(data.calmMode!==undefined){
@@ -2710,6 +2982,12 @@ async function pullFromFirebase(){
         if(!Number.isFinite(kid.mathTotal)) kid.mathTotal=0;
         if(!Number.isFinite(kid.taskTotal)) kid.taskTotal=0;
         if(!Number.isFinite(kid.rewardsTotal)) kid.rewardsTotal=0;
+        // Game-time wallet: bounded to a sane range (0..24h) for the same
+        // corrupted/forged-value reasons as balance above. If a game session
+        // is live on THIS device right now, the local draining value wins —
+        // a pull of stale cloud data mustn't refund time mid-game.
+        kid.gtime=Number.isFinite(kid.gtime)?Math.max(0,Math.min(86400,Math.round(kid.gtime))):0;
+        if(_gt&&id===state.current) kid.gtime=Math.max(0,gtRemaining());
         state.kid[id]=kid;
         await DB.set('cs_bal_'+id,kid.balance);
         await DB.set('cs_hist_'+id,kid.history);
@@ -2719,6 +2997,7 @@ async function pullFromFirebase(){
         await DB.set('cs_matht_'+id,kid.mathTotal);
         await DB.set('cs_taskt_'+id,kid.taskTotal);
         await DB.set('cs_rwt_'+id,kid.rewardsTotal);
+        await DB.set('cs_gtime_'+id,kid.gtime);
       }
     }
     return true;
@@ -2764,7 +3043,7 @@ function hasExistingLocalData(){
 // device previously used in local-only mode by someone else).
 async function clearLocalFamilyData(){
   for(const ch of state.children){
-    for(const p of ['cs_bal_','cs_hist_','cs_daily_','cs_mathd_','cs_badges_','cs_matht_','cs_taskt_','cs_rwt_']){
+    for(const p of ['cs_bal_','cs_hist_','cs_daily_','cs_mathd_','cs_badges_','cs_matht_','cs_taskt_','cs_rwt_','cs_gtime_']){
       await DB.del(p+ch.id);
     }
   }
@@ -2772,6 +3051,7 @@ async function clearLocalFamilyData(){
   state.chores=DEFAULT_CHORES; state.actions=DEFAULT_ACTIONS; state.rewards=DEFAULT_REWARDS;
   state.math=DEFAULT_MATH; state.streaks=DEFAULT_STREAKS.map(s=>({...s,days:{}})); state.badgeDefs=DEFAULT_BADGE_DEFS;
   state.anchored=DEFAULT_ANCHORED_TASKS; state.events=[]; state.familyId=null;
+  state.games=DEFAULT_GAMES;
   // Delete rather than write defaults back: hasExistingLocalData() treats a
   // present key as "this device has real data" regardless of its content, so
   // writing DEFAULT_CHILDREN etc back here would leave the keys present and
@@ -2780,7 +3060,8 @@ async function clearLocalFamilyData(){
   // use; storage should end up genuinely empty, matching a device that was
   // never set up at all.
   for(const k of ['cs_children','cs_current','cs_chores','cs_actions','cs_rewards','cs_math',
-    'cs_streak','cs_streaks','cs_badgedefs','cs_anchored','cs_events','cs_hwm_date','cs_familyid']){
+    'cs_streak','cs_streaks','cs_badgedefs','cs_anchored','cs_events','cs_hwm_date','cs_familyid',
+    'cs_games','cs_gtime_seeded']){
     await DB.del(k);
   }
   _hwmDate=null; _hwmAdvanceMono=performance.now();
