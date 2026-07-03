@@ -1280,8 +1280,19 @@ function go(v){
   document.getElementById('breakBtn').style.visibility=onPicker?'hidden':'visible';
   document.getElementById('bottomnav').style.display=(onPicker||v==='admin'||v==='streak'||v==='badges')?'none':'flex';
   window.scrollTo(0,0);
+  // The schedule (day-strip/first-then/anchored chores) derives its period
+  // from the clock at render time — without a periodic refresh, a child who
+  // leaves the home view open across a period boundary (e.g. morning->
+  // afternoon) or the sleep-time threshold keeps seeing the stale period
+  // until they navigate away and back or complete a chore.
+  clearInterval(clockInterval); clockInterval=null;
   if(v==='picker') renderPicker();
-  if(v==='home'){ renderChores(); renderStreakBanner(); renderEventsHome(); renderDayStrip(); renderFirstThen(); renderBadgesBanner(); }
+  if(v==='home'){
+    renderChores(); renderStreakBanner(); renderEventsHome(); renderDayStrip(); renderFirstThen(); renderBadgesBanner();
+    if(childUsesSchedule(curChild())){
+      clockInterval=setInterval(()=>{ renderChores(); renderDayStrip(); renderFirstThen(); },45000);
+    }
+  }
   if(v==='scan') startCamera();
   if(v==='math') initMath();
   if(v==='rewards') renderRewards();
