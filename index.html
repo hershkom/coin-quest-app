@@ -2210,6 +2210,12 @@ function startCalmMusic(){
   stopCalmMusic();
   try{
     actx=actx||new (window.AudioContext||window.webkitAudioContext)();
+    // Mobile browsers auto-suspend an AudioContext on backgrounding (screen
+    // lock, app switch) and it stays suspended — oscillators still "start"
+    // but produce no audible sound, with no error thrown. resume() is a safe
+    // no-op if already running; this call is from a real tap (calm button),
+    // which is exactly the user-gesture context resume() needs.
+    if(actx.state==='suspended') actx.resume();
     const notes=[196.00,246.94,293.66,392.00]; // G3, B3, D4, G4 — soft, consonant
     const oscs=[], gains=[];
     notes.forEach((f,i)=>{
@@ -2265,6 +2271,10 @@ function coinBurst(){
 let actx=null;
 function chime(low){
   try{ actx=actx||new (window.AudioContext||window.webkitAudioContext)();
+    // See the matching comment in startCalmMusic(): resume a browser-suspended
+    // context (e.g. after screen lock) so coin-earn sounds don't silently stop
+    // working. Safe no-op if already running.
+    if(actx.state==='suspended') actx.resume();
     const notes=low?[392,330]:[523,659,784];
     const vol=state.calmMode?0.07:0.18; // quieter in calm mode — less sensory intensity
     notes.forEach((f,i)=>{ const o=actx.createOscillator(),g=actx.createGain(); o.type='triangle'; o.frequency.value=f; o.connect(g); g.connect(actx.destination);
