@@ -285,9 +285,12 @@
   .chip-toggle{display:flex;gap:8px;flex-wrap:wrap;}
   .chip{background:#F2F0FB;border:2px solid transparent;border-radius:12px;padding:9px 16px;font-weight:800;font-size:1.1rem;cursor:pointer;min-width:48px;text-align:center;}
   .chip.on{background:var(--purple);color:#fff;}
-  .admin-row{display:flex;align-items:center;gap:10px;background:#FAF9FF;border-radius:14px;padding:10px 12px;margin-bottom:8px;}
+  .admin-row{display:flex;align-items:center;gap:10px;background:#FAF9FF;border-radius:14px;padding:10px 12px;margin-bottom:8px;position:relative;transition:box-shadow .15s;}
   .admin-row .emoji{font-size:1.4rem;}
   .admin-row .t{flex:1;font-weight:700;font-size:.9rem;}
+  .admin-row.dragging{box-shadow:0 10px 22px rgba(124,92,252,.28);z-index:50;background:#fff;}
+  .drag-handle{cursor:grab;touch-action:none;color:var(--muted);font-size:1.15rem;flex-shrink:0;padding:4px;line-height:1;user-select:none;}
+  .drag-handle:active{cursor:grabbing;}
   .icon-btn{background:#fff;border:none;border-radius:10px;width:34px;height:34px;font-size:.95rem;cursor:pointer;box-shadow:0 2px 6px rgba(0,0,0,.06);}
   .kid-admin{display:flex;align-items:center;gap:12px;background:#FAF9FF;border-radius:16px;padding:12px;margin-bottom:10px;border-right:4px solid var(--kc,var(--purple));}
   .kid-admin .ka-av{width:46px;height:46px;border-radius:50%;background:var(--kc,var(--purple));display:flex;align-items:center;justify-content:center;font-size:1.5rem;flex-shrink:0;}
@@ -669,7 +672,7 @@
 
           <div style="margin-bottom:20px;">
             <div style="font-weight:800;margin-bottom:8px;">🛏️ זמן שינה</div>
-            <div style="display:flex;gap:8px;align-items:center;">
+            <div style="display:flex;gap:8px;align-items:center;direction:ltr;">
               <input id="sleepTime" type="number" min="20" max="23" value="20" style="width:50px;border:2px solid var(--line);border-radius:10px;padding:8px;text-align:center;"/>
               <span>:00</span>
             </div>
@@ -1112,7 +1115,7 @@ async function loadState(){
   state.math    =(await DB.get('cs_math'))    ??DEFAULT_MATH;
   state.streak  =(await DB.get('cs_streak'))  ??DEFAULT_STREAK;
   state.anchored=(await DB.get('cs_anchored'))??DEFAULT_ANCHORED_TASKS;
-  state.pin     =(await DB.get('cs_pin'))     ??'0525622636';
+  state.pin     =(await DB.get('cs_pin'))     ??'1234';
   state.calmMode=(await DB.get('cs_calm'))    ??false;
   state.badgeDefs=(await DB.get('cs_badgedefs'))??DEFAULT_BADGE_DEFS;
   state.events=(await DB.get('cs_events'))??[];
@@ -1763,14 +1766,63 @@ function renderAnchoredAdmin(){
     c.innerHTML='';
     a[period].forEach((task,i)=>{
       const row=document.createElement('div'); row.className='admin-row';
-      row.innerHTML=`<span class="emoji">${task.emoji}</span><span class="t">${esc(task.label)}</span>
+      row.innerHTML=`<span class="drag-handle" title="גרור לשינוי הסדר">⠿</span><span class="emoji">${task.emoji}</span><span class="t">${esc(task.label)}</span>
         <input type="number" value="${task.points}" min="1" style="width:50px;border:2px solid var(--line);border-radius:10px;padding:6px;text-align:center;font-family:inherit;" onchange="updateAnchoredPoints('${period}',${i},this.value)">
         <button class="icon-btn" onclick="delAnchoredTask('${period}',${i})">🗑️</button>`;
       c.appendChild(row);
+      row.querySelector('.drag-handle').addEventListener('pointerdown',ev=>startAnchoredDrag(ev,period,i));
     });
   });
   document.getElementById('sleepTime').value=a.sleep_time;
 }
+
+/* ---- Drag-to-reorder anchored tasks. Pointer Events (not the HTML5 Drag API)
+   so this works on touch (mobile) as well as mouse — the admin panel is used
+   from a phone as much as a desktop. Only the small grip handle is
+   draggable, not the whole row, so it doesn't fight with the points input or
+   delete button next to it. The underlying array is only reordered on
+   pointerup; during the drag we just move the row visually and compute where
+   it would land, to avoid the complexity/fragility of live-reflowing every
+   sibling row on each pointermove. ---- */
+let _anchoredDrag=null;
+function startAnchoredDrag(ev,period,index){
+  ev.preventDefault();
+  const list=document.getElementById('anchored'+period.charAt(0).toUpperCase()+period.slice(1));
+  const rows=[...list.querySelectorAll('.admin-row')];
+  const dragged=rows[index];
+  const startRect=dragged.getBoundingClientRect();
+  const others=rows.map((r,i)=>({i,midY:r.getBoundingClientRect().top+r.getBoundingClientRect().height/2})).filter(o=>o.i!==index);
+  _anchoredDrag={period,index,targetIndex:index,dragged,startY:ev.clientY,startTop:startRect.top,height:startRect.height,others};
+  dragged.classList.add('dragging');
+  try{ dragged.setPointerCapture(ev.pointerId); }catch(e){}
+  document.addEventListener('pointermove',onAnchoredDragMove);
+  document.addEventListener('pointerup',onAnchoredDragEnd,{once:true});
+  document.addEventListener('pointercancel',onAnchoredDragEnd,{once:true});
+}
+function onAnchoredDragMove(ev){
+  const d=_anchoredDrag; if(!d) return;
+  const dy=ev.clientY-d.startY;
+  d.dragged.style.transform='translateY('+dy+'px)';
+  const draggedMidY=d.startTop+d.height/2+dy;
+  let count=0;
+  for(const o of d.others){ if(draggedMidY>o.midY) count++; }
+  d.targetIndex=count;
+}
+async function onAnchoredDragEnd(){
+  const d=_anchoredDrag; if(!d) return;
+  document.removeEventListener('pointermove',onAnchoredDragMove);
+  d.dragged.classList.remove('dragging'); d.dragged.style.transform='';
+  if(d.targetIndex!==d.index){
+    const arr=state.anchored[d.period];
+    const [item]=arr.splice(d.index,1);
+    arr.splice(d.targetIndex,0,item);
+    await DB.set('cs_anchored',state.anchored);
+    toast('הסדר עודכן ✓');
+  }
+  _anchoredDrag=null;
+  renderAnchoredAdmin();
+}
+
 async function addAnchoredTask(period){
   const label=prompt('שם המטלה:');
   const emoji=prompt('אימוג\'י:','🎯');
