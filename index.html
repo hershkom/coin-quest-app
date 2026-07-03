@@ -462,6 +462,13 @@
 </style>
 </head>
 <body>
+<div id="appVersionTag" style="position:fixed;bottom:3px;left:6px;font-size:.62rem;color:#9a93b8;opacity:.55;z-index:5;pointer-events:none;font-family:inherit;">v%%APP_VERSION%%</div>
+<script>
+  // The GitHub Pages deploy workflow replaces %%APP_VERSION%% with the short
+  // commit SHA + deploy date, so this always reflects exactly what's live.
+  // Locally (no deploy step ran) the placeholder never gets substituted.
+  (function(){ var t=document.getElementById('appVersionTag'); if(t&&t.textContent.includes('%%')) t.textContent='v-dev'; })();
+</script>
 <div class="app">
   <div class="topbar">
     <button class="profile-switch" id="profileSwitch" onclick="go('picker')">
@@ -549,7 +556,7 @@
         <div class="cal-grid" id="calDow"></div>
         <div class="cal-grid" id="calGrid"></div>
         <div class="cal-legend">
-          <span><i style="background:linear-gradient(135deg,var(--mint),var(--mint-d));"></i>יום נקי</span>
+          <span><i style="background:linear-gradient(135deg,var(--mint),var(--mint-d));"></i><span id="calLegendClean">יום נקי</span></span>
           <span><i style="background:linear-gradient(135deg,var(--coral),var(--coral-d));"></i>תקרית</span>
           <span><i style="background:#F2F0FB;"></i>לא סומן</span>
         </div>
@@ -697,8 +704,10 @@
       </div>
 
       <div class="admin-pane" id="pane-streak" style="display:none;">
-        <div class="card"><div class="card-h">🌟 אתגר 30 הימים</div><div class="card-sub">לוח רצף יומי. כל "יום נקי" מצטרף לרצף; תקרית מאפסת אותו. בהגעה למטרה — פרס!</div></div>
+        <div class="card"><div class="card-h">🌟 אתגרי רצף יומי</div><div class="card-sub">לוח רצף יומי לכל אתגר. כל יום מסומן מצטרף לרצף; תקרית מאפסת אותו. בהגעה למטרה — פרס!</div></div>
         <div class="card">
+          <div class="field"><label>אתגר</label><select id="streakSel" onchange="fillStreakAdmin()"></select></div>
+          <div class="field"><label>שם האתגר</label><input id="streakTitle" placeholder="יום נקי"></div>
           <div class="field"><label>הילד/ה</label><select id="streakChildSel"></select></div>
           <div class="inline-row" style="margin-bottom:12px;">
             <div class="field"><label>מטרה (ימים ברצף)</label><input id="streakGoal" type="number" value="30" min="1"></div>
@@ -745,6 +754,7 @@
         <div class="card" style="margin-top:16px;background:linear-gradient(135deg,#FFF6E0,#FFF);">
           <div class="card-h">🏆 QR לפרס הרצף</div>
           <div class="card-sub" style="margin-bottom:10px;">הילד יוכל לפדות את פרס האתגר רק על ידי סריקת קוד זה.</div>
+          <div class="field"><label>איזה אתגר</label><select id="qrStreakSelect"></select></div>
           <button class="btn gold" onclick="makeStreakQR()">🔳 צור QR לפרס הרצף</button>
           <div id="streakQrResult" style="display:none;margin-top:12px;text-align:center;">
             <div id="streakQrBox" style="display:inline-block;padding:14px;background:#fff;border-radius:18px;box-shadow:0 6px 18px rgba(0,0,0,.12);"></div>
@@ -1025,7 +1035,11 @@ const DEFAULT_REWARDS=[
   {id:'movie', label:'ערב סרט', emoji:'🍿', cost:80},
 ];
 const DEFAULT_MATH={enabled:true, ops:['+','-'], maxNum:20, pts:2, daily:10};
-const DEFAULT_STREAK={childId:'ariel', goal:30, rewardLabel:'Nintendo Switch 2', rewardEmoji:'🎮', days:{}, current:0, best:0, wonAt:null};
+const DEFAULT_STREAKS=[
+  {id:'clean',    title:'יום נקי',       dayWord:'יום נקי',      icon:'🧼', childId:'ariel', goal:30, rewardLabel:'Nintendo Switch 2', rewardEmoji:'🎮', days:{}, current:0, best:0, wonAt:null},
+  {id:'behavior', title:'התנהגות טובה', dayWord:'התנהגות טובה', icon:'😊', childId:'ariel', goal:14, rewardLabel:'יום כיף',           rewardEmoji:'🎉', days:{}, current:0, best:0, wonAt:null},
+];
+function getStreak(id){ return state.streaks.find(s=>s.id===id); }
 const DEFAULT_ANCHORED_TASKS={
   morning:[{id:'at_m1',label:'צחצוח שיניים',emoji:'🦷',points:5,max:2},{id:'at_m2',label:'לשבת בשירותים',emoji:'🚽',points:3,max:6},{id:'at_m3',label:'לקחת תרופה',emoji:'💊',points:3,max:1}],
   afternoon:[{id:'at_a1',label:'פינוי אוכל',emoji:'🍽️',points:8,max:3},{id:'at_a2',label:'צחצוח שיניים',emoji:'🦷',points:5,max:2}],
@@ -1038,15 +1052,15 @@ const DEFAULT_ANCHORED_TASKS={
 // the underlying formula stays in code so it can't be broken by a typo.
 const BADGE_METRICS={
   totalEarned: {label:'סה״כ מטבעות שהרוויח (אי פעם)', kind:'threshold', get:k=>(k.history||[]).reduce((s,h)=>s+(h.points>0?h.points:0),0)},
-  // state.streak is a single global object assigned to ONE child via
-  // state.streak.childId — without checking that against the id being
-  // evaluated, every other child would also earn these two badges the moment
-  // the assigned child's streak crosses the threshold.
-  streakBest:  {label:'שיא ימים נקיים ברצף',            kind:'threshold', get:(k,id)=>state.streak.childId===id?state.streak.best:0},
+  // state.streaks holds several challenges, each assigned to ONE child via
+  // streak.childId — without filtering to the streaks assigned to the id
+  // being evaluated, every other child would also earn these badges the
+  // moment the assigned child's streak crosses the threshold.
+  streakBest:  {label:'שיא ימים ברצף (כל אתגר)',        kind:'threshold', get:(k,id)=>Math.max(0,...state.streaks.filter(s=>s.childId===id).map(s=>s.best),0)},
   mathTotal:   {label:'תרגילי חשבון שנפתרו (סה״כ)',     kind:'threshold', get:k=>k.mathTotal||0},
   taskTotal:   {label:'מטלות/פעולות שהושלמו (סה״כ)',    kind:'threshold', get:k=>k.taskTotal||0},
   rewardsTotal:{label:'פרסים שנקנו (סה״כ)',              kind:'threshold', get:k=>k.rewardsTotal||0},
-  streakGoal:  {label:'השלמת את כל אתגר הרצף',           kind:'goal',      get:(k,id)=>state.streak.childId===id&&state.streak.best>=state.streak.goal},
+  streakGoal:  {label:'השלמת אתגר רצף כלשהו',           kind:'goal',      get:(k,id)=>state.streaks.some(s=>s.childId===id&&s.best>=s.goal)},
 };
 const DEFAULT_BADGE_DEFS=[
   {id:'first_coin',  emoji:'🥇', label:'המטבע הראשון',   metric:'totalEarned',  threshold:1},
@@ -1113,7 +1127,16 @@ async function loadState(){
   state.actions =(await DB.get('cs_actions')) ??DEFAULT_ACTIONS;
   state.rewards =(await DB.get('cs_rewards')) ??DEFAULT_REWARDS;
   state.math    =(await DB.get('cs_math'))    ??DEFAULT_MATH;
-  state.streak  =(await DB.get('cs_streak'))  ??DEFAULT_STREAK;
+  state.streaks =await DB.get('cs_streaks');
+  if(!state.streaks){
+    // Migrate the old single-challenge shape (cs_streak) into the new
+    // multi-challenge array so nobody's real in-progress streak is lost.
+    const legacy=await DB.get('cs_streak');
+    state.streaks=legacy
+      ? [{...legacy,id:'clean',title:'יום נקי',dayWord:'יום נקי',icon:'🧼'}, {...DEFAULT_STREAKS[1]}]
+      : DEFAULT_STREAKS.map(s=>({...s,days:{}}));
+    await DB.set('cs_streaks',state.streaks);
+  }
   state.anchored=(await DB.get('cs_anchored'))??DEFAULT_ANCHORED_TASKS;
   state.pin     =(await DB.get('cs_pin'))     ??'1234';
   state.calmMode=(await DB.get('cs_calm'))    ??false;
@@ -1434,7 +1457,8 @@ function redeemToken(raw){
   // never from the scanned token, so a hand-typed code can't spoof what was won.
   if(p[0]==='CSSTREAK'){
     stopCamera();
-    const s=state.streak;
+    const s=getStreak(p[1]);
+    if(!s){ modalMsg('🤔','הקוד לא תקין','הקוד הזה לא שייך לאף אתגר קיים.'); return; }
     if(!curChild()||curChild().id!==s.childId){ modalMsg('🤔','לא מתאים','הפרס הזה לא משויך לפרופיל הזה.'); return; }
     if(s.current<s.goal){
       modalMsg('⏳','עוד לא הגעת ליעד!','השלמת '+s.current+' מתוך '+s.goal+' ימים. תמשיך להתאמץ! 💪');
@@ -1442,8 +1466,8 @@ function redeemToken(raw){
     }
     modalPin(()=>{
       if(!s.wonAt) s.wonAt=Date.now();
-      DB.set('cs_streak',s);
-      modalMsg(s.rewardEmoji,'🏆 הגיע הזמן לפרס!','השלמת '+s.goal+' ימים נקיים!\nהפרס שלך: '+s.rewardLabel+' '+s.rewardEmoji+'\nכל הכבוד אריאל!');
+      DB.set('cs_streaks',state.streaks);
+      modalMsg(s.rewardEmoji,'🏆 הגיע הזמן לפרס!','השלמת '+s.goal+' ימים ברצף של '+s.title+'!\nהפרס שלך: '+s.rewardLabel+' '+s.rewardEmoji+'\nכל הכבוד!');
       coinBurst();
     });
     return;
@@ -1606,50 +1630,54 @@ function markChore(id){
   renderChores(); renderFirstThen(); renderDayStrip();
 }
 
-/* ===== STREAK CHALLENGE (30-day clean streak) ===== */
+/* ===== STREAK CHALLENGES (multiple daily-streak challenges, e.g. "clean day" / "good behavior") ===== */
 function dateKey(d){ return d.getFullYear()+'-'+(d.getMonth()+1)+'-'+d.getDate(); }
+let currentStreakId=null;
+function openStreakView(id){ currentStreakId=id; go('streak'); }
 function renderStreakBanner(){
   const wrap=document.getElementById('streakBannerWrap'); if(!wrap) return;
   wrap.innerHTML='';
-  const s=state.streak, c=curChild();
-  if(!c || s.childId!==c.id) return; // only show for the assigned child
-  const todayMarked = !!s.days[dateKey(new Date())];
-  const pct=Math.min(100,(s.current/s.goal)*100);
-  const banner=document.createElement('button');
-  banner.className='streak-banner'; banner.onclick=()=>go('streak');
-  banner.innerHTML=`
-    <span class="sb-flame">🔥</span>
-    <span class="sb-text">
-      <div class="sb-title">${s.current} ימים נקיים ברצף!</div>
-      <div class="sb-sub">${todayMarked?'סימנת היום ✓ — כל הכבוד!':'עוד '+(s.goal-s.current)+' ימים ל'+esc(s.rewardLabel)+' '+s.rewardEmoji}</div>
-      <div class="sb-bar"><div class="sb-fill" style="width:${pct}%"></div></div>
-    </span>
-    <span class="sb-arrow">›</span>`;
-  wrap.appendChild(banner);
+  const c=curChild(); if(!c) return;
+  state.streaks.filter(s=>s.childId===c.id).forEach(s=>{
+    const todayMarked = !!s.days[dateKey(new Date())];
+    const pct=Math.min(100,(s.current/s.goal)*100);
+    const banner=document.createElement('button');
+    banner.className='streak-banner'; banner.onclick=()=>openStreakView(s.id);
+    banner.innerHTML=`
+      <span class="sb-flame">${s.icon||'🔥'}</span>
+      <span class="sb-text">
+        <div class="sb-title">${s.current} ימים ברצף · ${esc(s.title)}!</div>
+        <div class="sb-sub">${todayMarked?'סימנת היום ✓ — כל הכבוד!':'עוד '+(s.goal-s.current)+' ימים ל'+esc(s.rewardLabel)+' '+s.rewardEmoji}</div>
+        <div class="sb-bar"><div class="sb-fill" style="width:${pct}%"></div></div>
+      </span>
+      <span class="sb-arrow">›</span>`;
+    wrap.appendChild(banner);
+  });
 }
-function requestMarkCleanToday(){
-  // A "clean day" reflects real-world behavior that a parent confirms — so marking
+function requestMarkCleanToday(id){
+  // A challenge day reflects real-world behavior that a parent confirms — so marking
   // it requires the parent PIN. This stops the child from self-marking the streak
-  // (and the big prize) without anyone checking.
-  modalPin(()=>{ markStreakCleanToday(); });
+  // (and the prize) without anyone checking.
+  modalPin(()=>{ markStreakCleanToday(id); });
 }
-async function markStreakCleanToday(){
-  const s=state.streak, k=dateKey(new Date());
+async function markStreakCleanToday(id){
+  const s=getStreak(id); if(!s) return;
+  const k=dateKey(new Date());
   if(s.days[k]) return; // already marked today
   s.days[k]='clean';
   const wasWon=!!s.wonAt;
-  recomputeStreak();
+  recomputeStreak(id);
   let justWon = !wasWon && !!s.wonAt;
-  await DB.set('cs_streak',s);
+  await DB.set('cs_streaks',state.streaks);
   scheduleSync();
   renderStreakBanner();
   if(currentView==='streak') renderStreakView();
   coinBurst();
   checkBadges();
   if(justWon){
-    modalMsg(s.rewardEmoji,'🏆 ניצחת באתגר!','השלמת '+s.goal+' ימים נקיים ברצף!\nהפרס שלך: '+s.rewardLabel+' '+s.rewardEmoji+'\nכל הכבוד גדול/ה!');
+    modalMsg(s.rewardEmoji,'🏆 ניצחת באתגר!','השלמת '+s.goal+' ימים ברצף של '+s.title+'!\nהפרס שלך: '+s.rewardLabel+' '+s.rewardEmoji+'\nכל הכבוד גדול/ה!');
   } else {
-    toast('עוד יום נקי! 🔥 '+s.current+'/'+s.goal);
+    toast(s.icon+' עוד '+s.dayWord+'! '+s.current+'/'+s.goal);
   }
 }
 function buildCalendar(year, month, days, editable, onTap, todayKeyStr){
@@ -1672,20 +1700,21 @@ function buildCalendar(year, month, days, editable, onTap, todayKeyStr){
   return {dowHtml, gridHtml:cells};
 }
 function renderStreakView(){
-  const s=state.streak;
+  const s=getStreak(currentStreakId)||state.streaks[0]; if(!s) return;
+  currentStreakId=s.id;
   // Fix title to show actual goal
   const titleEl=document.getElementById('streakViewTitle');
-  if(titleEl) titleEl.textContent='🌟 אתגר '+s.goal+' הימים';
+  if(titleEl) titleEl.textContent=(s.icon||'🌟')+' אתגר '+esc(s.title)+' · '+s.goal+' ימים';
   document.getElementById('streakHeroWrap').innerHTML=`
     <div class="streak-hero">
-      <div class="sh-flame">🔥</div>
+      <div class="sh-flame">${s.icon||'🔥'}</div>
       <div class="sh-num">${s.current}</div>
-      <div class="sh-lbl">ימים נקיים ברצף · השיא: ${s.best}</div>
+      <div class="sh-lbl">ימים ברצף · השיא: ${s.best}</div>
       <div class="sh-goal">${s.rewardEmoji} ${s.goal} ימים = ${esc(s.rewardLabel)}</div>
       <div class="streak-today-btn">${
         s.days[dateKey(new Date())]
           ? '<button class="btn ghost" disabled>✓ סימנת היום</button>'
-          : '<button class="btn mint" onclick="requestMarkCleanToday()">✅ היום היה יום נקי! (אישור הורה)</button>'
+          : '<button class="btn mint" onclick="requestMarkCleanToday(\''+s.id+'\')">✅ היום היה '+esc(s.dayWord)+'! (אישור הורה)</button>'
       }</div>
     </div>`;
   const now=new Date();
@@ -1693,6 +1722,7 @@ function renderStreakView(){
   document.getElementById('calMonthLabel').textContent=now.toLocaleDateString('he-IL',{month:'long',year:'numeric'});
   document.getElementById('calDow').innerHTML=dowHtml;
   document.getElementById('calGrid').innerHTML=gridHtml;
+  const legend=document.getElementById('calLegendClean'); if(legend) legend.textContent=s.dayWord;
 }
 
 /* ===== REWARDS ===== */
@@ -1938,16 +1968,20 @@ async function adminDelChild(id){
       document.querySelector('.app').classList.remove('minecraft-mode');
       removeMinecraftDecorations();
     }
-    // state.streak is a single global object assigned to one child. Deleting
-    // that child would otherwise leave streak.childId pointing at a ghost id:
-    // the streak silently vanishes from every UI (its guards all check
+    // Each streak challenge is assigned to one child via childId. Deleting
+    // that child would otherwise leave childId pointing at a ghost id: the
+    // streak silently vanishes from every UI (its guards all check
     // childId===curChild().id) and the admin dropdown shows a misleadingly
     // different child "selected" while the stored childId is still stale.
-    if(state.streak&&state.streak.childId===id){
-      state.streak.childId=state.children[0]?.id||null;
-      state.streak.current=0; state.streak.best=0; state.streak.days={}; state.streak.wonAt=null;
-      await DB.set('cs_streak',state.streak);
-    }
+    let anyReassigned=false;
+    (state.streaks||[]).forEach(s=>{
+      if(s.childId===id){
+        s.childId=state.children[0]?.id||null;
+        s.current=0; s.best=0; s.days={}; s.wonAt=null;
+        anyReassigned=true;
+      }
+    });
+    if(anyReassigned) await DB.set('cs_streaks',state.streaks);
     renderChildrenAdmin(); toast('נמחק');
   });
 }
@@ -1974,21 +2008,30 @@ async function addChore(){
 }
 
 /* ===== STREAK ADMIN ===== */
+let adminStreakId=null;
 function fillStreakAdmin(){
-  const s=state.streak;
-  const sel=document.getElementById('streakChildSel'); sel.innerHTML='';
-  state.children.forEach(c=>{ const o=document.createElement('option'); o.value=c.id; o.textContent=c.emoji+' '+c.name; if(c.id===s.childId) o.selected=true; sel.appendChild(o); });
+  const sel=document.getElementById('streakSel');
+  const selectedBefore=document.getElementById('streakSel').value;
+  sel.innerHTML='';
+  state.streaks.forEach(st=>{ const o=document.createElement('option'); o.value=st.id; o.textContent=(st.icon||'🌟')+' '+st.title; sel.appendChild(o); });
+  adminStreakId=selectedBefore&&getStreak(selectedBefore)?selectedBefore:(adminStreakId&&getStreak(adminStreakId)?adminStreakId:state.streaks[0].id);
+  sel.value=adminStreakId;
+  const s=getStreak(adminStreakId);
+  document.getElementById('streakTitle').value=s.title;
+  const childSel=document.getElementById('streakChildSel'); childSel.innerHTML='';
+  state.children.forEach(c=>{ const o=document.createElement('option'); o.value=c.id; o.textContent=c.emoji+' '+c.name; if(c.id===s.childId) o.selected=true; childSel.appendChild(o); });
   document.getElementById('streakGoal').value=s.goal;
   document.getElementById('streakRewardEmoji').value=s.rewardEmoji;
   document.getElementById('streakRewardLabel').value=s.rewardLabel;
   const childName=(state.children.find(c=>c.id===s.childId)||{}).name||'—';
   document.getElementById('streakAdminStats').innerHTML=
-    `<div style="font-size:2rem;font-weight:900;color:var(--gold-d);">🔥 ${s.current}</div>
+    `<div style="font-size:2rem;font-weight:900;color:var(--gold-d);">${s.icon||'🔥'} ${s.current}</div>
      <div style="font-size:.82rem;color:var(--ink2);">רצף נוכחי של ${esc(childName)} · שיא: ${s.best} · מטרה: ${s.goal}</div>`;
   renderAdminCalendar();
 }
 async function saveStreakConfig(){
-  const s=state.streak;
+  const s=getStreak(adminStreakId); if(!s) return;
+  s.title=document.getElementById('streakTitle').value.trim()||s.title;
   const newChildId=document.getElementById('streakChildSel').value;
   if(newChildId!==s.childId){
     // Reassigning to a different child must not hand them the previous
@@ -2001,33 +2044,35 @@ async function saveStreakConfig(){
   s.goal=parseInt(document.getElementById('streakGoal').value)||30;
   s.rewardEmoji=document.getElementById('streakRewardEmoji').value.trim()||'🎮';
   s.rewardLabel=document.getElementById('streakRewardLabel').value.trim()||'פרס';
-  await DB.set('cs_streak',s);
+  await DB.set('cs_streaks',state.streaks);
+  scheduleSync();
   fillStreakAdmin(); toast('נשמר ✓');
 }
 function renderAdminCalendar(){
-  const s=state.streak, now=new Date();
+  const s=getStreak(adminStreakId); if(!s) return;
+  const now=new Date();
   const {dowHtml,gridHtml}=buildCalendar(now.getFullYear(), now.getMonth(), s.days, true, 'cycleAdminDay', dateKey(now));
   document.getElementById('adminCalMonthLabel').textContent=now.toLocaleDateString('he-IL',{month:'long',year:'numeric'});
   document.getElementById('adminCalDow').innerHTML=dowHtml;
   document.getElementById('adminCalGrid').innerHTML=gridHtml;
 }
 async function cycleAdminDay(key){
-  const s=state.streak;
+  const s=getStreak(adminStreakId); if(!s) return;
   const cur=s.days[key];
   // cycle: none -> clean -> accident -> none
   if(!cur) s.days[key]='clean';
   else if(cur==='clean') s.days[key]='accident';
   else delete s.days[key];
-  recomputeStreak();
-  await DB.set('cs_streak',s);
+  recomputeStreak(adminStreakId);
+  await DB.set('cs_streaks',state.streaks);
   scheduleSync();
   fillStreakAdmin();
   renderStreakBanner();
   if(currentView==='streak') renderStreakView();
 }
-function recomputeStreak(){
+function recomputeStreak(id){
   // recompute current streak by walking backward from today through consecutive marked clean days
-  const s=state.streak;
+  const s=getStreak(id); if(!s) return;
   let count=0, best=s.best||0;
   let cursor=new Date();
   // if today not marked yet, start counting from yesterday backward
@@ -2045,9 +2090,10 @@ function recomputeStreak(){
 }
 function adminReportAccidentToday(){
   modalConfirm('🚨','לדווח על תקרית היום?','הרצף יתאפס ל-0. ניתן עדיין לערוך ימים בלוח.', async()=>{
-    const s=state.streak, k=dateKey(new Date());
+    const s=getStreak(adminStreakId); if(!s) return;
+    const k=dateKey(new Date());
     s.days[k]='accident'; s.current=0;
-    await DB.set('cs_streak',s);
+    await DB.set('cs_streaks',state.streaks);
     scheduleSync();
     fillStreakAdmin(); renderStreakBanner();
     if(currentView==='streak') renderStreakView();
@@ -2090,6 +2136,8 @@ function fillQRSelect(){
   }
   document.getElementById('qrResult').style.display='none';
   document.getElementById('streakQrResult').style.display='none';
+  const ssel=document.getElementById('qrStreakSelect'); ssel.innerHTML='';
+  state.streaks.forEach(st=>{ const o=document.createElement('option'); o.value=st.id; o.textContent=(st.icon||'🌟')+' '+st.title; ssel.appendChild(o); });
 }
 function makeQR(){
   const val=document.getElementById('qrSelect').value; if(!val) return;
@@ -2103,11 +2151,11 @@ function makeQR(){
   document.getElementById('qrResult').style.display='block';
 }
 function makeStreakQR(){
-  const s=state.streak;
-  const token='CSSTREAK|'+s.rewardLabel+'|'+s.rewardEmoji+'|'+s.goal;
+  const s=getStreak(document.getElementById('qrStreakSelect').value); if(!s) return;
+  const token='CSSTREAK|'+s.id+'|'+s.rewardLabel+'|'+s.rewardEmoji+'|'+s.goal;
   const box=document.getElementById('streakQrBox'); box.innerHTML='';
   new QRCode(box,{text:token,width:200,height:200,colorDark:'#D99409',colorLight:'#ffffff',correctLevel:QRCode.CorrectLevel.M});
-  document.getElementById('streakQrLabel').textContent=s.rewardEmoji+' '+s.rewardLabel+' — פרס '+s.goal+' ימים';
+  document.getElementById('streakQrLabel').textContent=s.rewardEmoji+' '+s.rewardLabel+' — פרס '+s.goal+' ימים ('+s.title+')';
   document.getElementById('streakQrResult').style.display='block';
 }
 function fillMathConfig(){
@@ -2560,7 +2608,7 @@ function buildSyncPayload(){
   // lock, not family data, and syncing it would let it leak to whichever
   // device last set it rather than staying under each device's own control.
   const payload={children:state.children,chores:state.chores,actions:state.actions,
-    rewards:state.rewards,math:state.math,streak:state.streak,badgeDefs:state.badgeDefs,
+    rewards:state.rewards,math:state.math,streaks:state.streaks,badgeDefs:state.badgeDefs,
     anchored:state.anchored,events:state.events||[],hwmDate:_hwmDate,calmMode:state.calmMode,kids:{}};
   for(const ch of state.children){
     const k=state.kid[ch.id];
@@ -2602,13 +2650,20 @@ async function pullFromFirebase(){
     if(data.actions){ state.actions=data.actions; await DB.set('cs_actions',data.actions); }
     if(data.rewards){ state.rewards=data.rewards; await DB.set('cs_rewards',data.rewards); }
     if(data.math){ state.math=data.math; await DB.set('cs_math',data.math); }
-    if(data.streak){
-      state.streak=data.streak;
+    if(data.streaks){
+      state.streaks=data.streaks;
       // Firebase RTDB drops empty objects/arrays on write, so streak.days can
       // come back undefined even though we wrote {}. Restore it, or code like
       // renderStreakBanner's s.days[dateKey(new Date())] crashes on load.
-      if(!state.streak.days||typeof state.streak.days!=='object') state.streak.days={};
-      await DB.set('cs_streak',state.streak);
+      state.streaks.forEach(s=>{ if(!s.days||typeof s.days!=='object') s.days={}; });
+      await DB.set('cs_streaks',state.streaks);
+    } else if(data.streak){
+      // Legacy single-challenge cloud data from before multi-streak support —
+      // wrap it as the "clean day" challenge and keep the default second one.
+      const legacy=data.streak;
+      if(!legacy.days||typeof legacy.days!=='object') legacy.days={};
+      state.streaks=[{...legacy,id:'clean',title:'יום נקי',dayWord:'יום נקי',icon:'🧼'}, {...DEFAULT_STREAKS[1]}];
+      await DB.set('cs_streaks',state.streaks);
     }
     if(data.badgeDefs){ state.badgeDefs=data.badgeDefs; await DB.set('cs_badgedefs',data.badgeDefs); }
     if(data.anchored){
@@ -2711,7 +2766,7 @@ async function clearLocalFamilyData(){
   }
   state.children=DEFAULT_CHILDREN; state.current=null; state.kid={};
   state.chores=DEFAULT_CHORES; state.actions=DEFAULT_ACTIONS; state.rewards=DEFAULT_REWARDS;
-  state.math=DEFAULT_MATH; state.streak=DEFAULT_STREAK; state.badgeDefs=DEFAULT_BADGE_DEFS;
+  state.math=DEFAULT_MATH; state.streaks=DEFAULT_STREAKS.map(s=>({...s,days:{}})); state.badgeDefs=DEFAULT_BADGE_DEFS;
   state.anchored=DEFAULT_ANCHORED_TASKS; state.events=[]; state.familyId=null;
   // Delete rather than write defaults back: hasExistingLocalData() treats a
   // present key as "this device has real data" regardless of its content, so
@@ -2721,7 +2776,7 @@ async function clearLocalFamilyData(){
   // use; storage should end up genuinely empty, matching a device that was
   // never set up at all.
   for(const k of ['cs_children','cs_current','cs_chores','cs_actions','cs_rewards','cs_math',
-    'cs_streak','cs_badgedefs','cs_anchored','cs_events','cs_hwm_date','cs_familyid']){
+    'cs_streak','cs_streaks','cs_badgedefs','cs_anchored','cs_events','cs_hwm_date','cs_familyid']){
     await DB.del(k);
   }
   _hwmDate=null; _hwmAdvanceMono=performance.now();

@@ -12,6 +12,12 @@
       "runtimeExecutable": "python",
       "runtimeArgs": ["-m", "http.server", "3500", "--directory", "C:\\Claude\\HouseholdDashboard"],
       "port": 3500
+    },
+    {
+      "name": "coinquest",
+      "runtimeExecutable": "python",
+      "runtimeArgs": ["-m", "http.server", "3600", "--directory", "C:\\Claude\\Code"],
+      "port": 3600
     }
   ]
 }

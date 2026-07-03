@@ -17,6 +17,11 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
+      - name: Inject app version
+        run: |
+          SHORT_SHA=$(git rev-parse --short HEAD)
+          DEPLOY_DATE=$(date -u +%Y-%m-%d)
+          sed -i "s/%%APP_VERSION%%/${SHORT_SHA} · ${DEPLOY_DATE}/g" index.html
       - uses: actions/configure-pages@v4
       - uses: actions/upload-pages-artifact@v3
         with:
