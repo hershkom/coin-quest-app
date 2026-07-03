@@ -1154,11 +1154,15 @@ const DEFAULT_REWARDS=[
   {id:'movie', label:'ערב סרט', emoji:'🍿', cost:80},
 ];
 const DEFAULT_MATH={enabled:true, ops:['+','-'], maxNum:20, pts:2, daily:10};
-// Default game must be frame-embeddable (no X-Frame-Options/frame-ancestors
-// blocking) — verified live: classic.minecraft.net loads in an iframe;
-// eaglercraft.com refuses framing entirely and can't be used here.
+// Default games must be frame-embeddable (no X-Frame-Options/frame-ancestors
+// blocking) — verified live: bloxd.io and classic.minecraft.net load in an
+// iframe; eaglercraft.com refuses framing entirely and can't be used here.
+// bloxd.io is first because it has full touch controls — real-device testing
+// showed classic.minecraft.net refuses to run without a physical keyboard,
+// so it's kept for desktop but labeled accordingly.
 const DEFAULT_GAMES=[
-  {id:'mcclassic', label:'מיינקראפט קלאסי', emoji:'⛏️', url:'https://classic.minecraft.net/'},
+  {id:'bloxd',     label:'בלוקסד (כמו מיינקראפט)', emoji:'🧱', url:'https://bloxd.io/'},
+  {id:'mcclassic', label:'מיינקראפט קלאסי (למחשב עם מקלדת)', emoji:'⛏️', url:'https://classic.minecraft.net/'},
 ];
 const DEFAULT_STREAKS=[
   {id:'clean',    title:'יום נקי',       dayWord:'יום נקי',      icon:'🧼', childId:'ariel', goal:30, rewardLabel:'Nintendo Switch 2', rewardEmoji:'🎮', days:{}, current:0, best:0, wonAt:null},
@@ -1264,6 +1268,18 @@ async function loadState(){
   }
   state.anchored=(await DB.get('cs_anchored'))??DEFAULT_ANCHORED_TASKS;
   state.games   =(await DB.get('cs_games'))   ??DEFAULT_GAMES;
+  // One-time migration: devices that synced the games list before bloxd was
+  // added have a stored cs_games without any touch-capable game — Ariel's
+  // phone can't play classic.minecraft.net (it demands a physical keyboard).
+  if(!(await DB.get('cs_games_v2'))){
+    if(!state.games.some(g=>/bloxd\.io/.test(g.url))){
+      state.games.unshift(DEFAULT_GAMES[0]);
+      await DB.set('cs_games',state.games);
+    }
+    const mc=state.games.find(g=>/classic\.minecraft\.net/.test(g.url)&&!/מקלדת/.test(g.label));
+    if(mc){ mc.label+=' (למחשב עם מקלדת)'; await DB.set('cs_games',state.games); }
+    await DB.set('cs_games_v2',true);
+  }
   // One-time seed: make sure at least one coins→minutes package exists in the
   // rewards shop, so the whole buy-time flow works out of the box with zero
   // parent setup. The flag (not the package's presence) guards re-seeding, so
@@ -3305,7 +3321,7 @@ async function clearLocalFamilyData(){
   // never set up at all.
   for(const k of ['cs_children','cs_current','cs_chores','cs_actions','cs_rewards','cs_math',
     'cs_streak','cs_streaks','cs_badgedefs','cs_anchored','cs_events','cs_hwm_date','cs_familyid',
-    'cs_games','cs_gtime_seeded']){
+    'cs_games','cs_games_v2','cs_gtime_seeded']){
     await DB.del(k);
   }
   _hwmDate=null; _hwmAdvanceMono=performance.now();
@@ -3320,18 +3336,38 @@ function randomInviteCode(){
   let s=''; for(let i=0;i<6;i++) s+=chars[Math.floor(Math.random()*chars.length)];
   return s;
 }
+function isMobileBrowser(){
+  return /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+}
 async function signInWithGoogle(statusElId){
   // statusElId lets this be called both from the welcome screen (#welcomeStatus)
   // and from Admin Settings (#settingsAuthStatus) for a parent upgrading from
   // local-only mode without ever seeing the welcome screen again.
   const statusEl=()=>document.getElementById(statusElId||'welcomeStatus');
-  // Deliberately popup-only, no signInWithRedirect fallback: the redirect flow
-  // depends on sessionStorage surviving a full navigation away and back, which
-  // breaks with "missing initial state" on mobile Chrome due to storage
-  // partitioning. Popup has no such dependency and works reliably on modern
-  // mobile browsers for a real user-gesture-triggered click like this one.
-  if(statusEl()) statusEl().textContent='⏳ מתחבר... (אם החלון שנפתח נשאר לבן, סגור אותו וחזור לכאן)';
   const provider=new firebase.auth.GoogleAuthProvider();
+  // MOBILE: full-page redirect. Real-device testing showed the popup flow
+  // strands the user on a white firebaseapp.com tab — on mobile the "popup"
+  // is a new tab, and Chrome Android can discard/throttle the opener tab so
+  // the OAuth handler's postMessage handshake back to it never completes.
+  // The redirect flow is a plain top-level navigation with no opener
+  // dependency. Its own historical failure mode ("missing initial state",
+  // when sessionStorage doesn't survive the round-trip) is surfaced loudly
+  // by the getRedirectResult handler at startup rather than hidden.
+  if(isMobileBrowser()){
+    if(statusEl()) statusEl().textContent='⏳ עובר לדף ההתחברות של Google...';
+    try{
+      localStorage.setItem('cs_auth_redirect_pending','1');
+      await fbAuth.signInWithRedirect(provider);
+      return; // page is navigating away
+    }catch(e){
+      localStorage.removeItem('cs_auth_redirect_pending');
+      if(statusEl()) statusEl().textContent='שגיאת התחברות: '+(e&&e.message||'נסה שוב');
+      return;
+    }
+  }
+  // DESKTOP: popup (kept — it avoids losing in-memory app state to a
+  // navigation, and the opener-tab problem above doesn't apply).
+  if(statusEl()) statusEl().textContent='⏳ מתחבר... (אם החלון שנפתח נשאר לבן, סגור אותו וחזור לכאן)';
   // signInWithPopup's promise can simply never settle — never resolve, never
   // reject — if the popup itself hangs blank (a known mobile-Chrome failure
   // mode: storage-partitioning/third-party-cookie blocking can prevent the
@@ -3799,6 +3835,32 @@ window.addEventListener('unhandledrejection', (ev)=>{
     checkEventReminders();
 
     const localOnly=localStorage.getItem('cs_local_only')==='1';
+
+    // Returning from the mobile signInWithRedirect round-trip: resolve the
+    // pending result BEFORE the auth listener drives navigation, and surface
+    // any failure loudly — the historical redirect bug ("missing initial
+    // state") failed silently, which is exactly what made it undebuggable.
+    // The flag lives in localStorage (not sessionStorage) because surviving
+    // the cross-origin round-trip is the whole point.
+    if(localStorage.getItem('cs_auth_redirect_pending')==='1'){
+      localStorage.removeItem('cs_auth_redirect_pending');
+      authStep('⏳ מסיים התחברות...');
+      try{
+        const res=await withTimeout(fbAuth.getRedirectResult(),15000,'התחברות Google');
+        // Success — onAuthStateChanged below takes over. No result (user
+        // backed out of the Google page) — clear the "finishing..." status
+        // so the welcome screen isn't stuck implying work is still happening.
+        if(!res||!res.user) authStep('');
+      }catch(e){
+        go('welcome');
+        if(e&&e.code==='auth/missing-initial-state'){
+          authStep('ההתחברות לא הושלמה כי הדפדפן לא שמר את מצב ההתחברות. נסה שוב, ואם זה חוזר — פתח את האתר בכרום רגיל (לא מתוך אפליקציה אחרת) ונסה שוב.','var(--coral)');
+        }else{
+          authStep('שגיאת התחברות: '+authErrorText(e)+' — נסה שוב.','var(--coral)');
+        }
+      }
+    }
+
     // ONE persistent listener drives every sign-in, both the initial check on
     // load and any later sign-in triggered from Admin Settings (a parent
     // upgrading from local-only mode without ever seeing the welcome screen).
