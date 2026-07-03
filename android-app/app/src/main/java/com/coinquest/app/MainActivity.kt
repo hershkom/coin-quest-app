@@ -45,13 +45,10 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun requestPermissions() {
-        val needed = mutableListOf<String>()
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA)
-            != PackageManager.PERMISSION_GRANTED) needed.add(Manifest.permission.CAMERA)
-        if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO)
-            != PackageManager.PERMISSION_GRANTED) needed.add(Manifest.permission.RECORD_AUDIO)
-        if (needed.isNotEmpty())
-            ActivityCompat.requestPermissions(this, needed.toTypedArray(), PERMISSION_REQUEST)
+            != PackageManager.PERMISSION_GRANTED) {
+            ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.CAMERA), PERMISSION_REQUEST)
+        }
     }
 
     @SuppressLint("SetJavaScriptEnabled")

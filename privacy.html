@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>מדיניות פרטיות — כספת המטבעות (Coin Quest)</title>
+<style>
+  body{font-family:-apple-system,Segoe UI,Arial,sans-serif;max-width:760px;margin:0 auto;padding:28px 20px 60px;line-height:1.7;color:#2A2440;background:#FBFAFF;}
+  h1{font-size:1.5rem;}
+  h2{font-size:1.15rem;margin-top:2em;color:#5b4b9e;}
+  .updated{color:#6a6482;font-size:.85rem;}
+  .en{background:#F2F0FB;border-radius:14px;padding:14px 18px;margin:18px 0;font-size:.92rem;}
+  a{color:#7c5cfc;}
+  ul{padding-inline-start:1.3em;}
+  code{background:#eee;padding:1px 5px;border-radius:5px;}
+</style>
+</head>
+<body>
+<h1>🪙 מדיניות פרטיות — כספת המטבעות (Coin Quest)</h1>
+<p class="updated">עודכן לאחרונה: יולי 2026</p>
+
+<div class="en">
+<b>English summary:</b> Coin Quest is a family chore/reward app. We collect only what's needed to sync a family's own data across their devices: a Google account email (via Google Sign-In) and the reward data the parent enters (children's chosen names/emoji avatars, chores, coin history, streak/badge progress). Camera access is used only locally, on-device, to scan QR codes — video is never uploaded or stored. No ads, no analytics SDKs, no data sale to third parties. If a parent enables the optional AI chat feature, their own Groq API key and chat messages are sent directly from the child's device to Groq's API (a third-party AI provider) — this feature is off unless a parent turns it on. Contact: mike.hersh@gmail.com.
+</div>
+
+<h2>1. מי אנחנו ומה האפליקציה עושה</h2>
+<p>כספת המטבעות היא אפליקציה משפחתית לניהול מטלות ותגמולים לילדים, המיועדת בעיקר להורים שמחפשים כלי חינוכי-התנהגותי. את/ה יכול/ה להשתמש באפליקציה במצב מקומי בלבד (בלי חשבון, בלי סנכרון) או להתחבר עם חשבון Google כדי לסנכרן את הנתונים בין מכשירים ובין הורים.</p>
+
+<h2>2. איזה מידע אנחנו אוספים</h2>
+<ul>
+  <li><b>חשבון Google (אופציונלי):</b> אם ההורה בוחר להתחבר, אנו מקבלים מ-Google את כתובת האימייל ומזהה המשתמש (UID) שלו — לצורך יצירת/שיוך המשפחה בענן. איננו מקבלים סיסמה שלך; ההתחברות מנוהלת ע"י Google.</li>
+  <li><b>נתוני המשפחה שההורה מזין:</b> שמות/אימוג'י שבחר ההורה לכל ילד/ה, רשימת מטלות ופרסים, יתרת מטבעות והיסטוריית פעולות, הגדרות אתגרי רצף ותגים, לוח זמנים יומי. מידע זה נשמר בשירות Firebase Realtime Database של Google, בפרטיציה נפרדת לכל משפחה.</li>
+  <li><b>קוד ה-PIN של ההורה:</b> נשמר <b>רק על המכשיר עצמו</b> ואינו מסונכרן לענן ואינו נשלח לשום שרת.</li>
+  <li><b>מצלמה:</b> משמשת רק לסריקת קודי QR בתוך האפליקציה, על המכשיר בלבד. תמונת/וידאו המצלמה מעובד מקומית בדפדפן ואינו מועלה, נשמר, או נשלח לשום מקום.</li>
+  <li><b>מפתח Groq וצ'אט AI (אופציונלי, כבוי כברירת מחדל):</b> אם הורה בוחר להזין מפתח API אישי משירות Groq כדי להפעיל תכונת צ'אט/עוזר AI, המפתח נשמר רק על המכשיר, וההודעות בצ'אט נשלחות ישירות מהמכשיר לשירות Groq (ספק AI חיצוני, ולא לשרתים שלנו). ראה את <a href="https://groq.com/privacy-policy/" target="_blank">מדיניות הפרטיות של Groq</a> אם תכונה זו מופעלת.</li>
+</ul>
+
+<h2>3. מה אנחנו לא עושים</h2>
+<ul>
+  <li>אין פרסומות (ads) באפליקציה.</li>
+  <li>אין כלי אנליטיקס/מעקב של צד שלישי.</li>
+  <li>אין מכירה או שיתוף מידע עם צדדים שלישיים לצרכי שיווק.</li>
+  <li>האפליקציה אינה אוספת מידע ישירות מהילד/ה — כל ההגדרות וההרשמה מבוצעות ע"י ההורה.</li>
+</ul>
+
+<h2>4. איפה המידע נשמר</h2>
+<p>המידע נשמר בשירותי Google Firebase (Authentication ו-Realtime Database), עם כללי הרשאה המגבילים גישה לנתוני משפחה רק למשתמשים המחוברים ומשויכים לאותה משפחה.</p>
+
+<h2>5. זכויותיך</h2>
+<p>ניתן בכל עת לצאת ממצב סנכרון-חשבון ולהמשיך במצב מקומי בלבד. לבקשת מחיקה מלאה של נתוני המשפחה מהענן, או כל שאלה בנוגע לפרטיות, ניתן לפנות אלינו למייל: <a href="mailto:mike.hersh@gmail.com">mike.hersh@gmail.com</a>.</p>
+
+<h2>6. אפליקציה לילדים</h2>
+<p>האפליקציה מיועדת לשימוש הורים המנהלים פרופיל עבור ילדיהם. אנו לא אוספים במכוון מידע מזהה אישי מילדים ללא הסכמת הורה, ולא מציגים פרסומות מבוססות-התנהגות.</p>
+
+<h2>7. שינויים במדיניות</h2>
+<p>אם נעדכן את המדיניות הזו, נעדכן את התאריך בראש העמוד. שימוש מתמשך באפליקציה מהווה הסכמה למדיניות המעודכנת.</p>
+
+<h2>8. יצירת קשר</h2>
+<p>שאלות? <a href="mailto:mike.hersh@gmail.com">mike.hersh@gmail.com</a></p>
+
+</body>
+</html>

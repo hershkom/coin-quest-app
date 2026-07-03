@@ -12,6 +12,7 @@ local.properties
 # Daemon JVM criteria (machine-specific, regenerated locally)
 gradle/gradle-daemon-jvm.properties
 
-# Keystore (never commit signing keys)
+# Keystore (never commit signing keys or their passwords)
 *.jks
 *.keystore
+keystore.properties
