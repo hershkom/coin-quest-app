@@ -1035,11 +1035,15 @@ const DEFAULT_ANCHORED_TASKS={
 // the underlying formula stays in code so it can't be broken by a typo.
 const BADGE_METRICS={
   totalEarned: {label:'סה״כ מטבעות שהרוויח (אי פעם)', kind:'threshold', get:k=>(k.history||[]).reduce((s,h)=>s+(h.points>0?h.points:0),0)},
-  streakBest:  {label:'שיא ימים נקיים ברצף',            kind:'threshold', get:()=>state.streak.best},
+  // state.streak is a single global object assigned to ONE child via
+  // state.streak.childId — without checking that against the id being
+  // evaluated, every other child would also earn these two badges the moment
+  // the assigned child's streak crosses the threshold.
+  streakBest:  {label:'שיא ימים נקיים ברצף',            kind:'threshold', get:(k,id)=>state.streak.childId===id?state.streak.best:0},
   mathTotal:   {label:'תרגילי חשבון שנפתרו (סה״כ)',     kind:'threshold', get:k=>k.mathTotal||0},
   taskTotal:   {label:'מטלות/פעולות שהושלמו (סה״כ)',    kind:'threshold', get:k=>k.taskTotal||0},
   rewardsTotal:{label:'פרסים שנקנו (סה״כ)',              kind:'threshold', get:k=>k.rewardsTotal||0},
-  streakGoal:  {label:'השלמת את כל אתגר הרצף',           kind:'goal',      get:()=>state.streak.best>=state.streak.goal},
+  streakGoal:  {label:'השלמת את כל אתגר הרצף',           kind:'goal',      get:(k,id)=>state.streak.childId===id&&state.streak.best>=state.streak.goal},
 };
 const DEFAULT_BADGE_DEFS=[
   {id:'first_coin',  emoji:'🥇', label:'המטבע הראשון',   metric:'totalEarned',  threshold:1},
@@ -1049,9 +1053,9 @@ const DEFAULT_BADGE_DEFS=[
   {id:'tasks_100',   emoji:'🧹', label:'גיבור המטלות',   metric:'taskTotal',    threshold:100},
   {id:'first_reward',emoji:'🎁', label:'הקנייה הראשונה', metric:'rewardsTotal', threshold:1},
 ];
-function badgeIsEarned(def,k){
+function badgeIsEarned(def,k,kidId){
   const m=BADGE_METRICS[def.metric]; if(!m) return false;
-  return m.kind==='goal' ? !!m.get(k) : m.get(k)>=(def.threshold||0);
+  return m.kind==='goal' ? !!m.get(k,kidId) : m.get(k,kidId)>=(def.threshold||0);
 }
 async function checkBadges(){
   const k=cur(); if(!k) return;
@@ -1059,7 +1063,7 @@ async function checkBadges(){
   let changed=false;
   for(const def of state.badgeDefs){
     if(have.has(def.id)) continue;
-    if(badgeIsEarned(def,k)){
+    if(badgeIsEarned(def,k,state.current)){
       k.badges.push({id:def.id,ts:Date.now()});
       changed=true;
       toast('🏅 תג חדש: '+def.label+' '+def.emoji);
@@ -1859,9 +1863,28 @@ async function adminDelChild(id){
   const ch=state.children.find(c=>c.id===id);
   modalConfirm('🗑️','למחוק את '+ch.name+'?','כל הנתונים של '+ch.name+' יימחקו לצמיתות.', async()=>{
     state.children=state.children.filter(c=>c.id!==id); await DB.set('cs_children',state.children);
-    await DB.del('cs_bal_'+id); await DB.del('cs_hist_'+id); await DB.del('cs_daily_'+id); await DB.del('cs_mathd_'+id);
+    for(const p of ['cs_bal_','cs_hist_','cs_daily_','cs_mathd_','cs_badges_','cs_matht_','cs_taskt_','cs_rwt_']){
+      await DB.del(p+id);
+    }
     delete state.kid[id];
     if(state.current===id){ state.current=null; await DB.set('cs_current',null); }
+    // The Minecraft theme/decorations are only ever removed by selectChild()'s
+    // else-branch — deleting the active Ariel profile bypassed that entirely
+    // and left the theme visually stuck on for whoever's picked next.
+    if(id==='ariel'){
+      document.querySelector('.app').classList.remove('minecraft-mode');
+      removeMinecraftDecorations();
+    }
+    // state.streak is a single global object assigned to one child. Deleting
+    // that child would otherwise leave streak.childId pointing at a ghost id:
+    // the streak silently vanishes from every UI (its guards all check
+    // childId===curChild().id) and the admin dropdown shows a misleadingly
+    // different child "selected" while the stored childId is still stale.
+    if(state.streak&&state.streak.childId===id){
+      state.streak.childId=state.children[0]?.id||null;
+      state.streak.current=0; state.streak.best=0; state.streak.days={}; state.streak.wonAt=null;
+      await DB.set('cs_streak',state.streak);
+    }
     renderChildrenAdmin(); toast('נמחק');
   });
 }
@@ -1903,7 +1926,15 @@ function fillStreakAdmin(){
 }
 async function saveStreakConfig(){
   const s=state.streak;
-  s.childId=document.getElementById('streakChildSel').value;
+  const newChildId=document.getElementById('streakChildSel').value;
+  if(newChildId!==s.childId){
+    // Reassigning to a different child must not hand them the previous
+    // child's progress/calendar/win-flag — every UI that reads s.current/
+    // s.best/s.days/s.wonAt has no per-child scoping of its own, it all
+    // trusts s.childId to mean "this data belongs to that one child".
+    s.current=0; s.best=0; s.days={}; s.wonAt=null;
+  }
+  s.childId=newChildId;
   s.goal=parseInt(document.getElementById('streakGoal').value)||30;
   s.rewardEmoji=document.getElementById('streakRewardEmoji').value.trim()||'🎮';
   s.rewardLabel=document.getElementById('streakRewardLabel').value.trim()||'פרס';
@@ -2450,7 +2481,7 @@ async function sendChatMessage(){
 }
 
 /* ===== FIREBASE AUTO-SYNC (family data, keyed by state.familyId) ===== */
-let fbSyncTimer=null, fbSyncing=false;
+let fbSyncTimer=null, fbSyncing=false, fbPendingPush=false;
 // Pushes are suspended until the initial load + pull settles, so a slow pull on
 // a mobile connection can't be clobbered by an early push of pre-pull state.
 let syncReady=false;
@@ -2462,12 +2493,12 @@ function showSyncStatus(msg,color){
 function familyRef(){ return state.familyId?fbDb.ref('families/'+state.familyId+'/data'):null; }
 
 function buildSyncPayload(){
-  // The parent PIN is intentionally NOT included: the Firebase DB is in open
-  // "test mode", so anything synced here is readable by anyone who knows the
-  // family code. The PIN stays device-local; set it separately on each device.
+  // The parent PIN is intentionally NOT included — it's a device-local admin
+  // lock, not family data, and syncing it would let it leak to whichever
+  // device last set it rather than staying under each device's own control.
   const payload={children:state.children,chores:state.chores,actions:state.actions,
     rewards:state.rewards,math:state.math,streak:state.streak,badgeDefs:state.badgeDefs,
-    anchored:state.anchored,events:state.events||[],hwmDate:_hwmDate,kids:{}};
+    anchored:state.anchored,events:state.events||[],hwmDate:_hwmDate,calmMode:state.calmMode,kids:{}};
   for(const ch of state.children){
     const k=state.kid[ch.id];
     if(k){
@@ -2479,13 +2510,22 @@ function buildSyncPayload(){
 }
 
 async function pushToFirebase(){
-  const ref=familyRef(); if(!ref||fbSyncing) return;
+  const ref=familyRef(); if(!ref) return;
+  if(fbSyncing){
+    // A push is already in flight (e.g. a slow connection). Don't just drop
+    // this one silently — nothing else would ever retry it otherwise, and
+    // whatever changed since the in-flight push started would stay
+    // local-only indefinitely. Remember to push again once it finishes.
+    fbPendingPush=true;
+    return;
+  }
   fbSyncing=true;
   try{
     await ref.set(buildSyncPayload());
     showSyncStatus('✅ מסונכרן '+new Date().toLocaleTimeString('he-IL',{hour:'2-digit',minute:'2-digit'}),'var(--mint)');
   }catch(e){ showSyncStatus('⚠️ שגיאת שמירה','var(--coral)'); }
   fbSyncing=false;
+  if(fbPendingPush){ fbPendingPush=false; scheduleSync(); }
 }
 
 async function pullFromFirebase(){
@@ -2515,6 +2555,12 @@ async function pullFromFirebase(){
       await DB.set('cs_anchored',state.anchored);
     }
     if(data.events){ state.events=data.events; await DB.set('cs_events',data.events); }
+    // Use !==undefined (not truthiness) so an explicit false — calm mode
+    // turned OFF on another device — still overwrites a local true.
+    if(data.calmMode!==undefined){
+      state.calmMode=data.calmMode; await DB.set('cs_calm',data.calmMode); applyCalmModeClass();
+      fillCalmToggle();
+    }
     // PIN is never synced (see buildSyncPayload). The high-water-mark date IS
     // synced so wiping/reinstalling the app on one device can't roll back the
     // anti-clock-tamper guard for the whole family.
@@ -2559,6 +2605,11 @@ async function pullFromFirebase(){
 
 async function forceSyncNow(){
   showSyncStatus('⏳ מסנכרן...','#F5B82E');
+  // Flush any edit still waiting on the debounce timer BEFORE pulling.
+  // Otherwise pullFromFirebase would overwrite state with the (older) cloud
+  // snapshot and silently discard an edit made moments ago that just hadn't
+  // reached the cloud yet.
+  if(fbSyncTimer){ clearTimeout(fbSyncTimer); fbSyncTimer=null; await pushToFirebase(); }
   // pull first, then push (merge: remote wins on load)
   const pulled=await pullFromFirebase();
   await pushToFirebase();
