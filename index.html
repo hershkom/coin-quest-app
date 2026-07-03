@@ -2733,6 +2733,11 @@ async function handleSignedInUser(user){
   }finally{
     // Load settled (success or fail) — now allow edits to auto-push to the cloud.
     syncReady=true;
+    // If the user interacted with the app WHILE syncReady was false (e.g. marked
+    // a chore during the pull on a slow connection), DB.set's scheduleSync()
+    // call was a silent no-op at that moment and nothing else retries it —
+    // flush now so that edit isn't lost. Harmless no-op push if nothing changed.
+    scheduleSync();
   }
 }
 
