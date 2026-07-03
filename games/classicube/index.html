@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="he">
+<head>
+<meta charset="UTF-8">
+<!-- Mobile: full-width canvas, no zoom — per ClassiCube's official webclient
+     hosting guide. The client auto-shows its touch UI on mobile devices. -->
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=0">
+<title>ClassiCube — משחק יחיד</title>
+<style>
+  html,body{margin:0;padding:0;height:100%;background:#000;overflow:hidden;}
+  #canvas{display:block;border:0;padding:0;width:100%;height:100%;background:#000;}
+  #logmsg{position:fixed;top:8px;left:8px;color:#9f9;font-family:monospace;font-size:12px;pointer-events:none;}
+</style>
+</head>
+<body>
+<!-- Self-hosted ClassiCube webclient (open-source Minecraft Classic
+     reimplementation, github.com/ClassiCube/ClassiCube) launched STRAIGHT
+     into singleplayer: no server list, no other players, no chat with
+     strangers — the in-game "chat" box only accepts local /commands
+     (/client hacks: flying, speed, etc.), which is exactly the creative
+     cheats experience the kid wants, with zero online exposure. -->
+<canvas id="canvas" oncontextmenu="event.preventDefault()" tabindex="-1"></canvas>
+<span id="logmsg"></span>
+<script>
+  var Module={
+    preRun:[], postRun:[],
+    arguments:['Ariel'], // username only => singleplayer mode
+    print:function(t){ console.log(t); },
+    printErr:function(t){ console.error(t); },
+    canvas:document.getElementById('canvas'),
+    setStatus:function(t){ document.getElementById('logmsg').textContent=t||''; },
+    totalDependencies:0,
+    monitorRunDependencies:function(left){
+      this.totalDependencies=Math.max(this.totalDependencies,left);
+      Module.setStatus(left?'טוען... ('+(this.totalDependencies-left)+'/'+this.totalDependencies+')':'');
+    }
+  };
+  Module.setStatus('טוען את המשחק...');
+  window.onerror=function(msg){ Module.setStatus('שגיאה: '+msg); };
+</script>
+<script async type="text/javascript" src="classicube.js"></script>
+</body>
+</html>

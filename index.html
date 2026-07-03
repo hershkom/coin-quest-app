@@ -1165,14 +1165,17 @@ const DEFAULT_REWARDS=[
 ];
 const DEFAULT_MATH={enabled:true, ops:['+','-'], maxNum:20, pts:2, daily:10};
 // Default games must be frame-embeddable (no X-Frame-Options/frame-ancestors
-// blocking) — verified live: bloxd.io and classic.minecraft.net load in an
-// iframe; eaglercraft.com refuses framing entirely and can't be used here.
-// bloxd.io is first because it has full touch controls — real-device testing
-// showed classic.minecraft.net refuses to run without a physical keyboard,
-// so it's kept for desktop but labeled accordingly.
+// blocking). The primary game is SELF-HOSTED (games/classicube/ — the
+// open-source ClassiCube webclient launched straight into singleplayer):
+// same-origin so framing can never break, touch controls on mobile, and —
+// per an explicit parent requirement — no multiplayer, no chat with
+// strangers, and local /client cheat commands (fly/speed etc.) for the
+// creative-mode play the kid actually loves. bloxd.io was removed for
+// exactly those reasons (open multiplayer lobby + public chat).
+// classic.minecraft.net is kept for desktop but demands a physical keyboard.
 const DEFAULT_GAMES=[
-  {id:'bloxd',     label:'בלוקסד (כמו מיינקראפט)', emoji:'🧱', url:'https://bloxd.io/'},
-  {id:'mcclassic', label:'מיינקראפט קלאסי (למחשב עם מקלדת)', emoji:'⛏️', url:'https://classic.minecraft.net/'},
+  {id:'classicube', label:'קלאסיקיוב (בנייה חופשית, משחק יחיד)', emoji:'🧱', url:'games/classicube/'},
+  {id:'mcclassic',  label:'מיינקראפט קלאסי (למחשב עם מקלדת)', emoji:'⛏️', url:'https://classic.minecraft.net/'},
 ];
 const DEFAULT_STREAKS=[
   {id:'clean',    title:'יום נקי',       dayWord:'יום נקי',      icon:'🧼', childId:'ariel', goal:30, rewardLabel:'Nintendo Switch 2', rewardEmoji:'🎮', days:{}, current:0, best:0, wonAt:null},
@@ -1278,17 +1281,18 @@ async function loadState(){
   }
   state.anchored=(await DB.get('cs_anchored'))??DEFAULT_ANCHORED_TASKS;
   state.games   =(await DB.get('cs_games'))   ??DEFAULT_GAMES;
-  // One-time migration: devices that synced the games list before bloxd was
-  // added have a stored cs_games without any touch-capable game — Ariel's
-  // phone can't play classic.minecraft.net (it demands a physical keyboard).
-  if(!(await DB.get('cs_games_v2'))){
-    if(!state.games.some(g=>/bloxd\.io/.test(g.url))){
-      state.games.unshift(DEFAULT_GAMES[0]);
-      await DB.set('cs_games',state.games);
-    }
+  // One-time migration v3: bloxd.io is REMOVED (open multiplayer lobby +
+  // public chat — parent explicitly doesn't want the kid playing with
+  // strangers), replaced by the self-hosted singleplayer ClassiCube.
+  // Devices that synced any older games list get the same swap.
+  if(!(await DB.get('cs_games_v3'))){
+    state.games=state.games.filter(g=>!/bloxd\.io/.test(g.url));
+    if(!state.games.some(g=>/classicube/.test(g.url))) state.games.unshift(DEFAULT_GAMES[0]);
     const mc=state.games.find(g=>/classic\.minecraft\.net/.test(g.url)&&!/מקלדת/.test(g.label));
-    if(mc){ mc.label+=' (למחשב עם מקלדת)'; await DB.set('cs_games',state.games); }
-    await DB.set('cs_games_v2',true);
+    if(mc) mc.label+=' (למחשב עם מקלדת)';
+    await DB.set('cs_games',state.games);
+    await DB.set('cs_games_v3',true);
+    await DB.del('cs_games_v2');
   }
   // One-time seed: make sure at least one coins→minutes package exists in the
   // rewards shop, so the whole buy-time flow works out of the box with zero
@@ -3331,7 +3335,7 @@ async function clearLocalFamilyData(){
   // never set up at all.
   for(const k of ['cs_children','cs_current','cs_chores','cs_actions','cs_rewards','cs_math',
     'cs_streak','cs_streaks','cs_badgedefs','cs_anchored','cs_events','cs_hwm_date','cs_familyid',
-    'cs_games','cs_games_v2','cs_gtime_seeded']){
+    'cs_games','cs_games_v2','cs_games_v3','cs_gtime_seeded']){
     await DB.del(k);
   }
   _hwmDate=null; _hwmAdvanceMono=performance.now();
