@@ -435,14 +435,29 @@
   /* ---- Calm break button + breathing modal ---- */
   .break-btn{width:38px;height:38px;border-radius:50%;background:linear-gradient(135deg,var(--mint),var(--mint-d));border:none;display:flex;align-items:center;justify-content:center;font-size:1.05rem;box-shadow:0 4px 12px rgba(39,201,154,.25);cursor:pointer;flex-shrink:0;}
   .break-btn:active{transform:scale(.9);}
-  .calm-modal{position:fixed;inset:0;background:linear-gradient(160deg,#DFF5EE,#EAF6FF);display:none;align-items:center;justify-content:center;z-index:250;flex-direction:column;padding:24px;}
+  .calm-modal{position:fixed;inset:0;background:linear-gradient(160deg,#DFF5EE,#EAF6FF);display:none;align-items:center;justify-content:center;z-index:250;flex-direction:column;padding:24px;overflow-y:auto;}
   .calm-modal.show{display:flex;animation:fade .3s;}
-  .breath-circle{width:150px;height:150px;border-radius:50%;background:radial-gradient(circle at 35% 30%,var(--mint),var(--mint-d));box-shadow:0 10px 30px rgba(39,201,154,.35);animation:breathe 5.2s ease-in-out infinite;}
-  @keyframes breathe{0%,100%{transform:scale(.72);}50%{transform:scale(1);}}
-  .breath-txt{margin-top:26px;font-size:1.3rem;font-weight:800;color:#1a6b52;}
+  /* Paced-breathing ring: the ball's scale is driven from JS so the visual,
+     the text, and the count can never drift out of sync. */
+  .breath-ring{width:190px;height:190px;border-radius:50%;border:3px dashed rgba(39,201,154,.4);display:flex;align-items:center;justify-content:center;margin:0 auto;}
+  .breath-ball{width:150px;height:150px;border-radius:50%;background:radial-gradient(circle at 35% 30%,var(--mint),var(--mint-d));box-shadow:0 10px 30px rgba(39,201,154,.35);transform:scale(.6);}
+  .breath-txt{margin-top:22px;font-size:1.35rem;font-weight:900;color:#1a6b52;}
+  .breath-count{font-size:2rem;font-weight:900;color:#27C99A;min-height:44px;}
   .calm-modal .cm-sub{margin-top:8px;color:#3a7d68;font-size:.92rem;font-weight:700;}
-  .calm-menu-btn{width:260px;padding:16px;margin-bottom:12px;font-size:1.05rem;border:none;border-radius:20px;cursor:pointer;font-family:inherit;font-weight:800;color:#1a6b52;background:rgba(255,255,255,.75);box-shadow:0 6px 16px rgba(39,201,154,.15);transition:transform .12s;}
-  .calm-menu-btn:active{transform:scale(.96);}
+  .feel-row{display:flex;gap:8px;justify-content:center;margin-top:10px;}
+  .feel-btn{border:none;background:rgba(255,255,255,.8);border-radius:16px;padding:10px 8px;width:72px;font-family:inherit;font-weight:800;font-size:.72rem;color:#1a6b52;cursor:pointer;box-shadow:0 4px 12px rgba(39,201,154,.12);transition:transform .12s;}
+  .feel-btn:active{transform:scale(.92);}
+  .feel-btn .f-ic{display:block;font-size:1.7rem;margin-bottom:3px;}
+  .calm-tiles{display:grid;grid-template-columns:repeat(2,132px);gap:10px;justify-content:center;}
+  .calm-tile{border:none;background:rgba(255,255,255,.78);border-radius:20px;padding:14px 8px;font-family:inherit;font-weight:800;font-size:.88rem;color:#1a6b52;cursor:pointer;box-shadow:0 6px 16px rgba(39,201,154,.15);transition:transform .12s;}
+  .calm-tile:active{transform:scale(.94);}
+  .calm-tile .t-ic{display:block;font-size:1.9rem;margin-bottom:4px;}
+  .calm-tile.suggested{outline:3px solid var(--mint);background:#fff;}
+  .ground-num{font-size:4.4rem;font-weight:900;color:#27C99A;line-height:1;}
+  .ground-txt{font-size:1.2rem;font-weight:900;color:#1a6b52;margin-top:10px;max-width:280px;margin-inline:auto;}
+  .muscle-ic{font-size:4rem;}
+  .muscle-bar{width:240px;height:14px;border-radius:20px;background:rgba(255,255,255,.7);margin:16px auto 0;overflow:hidden;}
+  .muscle-fill{height:100%;border-radius:20px;background:linear-gradient(90deg,var(--mint),var(--mint-d));width:0%;transition:width .2s linear;}
   .calm-visual{position:relative;width:260px;height:220px;border-radius:26px;overflow:hidden;background:linear-gradient(135deg,#a8e6cf,#dcedc1,#ffd3b6,#a8e6cf);background-size:300% 300%;animation:calmgradient 14s ease-in-out infinite;box-shadow:0 10px 26px rgba(0,0,0,.1);}
   @keyframes calmgradient{0%,100%{background-position:0% 50%;}50%{background-position:100% 50%;}}
   .calm-bubble{position:absolute;border-radius:50%;background:rgba(255,255,255,.4);animation:calmfloat ease-in-out infinite;}
@@ -919,6 +934,11 @@
           <div class="card-sub" style="margin-top:8px;">מתאים לרגעים של עומס חושי. כפתור 🌿 בראש המסך פתוח לילד תמיד, בלי קשר להגדרה הזו.</div>
         </div>
         <div class="card">
+          <div class="card-h">🌿 שימוש בכלי הרגיעה</div>
+          <div class="card-sub" style="margin-bottom:10px;">מתי הילד השתמש, באיזה כלי, ואיך הרגיש לפני ואחרי — כדי שתדעו מה עובד בשבילו.</div>
+          <div id="calmLogStats"></div>
+        </div>
+        <div class="card">
           <div class="field"><label>שנה קוד הורים (PIN)</label><input id="setPin" type="number" placeholder="קוד חדש"></div>
           <button class="btn primary" onclick="savePin()">שמור קוד</button>
         </div>
@@ -1008,28 +1028,62 @@
 </div>
 <div class="calm-modal" id="calmModal">
   <div id="calmMenu">
-    <div style="font-size:3rem;">🌿</div>
-    <h3 style="margin:10px 0 4px;color:#1a6b52;">מרגיש/ה לא טוב? כועס/ת?</h3>
-    <div class="cm-sub" style="margin-bottom:20px;">בחר/י מה יעזור לך עכשיו</div>
-    <button class="calm-menu-btn" onclick="openCalmActivity('breathe')">🫁 נשימות ביחד</button>
-    <button class="calm-menu-btn" onclick="openCalmActivity('music')">🎵 מוזיקה מרגיעה</button>
-    <button class="calm-menu-btn" onclick="openCalmActivity('visual')">✨ מסך מרגיע</button>
+    <div style="font-size:2.6rem;text-align:center;">🌿</div>
+    <h3 style="margin:8px 0 4px;color:#1a6b52;text-align:center;">איך אתה מרגיש עכשיו?</h3>
+    <div class="feel-row" id="feelRowBefore">
+      <button class="feel-btn" onclick="calmPickFeeling(1)"><span class="f-ic">😊</span>רגוע</button>
+      <button class="feel-btn" onclick="calmPickFeeling(2)"><span class="f-ic">😕</span>לא נעים</button>
+      <button class="feel-btn" onclick="calmPickFeeling(3)"><span class="f-ic">😖</span>עצבני</button>
+      <button class="feel-btn" onclick="calmPickFeeling(4)"><span class="f-ic">😡</span>כועס מאוד</button>
+    </div>
+    <div class="cm-sub" id="calmSuggest" style="margin:10px 0 14px;text-align:center;">בחר מה יעזור לך עכשיו</div>
+    <div class="calm-tiles">
+      <button class="calm-tile" id="tile-breathe" onclick="openCalmActivity('breathe')"><span class="t-ic">🎈</span>נשימת בלון</button>
+      <button class="calm-tile" id="tile-muscle" onclick="openCalmActivity('muscle')"><span class="t-ic">🍋</span>סוחטים לימון</button>
+      <button class="calm-tile" id="tile-ground" onclick="openCalmActivity('ground')"><span class="t-ic">🖐️</span>משחק החושים</button>
+      <button class="calm-tile" id="tile-ocean" onclick="openCalmActivity('ocean')"><span class="t-ic">🌊</span>גלים בים</button>
+      <button class="calm-tile" id="tile-rain" onclick="openCalmActivity('rain')"><span class="t-ic">🌧️</span>גשם שקט</button>
+      <button class="calm-tile" id="tile-visual" onclick="openCalmActivity('visual')"><span class="t-ic">✨</span>מסך מרגיע</button>
+    </div>
   </div>
   <div id="calmBreathe" style="display:none;text-align:center;">
-    <div class="breath-circle"></div>
-    <div class="breath-txt" id="breathTxt">שאיפה... 🌬️</div>
-    <div class="cm-sub">בוא ננשום לאט, ביחד</div>
+    <div class="breath-ring"><div class="breath-ball" id="breathBall"></div></div>
+    <div class="breath-txt" id="breathTxt">שאיפה...</div>
+    <div class="breath-count" id="breathCount"></div>
+    <div class="cm-sub" id="breathCycles">מנפחים בלון בבטן 🎈 — לאט לאט</div>
   </div>
-  <div id="calmMusic" style="display:none;text-align:center;">
-    <div class="calm-music-icon">🎵</div>
-    <div class="cm-sub" style="margin-top:14px;">מוזיקה מרגיעה מתנגנת...</div>
+  <div id="calmSound" style="display:none;text-align:center;">
+    <div class="calm-music-icon" id="calmSoundIcon">🌊</div>
+    <div class="cm-sub" id="calmSoundLabel" style="margin-top:14px;">גלים בים...</div>
+    <div class="cm-sub" style="margin-top:8px;font-size:.78rem;opacity:.7;">לא שומעים? בדוק שהמכשיר לא במצב שקט 🔈</div>
+  </div>
+  <div id="calmGround" style="display:none;text-align:center;">
+    <div class="ground-num" id="groundNum">5</div>
+    <div class="ground-txt" id="groundTxt"></div>
+    <button class="btn mint" style="margin-top:18px;width:auto;padding:14px 34px;" id="groundNextBtn" onclick="calmGroundNext()">מצאתי! ✓</button>
+  </div>
+  <div id="calmMuscle" style="display:none;text-align:center;">
+    <div class="muscle-ic" id="muscleIc">🍋</div>
+    <div class="ground-txt" id="muscleTxt"></div>
+    <div class="muscle-bar"><div class="muscle-fill" id="muscleFill"></div></div>
+    <div class="cm-sub" id="muscleHint"></div>
   </div>
   <div id="calmVisual" style="display:none;text-align:center;">
     <div class="calm-visual" id="calmVisualBox"></div>
   </div>
-  <div class="calm-back-row">
-    <button class="btn ghost" id="calmBackBtn" onclick="showCalmMenu()" style="display:none;width:auto;padding:14px 20px;">← תפריט</button>
-    <button class="btn mint" style="font-size:1.05rem;padding:16px 28px;width:auto;" onclick="closeCalmBreak()">😊 אני מוכן/ה להמשיך</button>
+  <div id="calmAfter" style="display:none;text-align:center;">
+    <h3 style="margin:8px 0 14px;color:#1a6b52;">ואיך אתה מרגיש עכשיו?</h3>
+    <div class="feel-row">
+      <button class="feel-btn" onclick="calmFinish(1)"><span class="f-ic">😊</span>רגוע</button>
+      <button class="feel-btn" onclick="calmFinish(2)"><span class="f-ic">😕</span>לא נעים</button>
+      <button class="feel-btn" onclick="calmFinish(3)"><span class="f-ic">😖</span>עצבני</button>
+      <button class="feel-btn" onclick="calmFinish(4)"><span class="f-ic">😡</span>כועס מאוד</button>
+    </div>
+    <button class="btn ghost" style="margin-top:14px;width:auto;padding:12px 22px;" onclick="calmFinish(null)">דלג</button>
+  </div>
+  <div class="calm-back-row" id="calmBackRow">
+    <button class="btn ghost" id="calmBackBtn" onclick="showCalmMenu()" style="display:none;width:auto;padding:14px 20px;">← עוד כלים</button>
+    <button class="btn mint" style="font-size:1.05rem;padding:16px 28px;width:auto;" onclick="requestCloseCalm()">😊 אני מוכן/ה להמשיך</button>
   </div>
 </div>
 <div id="toast"></div>
@@ -2015,7 +2069,27 @@ function adminTab(t){
   if(t==='badges') renderBadgesAdmin();
   if(t==='settings'){ fillAccountSettings(); fillCalmToggle(); }
 }
+async function renderCalmLogStats(){
+  const el=document.getElementById('calmLogStats'); if(!el) return;
+  const log=(await DB.get('cs_calmlog'))??[];
+  if(!log.length){ el.innerHTML='<div class="card-sub">עדיין אין שימוש — זה בסדר גמור. הכלי מחכה לרגע שיצטרכו אותו.</div>'; return; }
+  const TOOLS={breathe:'🎈 נשימת בלון',muscle:'🍋 סוחטים לימון',ground:'🖐️ משחק החושים',ocean:'🌊 גלים בים',rain:'🌧️ גשם שקט',visual:'✨ מסך מרגיע'};
+  const FEEL=['','😊','😕','😖','😡'];
+  const week=log.filter(e=>Date.now()-e.ts<7*24*3600*1000);
+  const improved=log.filter(e=>e.before&&e.after&&e.after<e.before).length;
+  const rated=log.filter(e=>e.before&&e.after).length;
+  let html=`<div style="font-weight:800;margin-bottom:8px;">בשבוע האחרון: ${week.length} פעמים · ${rated?Math.round(improved/rated*100)+'% מהפעמים הרגיש יותר טוב אחרי':''}</div>`;
+  log.slice(0,6).forEach(e=>{
+    const child=(state.children.find(c=>c.id===e.childId)||{}).name||'';
+    html+=`<div style="display:flex;gap:8px;align-items:center;font-size:.82rem;padding:6px 0;border-bottom:1px solid var(--line);">
+      <span style="flex:1;">${TOOLS[e.tool]||e.tool} · ${esc(child)}</span>
+      <span>${e.before?FEEL[e.before]:'—'}←${e.after?FEEL[e.after]:'—'}</span>
+      <span style="color:var(--muted);">${timeAgo(e.ts)}</span></div>`;
+  });
+  el.innerHTML=html;
+}
 function fillCalmToggle(){
+  renderCalmLogStats();
   const btn=document.getElementById('calmToggle'); if(!btn) return;
   btn.textContent=state.calmMode?'פעיל ✓':'כבוי';
   btn.className='btn sm '+(state.calmMode?'mint':'ghost');
@@ -2565,47 +2639,184 @@ document.getElementById('gearBtn').onclick=openAdmin;
 // The break button is deliberately NOT PIN-gated and does not touch coins/state —
 // a child needs self-regulation tools available instantly, with zero friction and
 // zero economic effect (so it can never be confused with, or abused as, a reward).
-// Three self-regulation options (breathing / calming sound / calming visual),
-// chosen from a menu so the child can pick whichever helps in the moment.
-let _breathTimer=null, _calmMusicNodes=null, _calmActive=null;
+//
+// The toolkit follows established child self-regulation practice:
+// - Feelings check-in before/after (Zones-of-Regulation style) — naming the
+//   feeling is itself regulating, and the delta is logged for the parent.
+// - Paced "balloon" breathing (4-2-6: exhale longer than inhale activates the
+//   parasympathetic response) with a JS-driven visual so ball/text/count
+//   never desync.
+// - Progressive muscle relaxation ("squeeze a lemon") — tense/release cycles.
+// - 5-4-3-2-1 sensory grounding, adapted to ages 6-9.
+// - Synthesized ocean/rain soundscapes (filtered noise — far closer to the
+//   white-noise machines used in sensory rooms than musical tones; fully
+//   offline, no audio files).
+let _breathTimer=null, _calmNoise=null, _calmActive=null, _muscleTimer=null;
+let _calmSession=null; // {before, tool, ts}
+const CALM_PANES=['calmMenu','calmBreathe','calmSound','calmGround','calmMuscle','calmVisual','calmAfter'];
 
 function openCalmBreak(){
+  _calmSession={before:null, tool:null, ts:Date.now()};
   document.getElementById('calmModal').classList.add('show');
   showCalmMenu();
 }
+function calmShowPane(id){
+  CALM_PANES.forEach(p=>document.getElementById(p).style.display=p===id?'block':'none');
+  document.getElementById('calmBackBtn').style.display=(id==='calmMenu'||id==='calmAfter')?'none':'block';
+  document.getElementById('calmBackRow').style.display=(id==='calmAfter')?'none':'flex';
+}
 function showCalmMenu(){
   stopCalmActivity();
-  document.getElementById('calmMenu').style.display='block';
-  document.getElementById('calmBreathe').style.display='none';
-  document.getElementById('calmMusic').style.display='none';
-  document.getElementById('calmVisual').style.display='none';
-  document.getElementById('calmBackBtn').style.display='none';
+  calmShowPane('calmMenu');
+}
+// Feeling → suggested tool: anger/tension responds best to motor discharge
+// (muscle work) and paced breathing; anxiety/unease to grounding; the
+// suggestion is a highlight, never a restriction — the child always chooses.
+function calmPickFeeling(level){
+  if(_calmSession) _calmSession.before=level;
+  document.querySelectorAll('.calm-tile').forEach(t=>t.classList.remove('suggested'));
+  const sug={1:'visual',2:'ground',3:'breathe',4:'muscle'}[level];
+  const el=document.getElementById('tile-'+sug);
+  if(el) el.classList.add('suggested');
+  document.getElementById('calmSuggest').textContent={
+    1:'איזה כיף! אפשר פשוט ליהנות ממשהו נעים ✨',
+    2:'בוא ננסה את משחק החושים — הוא עוזר כשמשהו לא נעים',
+    3:'נשימת בלון עוזרת הכי מהר כשעצבניים',
+    4:'כשכועסים חזק — לסחוט לימונים זה הכי טוב! ולנשום',
+  }[level];
+  document.querySelectorAll('#feelRowBefore .feel-btn').forEach((b,i)=>b.style.outline=(i+1)===level?'3px solid var(--mint)':'none');
 }
 function openCalmActivity(kind){
   stopCalmActivity();
-  document.getElementById('calmMenu').style.display='none';
-  document.getElementById('calmBackBtn').style.display='block';
   _calmActive=kind;
-  if(kind==='breathe'){
-    document.getElementById('calmBreathe').style.display='block';
-    const txt=document.getElementById('breathTxt');
-    let phase=0;
-    const cycle=()=>{ txt.textContent=phase%2===0?'שאיפה... 🌬️':'נשיפה... 💨'; phase++; };
-    cycle();
-    _breathTimer=setInterval(cycle,2600);
-  }else if(kind==='music'){
-    document.getElementById('calmMusic').style.display='block';
-    startCalmMusic();
-  }else if(kind==='visual'){
-    document.getElementById('calmVisual').style.display='block';
-    renderCalmBubbles();
-  }
+  if(_calmSession&&!_calmSession.tool) _calmSession.tool=kind;
+  if(kind==='breathe'){ calmShowPane('calmBreathe'); startBreathing(); }
+  else if(kind==='ocean'){ calmShowPane('calmSound'); document.getElementById('calmSoundIcon').textContent='🌊'; document.getElementById('calmSoundLabel').textContent='גלים בים... שומעים את הים עולה ויורד'; startCalmNoise('ocean'); }
+  else if(kind==='rain'){ calmShowPane('calmSound'); document.getElementById('calmSoundIcon').textContent='🌧️'; document.getElementById('calmSoundLabel').textContent='גשם שקט על החלון...'; startCalmNoise('rain'); }
+  else if(kind==='ground'){ calmShowPane('calmGround'); startGrounding(); }
+  else if(kind==='muscle'){ calmShowPane('calmMuscle'); startMuscle(); }
+  else if(kind==='visual'){ calmShowPane('calmVisual'); renderCalmBubbles(); }
 }
 function stopCalmActivity(){
   clearInterval(_breathTimer); _breathTimer=null;
-  stopCalmMusic();
+  clearInterval(_muscleTimer); _muscleTimer=null;
+  stopCalmNoise();
   _calmActive=null;
 }
+
+/* -- paced balloon breathing: inhale 4s, hold 2s, exhale 6s -- */
+function startBreathing(){
+  const ball=document.getElementById('breathBall'), txt=document.getElementById('breathTxt'),
+        cnt=document.getElementById('breathCount'), cyc=document.getElementById('breathCycles');
+  const PHASES=[
+    {label:'שאיפה... מנפחים את הבלון 🎈', secs:4, from:.6, to:1.15},
+    {label:'עוצרים... מחזיקים את האוויר ✋', secs:2, from:1.15, to:1.15},
+    {label:'נשיפה ארוכה... מוציאים הכל 💨', secs:6, from:1.15, to:.6},
+  ];
+  let phase=0, sec=0, cycles=0;
+  const applyPhase=()=>{
+    const p=PHASES[phase];
+    txt.textContent=p.label;
+    ball.style.transition='transform '+p.secs+'s '+(phase===2?'ease-out':'ease-in-out');
+    ball.style.transform='scale('+p.to+')';
+    calmBreathTone(phase);
+  };
+  ball.style.transition='none'; ball.style.transform='scale(.6)';
+  requestAnimationFrame(()=>requestAnimationFrame(applyPhase));
+  cnt.textContent=PHASES[0].secs; cyc.textContent='מנפחים בלון בבטן 🎈 — לאט לאט';
+  _breathTimer=setInterval(()=>{
+    sec++;
+    const p=PHASES[phase];
+    if(sec>=p.secs){
+      sec=0; phase=(phase+1)%3;
+      if(phase===0){ cycles++; cyc.textContent=cycles>=3?'כל הכבוד! אפשר להמשיך כמה שרוצים 🌟':'מנפחים בלון בבטן 🎈 — לאט לאט'; }
+      applyPhase();
+    }
+    cnt.textContent=PHASES[phase].secs-sec;
+  },1000);
+}
+// A soft tone per phase — auditory cue keeps the pace even with eyes closed.
+function calmBreathTone(phase){
+  try{
+    actx=actx||new (window.AudioContext||window.webkitAudioContext)();
+    if(actx.state==='suspended') actx.resume();
+    const o=actx.createOscillator(), g=actx.createGain();
+    o.type='sine'; o.frequency.value=[330,392,262][phase];
+    g.gain.setValueAtTime(0,actx.currentTime);
+    g.gain.linearRampToValueAtTime(0.05,actx.currentTime+0.05);
+    g.gain.linearRampToValueAtTime(0,actx.currentTime+0.5);
+    o.connect(g); g.connect(actx.destination);
+    o.start(); o.stop(actx.currentTime+0.55);
+  }catch(e){}
+}
+
+/* -- 5-4-3-2-1 sensory grounding, adapted for a young child -- */
+const GROUND_STEPS=[
+  {n:5, txt:'מצא 5 דברים שאתה רואה מסביב 👀', done:'מצאתי! ✓'},
+  {n:4, txt:'גע ב-4 דברים ותרגיש אותם 🖐️', done:'נגעתי! ✓'},
+  {n:3, txt:'הקשב… מהם 3 קולות שאתה שומע? 👂', done:'שמעתי! ✓'},
+  {n:2, txt:'מצא 2 ריחות (או 2 דברים שאתה אוהב להריח) 👃', done:'מצאתי! ✓'},
+  {n:1, txt:'דבר אחד שאתה אוהב בעצמך 💚', done:'סיימתי! ✓'},
+];
+let _groundStep=0;
+function startGrounding(){ _groundStep=0; renderGroundStep(); }
+function renderGroundStep(){
+  const s=GROUND_STEPS[_groundStep];
+  document.getElementById('groundNum').textContent=s.n;
+  document.getElementById('groundTxt').textContent=s.txt;
+  document.getElementById('groundNextBtn').textContent=s.done;
+}
+function calmGroundNext(){
+  if(_groundStep>=GROUND_STEPS.length){ startGrounding(); return; } // "again?" tap restarts
+  if(_groundStep<GROUND_STEPS.length-1){ _groundStep++; renderGroundStep(); }
+  else{
+    _groundStep=GROUND_STEPS.length;
+    document.getElementById('groundNum').textContent='🌟';
+    document.getElementById('groundTxt').textContent='כל הכבוד! עשית את כל משחק החושים';
+    document.getElementById('groundNextBtn').textContent='עוד פעם? 🔄';
+  }
+}
+
+/* -- progressive muscle relaxation: tense 5s, release 10s, per body area -- */
+const MUSCLE_STEPS=[
+  {ic:'🍋', tense:'דמיין לימון בכל יד — סחט אותו חזק חזק!', release:'עכשיו שחרר... תן לידיים ליפול רפויות'},
+  {ic:'🐢', tense:'תהיה צב! הרם כתפיים עד האוזניים', release:'הצב יוצא... הורד כתפיים לאט ותרגיש כמה נעים'},
+  {ic:'🪰', tense:'זבוב על האף! כווץ את כל הפנים חזק', release:'הזבוב עף... שחרר את הפנים לגמרי'},
+  {ic:'🏖️', tense:'דרוך על החול! לחץ עם הרגליים חזק ברצפה', release:'שחרר... הרגליים רכות וכבדות'},
+];
+function startMuscle(){
+  let step=0, inTense=true, sec=0;
+  const TENSE=5, RELEASE=10;
+  const ic=document.getElementById('muscleIc'), txt=document.getElementById('muscleTxt'),
+        fill=document.getElementById('muscleFill'), hint=document.getElementById('muscleHint');
+  const apply=()=>{
+    const s=MUSCLE_STEPS[step];
+    ic.textContent=s.ic;
+    txt.textContent=inTense?s.tense:s.release;
+    hint.textContent=inTense?'חזק! עוד '+(TENSE-sec)+' שניות':'לאט... תרגיש את ההבדל';
+  };
+  apply();
+  _muscleTimer=setInterval(()=>{
+    sec++;
+    const dur=inTense?TENSE:RELEASE;
+    fill.style.width=Math.min(100,(sec/dur)*100)+'%';
+    if(sec>=dur){
+      sec=0;
+      if(inTense){ inTense=false; }
+      else{
+        inTense=true; step++;
+        if(step>=MUSCLE_STEPS.length){
+          clearInterval(_muscleTimer); _muscleTimer=null;
+          ic.textContent='😌'; txt.textContent='כל הגוף רגוע עכשיו. כל הכבוד!';
+          hint.textContent=''; fill.style.width='100%';
+          return;
+        }
+      }
+    }
+    apply();
+  },1000);
+}
+
 function renderCalmBubbles(){
   const box=document.getElementById('calmVisualBox'); box.innerHTML='';
   for(let i=0;i<7;i++){
@@ -2618,50 +2829,83 @@ function renderCalmBubbles(){
     box.appendChild(b);
   }
 }
-// Gentle synthesized ambient pad (no external audio files, works fully offline) —
-// a few soft detuned tones with a slow volume swell, reusing the AudioContext
-// pattern already used by chime().
-function startCalmMusic(){
-  stopCalmMusic();
+
+/* -- soundscapes: filtered-noise synthesis (offline, no audio files) -- */
+function startCalmNoise(kind){
+  stopCalmNoise();
   try{
     actx=actx||new (window.AudioContext||window.webkitAudioContext)();
-    // Mobile browsers auto-suspend an AudioContext on backgrounding (screen
-    // lock, app switch) and it stays suspended — oscillators still "start"
-    // but produce no audible sound, with no error thrown. resume() is a safe
-    // no-op if already running; this call is from a real tap (calm button),
-    // which is exactly the user-gesture context resume() needs.
+    // Mobile browsers auto-suspend an AudioContext on backgrounding and it
+    // stays suspended silently; resume() here runs inside the tap gesture.
     if(actx.state==='suspended') actx.resume();
-    const notes=[196.00,246.94,293.66,392.00]; // G3, B3, D4, G4 — soft, consonant
-    const oscs=[], gains=[];
-    notes.forEach((f,i)=>{
-      const o=actx.createOscillator(), g=actx.createGain();
-      o.type='sine'; o.frequency.value=f; o.detune.value=(Math.random()*6-3);
-      g.gain.value=0;
-      o.connect(g); g.connect(actx.destination);
-      o.start();
-      oscs.push(o); gains.push(g);
-    });
-    let t=0;
-    const swell=setInterval(()=>{
-      t+=0.5;
-      gains.forEach((g,i)=>{
-        const target=0.045+0.02*Math.sin(t*0.3+i);
-        g.gain.linearRampToValueAtTime(Math.max(0,target),actx.currentTime+0.6);
-      });
-    },600);
-    _calmMusicNodes={oscs,swell};
-  }catch(e){}
+    // 4s looped brown-noise buffer — the 1/f² spectrum is the "deep" noise
+    // used in sensory-room sound machines (white noise reads as harsh hiss).
+    const len=actx.sampleRate*4, buf=actx.createBuffer(1,len,actx.sampleRate);
+    const d=buf.getChannelData(0);
+    let last=0;
+    for(let i=0;i<len;i++){ const w=Math.random()*2-1; last=(last+0.02*w)/1.02; d[i]=last*3.5; }
+    const src=actx.createBufferSource(); src.buffer=buf; src.loop=true;
+    const filter=actx.createBiquadFilter();
+    const master=actx.createGain();
+    if(kind==='ocean'){
+      // waves = deep rumble whose loudness swells and recedes ~every 9s
+      filter.type='lowpass'; filter.frequency.value=420;
+      master.gain.value=0.12;
+      const lfo=actx.createOscillator(), lfoGain=actx.createGain();
+      lfo.frequency.value=0.11; lfoGain.gain.value=0.08;
+      lfo.connect(lfoGain); lfoGain.connect(master.gain);
+      lfo.start();
+      src.connect(filter); filter.connect(master); master.connect(actx.destination);
+      src.start();
+      _calmNoise={nodes:[src,lfo],master};
+    }else{
+      // rain = brighter patter, steady with a slight natural flutter
+      filter.type='bandpass'; filter.frequency.value=1800; filter.Q.value=0.6;
+      master.gain.value=0.07;
+      const lfo=actx.createOscillator(), lfoGain=actx.createGain();
+      lfo.frequency.value=0.5; lfoGain.gain.value=0.012;
+      lfo.connect(lfoGain); lfoGain.connect(master.gain);
+      lfo.start();
+      src.connect(filter); filter.connect(master); master.connect(actx.destination);
+      src.start();
+      _calmNoise={nodes:[src,lfo],master};
+    }
+  }catch(e){
+    document.getElementById('calmSoundLabel').textContent='⚠️ הקול לא זמין במכשיר הזה כרגע';
+  }
 }
-function stopCalmMusic(){
-  if(!_calmMusicNodes) return;
-  clearInterval(_calmMusicNodes.swell);
-  _calmMusicNodes.oscs.forEach(o=>{ try{ o.stop(); }catch(e){} });
-  _calmMusicNodes=null;
+function stopCalmNoise(){
+  if(!_calmNoise) return;
+  _calmNoise.nodes.forEach(n=>{ try{ n.stop(); }catch(e){} });
+  _calmNoise=null;
 }
-function closeCalmBreak(){
+// Back-compat: startCalmMusic name is referenced by older notes/tests.
+function startCalmMusic(){ startCalmNoise('ocean'); }
+function stopCalmMusic(){ stopCalmNoise(); }
+
+/* -- close flow: quick after check-in, log for the parent -- */
+function requestCloseCalm(){
+  stopCalmActivity();
+  // Only ask "how do you feel now" if a before-feeling was given and a tool
+  // was actually used — otherwise close instantly (zero friction).
+  if(_calmSession&&_calmSession.before&&_calmSession.tool){ calmShowPane('calmAfter'); }
+  else calmFinish(null);
+}
+async function calmFinish(after){
   document.getElementById('calmModal').classList.remove('show');
   stopCalmActivity();
+  if(_calmSession&&_calmSession.tool){
+    const log=(await DB.get('cs_calmlog'))??[];
+    log.unshift({ts:_calmSession.ts, childId:state.current, before:_calmSession.before, after:after, tool:_calmSession.tool, secs:Math.round((Date.now()-_calmSession.ts)/1000)});
+    if(log.length>60) log.length=60;
+    await DB.set('cs_calmlog',log);
+  }
+  _calmSession=null;
+  document.querySelectorAll('#feelRowBefore .feel-btn').forEach(b=>b.style.outline='none');
+  document.querySelectorAll('.calm-tile').forEach(t=>t.classList.remove('suggested'));
+  document.getElementById('calmSuggest').textContent='בחר מה יעזור לך עכשיו';
 }
+function closeCalmBreak(){ calmFinish(null); }
 document.getElementById('breakBtn').onclick=openCalmBreak;
 function applyCalmModeClass(){ document.querySelector('.app').classList.toggle('calm-mode',!!state.calmMode); }
 async function toggleCalmMode(){
