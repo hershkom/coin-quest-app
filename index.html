@@ -2571,6 +2571,37 @@ function scheduleSync(){
 function hasExistingLocalData(){
   return localStorage.getItem('cs_children')!==null || localStorage.getItem('cs_bal_ariel')!==null;
 }
+// Resets BOTH the persisted cache and the in-memory `state` object back to
+// defaults. Persisting alone isn't enough: buildSyncPayload() and everything
+// else always reads live `state.*`, so a stale in-memory value would still
+// leak into a freshly-created family even after clearing storage underneath it.
+// Called (a) on sign-out, so the next account on this device never inherits
+// the previous one's cache, and (b) when the user explicitly says cached local
+// data ISN'T theirs when creating a new family (e.g. a shared/handed-down
+// device previously used in local-only mode by someone else).
+async function clearLocalFamilyData(){
+  for(const ch of state.children){
+    for(const p of ['cs_bal_','cs_hist_','cs_daily_','cs_mathd_','cs_badges_','cs_matht_','cs_taskt_','cs_rwt_']){
+      await DB.del(p+ch.id);
+    }
+  }
+  state.children=DEFAULT_CHILDREN; state.current=null; state.kid={};
+  state.chores=DEFAULT_CHORES; state.actions=DEFAULT_ACTIONS; state.rewards=DEFAULT_REWARDS;
+  state.math=DEFAULT_MATH; state.streak=DEFAULT_STREAK; state.badgeDefs=DEFAULT_BADGE_DEFS;
+  state.anchored=DEFAULT_ANCHORED_TASKS; state.events=[]; state.familyId=null;
+  // Delete rather than write defaults back: hasExistingLocalData() treats a
+  // present key as "this device has real data" regardless of its content, so
+  // writing DEFAULT_CHILDREN etc back here would leave the keys present and
+  // make every future createNewFamily() wrongly think there's still data to
+  // confirm. In-memory `state` above already has sane defaults for immediate
+  // use; storage should end up genuinely empty, matching a device that was
+  // never set up at all.
+  for(const k of ['cs_children','cs_current','cs_chores','cs_actions','cs_rewards','cs_math',
+    'cs_streak','cs_badgedefs','cs_anchored','cs_events','cs_hwm_date','cs_familyid']){
+    await DB.del(k);
+  }
+  _hwmDate=null; _hwmAdvanceMono=performance.now();
+}
 function randomId(len){
   const chars='abcdefghjkmnpqrstuvwxyz23456789';
   let s=''; for(let i=0;i<len;i++) s+=chars[Math.floor(Math.random()*chars.length)];
@@ -2636,6 +2667,10 @@ function continueLocalOnly(){
 }
 async function signOutOfAccount(){
   modalConfirm('🚪','להתנתק?','תוכל להתחבר שוב בכל עת עם אותו חשבון Google ולראות את כל המידע שלך.', async()=>{
+    // Clear the local cache before reloading — otherwise a DIFFERENT account
+    // signing in on this same device afterward could inherit this family's
+    // data (e.g. via createNewFamily's "seed from existing local data" path).
+    await clearLocalFamilyData();
     await fbAuth.signOut();
     location.reload();
   });
@@ -2737,16 +2772,34 @@ async function doJoinFamily(){
   }
 }
 async function createNewFamily(){
-  const btn=document.getElementById('obNew'); if(btn){ btn.disabled=true; btn.textContent='⏳ יוצר משפחה...'; }
+  const btn=document.getElementById('obNew'); if(btn){ btn.disabled=true; }
+  let seedFromLocal=false;
+  if(hasExistingLocalData()){
+    // Cached local data existing on this device does NOT necessarily belong to
+    // whoever is signing up right now — it could be a previous account's
+    // leftover cache, or another person's local-only session on a shared
+    // device. Ask before silently seeding a brand-new family with it.
+    const kidNames=(state.children||[]).map(c=>esc(c.name)).join(', ')||'—';
+    modalContent.innerHTML=`<div class="m-emoji">🤔</div><h3>מצאנו נתונים במכשיר הזה</h3>
+      <p>ילדים שמורים: ${kidNames}.<br>האם אלה הנתונים של המשפחה שלך?</p>
+      <button class="btn primary" id="ncYes" style="margin-bottom:8px;">✅ כן, אלה הנתונים שלי</button>
+      <button class="btn ghost" id="ncNo">🆕 לא, משפחה חדשה וריקה</button>`;
+    modalBg.classList.add('show');
+    seedFromLocal=await new Promise(resolve=>{
+      document.getElementById('ncYes').onclick=()=>resolve(true);
+      document.getElementById('ncNo').onclick=()=>resolve(false);
+    });
+    if(!seedFromLocal) await clearLocalFamilyData();
+  }
+  if(btn){ btn.textContent='⏳ יוצר משפחה...'; }
   try{
     const familyId='fam_'+randomId(14);
     await withTimeout(fbDb.ref('users/'+authUser.uid).set({familyId,role:'owner',email:authUser.email||'',name:authUser.displayName||''}),15000,'יצירת חשבון');
     state.familyId=familyId; await DB.set('cs_familyid',familyId);
     closeModal();
-    if(hasExistingLocalData()){
-      // This device already has real family data (e.g. the app was used before
-      // accounts existed) — carry it into the new cloud family instead of
-      // wiping it with an empty onboarding wizard.
+    if(seedFromLocal){
+      // The user confirmed this cached local data is genuinely theirs — carry
+      // it into the new cloud family instead of wiping it with an empty wizard.
       await withTimeout(pushToFirebase(),15000,'שמירת נתונים');
       toast('המשפחה נוצרה עם הנתונים הקיימים במכשיר זה ✓');
       go('picker');
