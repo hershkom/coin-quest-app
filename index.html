@@ -1091,7 +1091,14 @@
 /* ===== FIREBASE APP INIT (shared by every family — see AUTH section below) ===== */
 const firebaseConfig={
   apiKey:"AIzaSyAc2Wqz_WHR_AisyUzUm-6-U9EvBFhjrPo",
-  authDomain:"coin-quest-app.firebaseapp.com",
+  // web.app (not firebaseapp.com): the app itself is served from Firebase
+  // Hosting at coin-quest-app.web.app, so the whole OAuth redirect flow stays
+  // SAME-ORIGIN there — this is Firebase's documented fix for mobile Chrome's
+  // storage partitioning, which silently dropped the sign-in result when the
+  // app lived on hershkom.github.io (the sign-in→white-screen→welcome loop
+  // seen on a real device). The GitHub Pages copy still works: desktop popup
+  // flow is cross-origin-tolerant, and mobile users are steered to web.app.
+  authDomain:"coin-quest-app.web.app",
   databaseURL:"https://coin-quest-app-default-rtdb.europe-west1.firebasedatabase.app",
   projectId:"coin-quest-app",
   storageBucket:"coin-quest-app.firebasestorage.app",
@@ -3354,6 +3361,15 @@ async function signInWithGoogle(statusElId){
   // when sessionStorage doesn't survive the round-trip) is surfaced loudly
   // by the getRedirectResult handler at startup rather than hidden.
   if(isMobileBrowser()){
+    // The redirect result only survives the round-trip when the app runs on
+    // the SAME origin as authDomain (coin-quest-app.web.app). On any other
+    // host (github.io), hop to web.app first; #signin makes the sign-in
+    // resume automatically there, so it stays a one-tap flow for the user.
+    if(location.hostname!=='coin-quest-app.web.app'){
+      if(statusEl()) statusEl().textContent='⏳ עובר לכתובת המאובטחת להתחברות...';
+      location.href='https://coin-quest-app.web.app/#signin';
+      return;
+    }
     if(statusEl()) statusEl().textContent='⏳ עובר לדף ההתחברות של Google...';
     try{
       localStorage.setItem('cs_auth_redirect_pending','1');
@@ -3842,6 +3858,13 @@ window.addEventListener('unhandledrejection', (ev)=>{
     // state") failed silently, which is exactly what made it undebuggable.
     // The flag lives in localStorage (not sessionStorage) because surviving
     // the cross-origin round-trip is the whole point.
+    // Arrived from the GitHub Pages copy with a sign-in intent (see the
+    // same-origin hop in signInWithGoogle) — resume the flow automatically.
+    if(location.hash==='#signin'){
+      history.replaceState(null,'',location.pathname+location.search);
+      go('welcome');
+      setTimeout(()=>signInWithGoogle(),400);
+    }
     if(localStorage.getItem('cs_auth_redirect_pending')==='1'){
       localStorage.removeItem('cs_auth_redirect_pending');
       authStep('⏳ מסיים התחברות...');

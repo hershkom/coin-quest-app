@@ -23,7 +23,9 @@ class MainActivity : AppCompatActivity() {
     private var fileUploadCallback: ValueCallback<Array<Uri>>? = null
     private val FILE_CHOOSER_REQUEST = 100
     private val PERMISSION_REQUEST = 101
-    private val APP_URL = "https://hershkom.github.io/coin-quest-app/"
+    // Firebase Hosting (same-origin with authDomain) — required for Google
+    // sign-in to survive the OAuth redirect round-trip on mobile browsers.
+    private val APP_URL = "https://coin-quest-app.web.app/"
 
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -77,7 +79,9 @@ class MainActivity : AppCompatActivity() {
                 if (!request.isForMainFrame) return false
                 val url = request.url.toString()
                 // Stay in-app only for the coin-quest domain
-                if (url.startsWith("https://hershkom.github.io") ||
+                if (url.startsWith("https://coin-quest-app.web.app") ||
+                    url.startsWith("https://coin-quest-app.firebaseapp.com") ||
+                    url.startsWith("https://hershkom.github.io") ||
                     url.startsWith("https://generativelanguage.googleapis.com") ||
                     url.startsWith("https://api.groq.com") ||
                     url.startsWith("https://accounts.google.com")) {
