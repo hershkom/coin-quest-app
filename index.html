@@ -693,6 +693,7 @@
         <button class="atab" data-atab="games" onclick="adminTab('games')">🎮 משחקים</button>
         <button class="atab" data-atab="events" onclick="adminTab('events')">📅 אירועים</button>
         <button class="atab" data-atab="badges" onclick="adminTab('badges')">🏅 תגים</button>
+        <button class="atab" data-atab="report" onclick="adminTab('report')">📊 דוח</button>
         <button class="atab" data-atab="settings" onclick="adminTab('settings')">🔧 הגדרות</button>
       </div>
       <div class="admin-pane" id="pane-children">
@@ -931,6 +932,10 @@
           </div>
           <button class="btn primary" onclick="addBadgeDef()">הוסף תג</button>
         </div>
+      </div>
+      <div class="admin-pane" id="pane-report" style="display:none;">
+        <div class="card"><div class="card-h">📊 דוח שבועי</div><div class="card-sub">מה קרה בשבעת הימים האחרונים — מגמות במקום נקודות.</div></div>
+        <div id="reportContent"></div>
       </div>
       <div class="admin-pane" id="pane-settings" style="display:none;">
         <div class="card">
@@ -2148,6 +2153,7 @@ function adminTab(t){
   if(t==='games') renderGamesAdmin();
   if(t==='events') renderEventsAdmin();
   if(t==='badges') renderBadgesAdmin();
+  if(t==='report') renderReportAdmin();
   if(t==='settings'){ fillAccountSettings(); fillCalmToggle(); }
 }
 async function renderCalmLogStats(){
@@ -2411,6 +2417,51 @@ async function addChore(){
   const points=parseInt(document.getElementById('newChorePoints').value)||5, max=parseInt(document.getElementById('newChoreMax').value)||1;
   state.chores.push({id:'chore_'+Date.now().toString(36),label,emoji,points,max}); await DB.set('cs_chores',state.chores);
   document.getElementById('newChoreLabel').value=''; document.getElementById('newChoreEmoji').value=''; renderChoresAdmin(); toast('נוסף! ✓');
+}
+
+/* ===== WEEKLY REPORT ===== */
+async function renderReportAdmin(){
+  const el=document.getElementById('reportContent'); if(!el) return;
+  el.innerHTML='<div class="card-sub" style="text-align:center;">טוען...</div>';
+  const weekAgo=Date.now()-7*24*3600*1000;
+  let html='';
+  for(const ch of state.children){
+    const k=await loadKid(ch.id);
+    const week=(k.history||[]).filter(h=>h.ts>=weekAgo);
+    const earned=week.filter(h=>h.points>0).reduce((s,h)=>s+h.points,0);
+    const spent=-week.filter(h=>h.points<0).reduce((s,h)=>s+h.points,0);
+    const tasks=week.filter(h=>h.type==='chore'||h.type==='scan').length;
+    const math=week.filter(h=>h.type==='math').length;
+    const rewards=week.filter(h=>h.type==='spend').length;
+    // most-repeated earn labels this week (which routines actually happen)
+    const byLabel={};
+    week.filter(h=>h.points>0).forEach(h=>{ byLabel[h.label]=(byLabel[h.label]||0)+1; });
+    const top=Object.entries(byLabel).sort((a,b)=>b[1]-a[1]).slice(0,3);
+    const streakRows=state.streaks.filter(s=>s.childId===ch.id)
+      .map(s=>`<div style="font-size:.82rem;">${s.icon||'🌟'} ${esc(s.title)}: רצף ${s.current} · שיא ${s.best} · יעד ${s.goal}</div>`).join('');
+    html+=`<div class="card">
+      <div class="card-h">${ch.emoji} ${esc(ch.name)}</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin:10px 0;text-align:center;">
+        <div style="flex:1;min-width:70px;background:#FFF6E0;border-radius:14px;padding:10px 6px;"><div style="font-size:1.3rem;font-weight:900;color:var(--gold-d);">+${earned}</div><div style="font-size:.7rem;color:var(--ink2);">מטבעות הרוויח</div></div>
+        <div style="flex:1;min-width:70px;background:#FDEBEC;border-radius:14px;padding:10px 6px;"><div style="font-size:1.3rem;font-weight:900;color:var(--coral-d);">-${spent}</div><div style="font-size:.7rem;color:var(--ink2);">מטבעות הוציא</div></div>
+        <div style="flex:1;min-width:70px;background:#E7F8F0;border-radius:14px;padding:10px 6px;"><div style="font-size:1.3rem;font-weight:900;color:var(--mint-d);">${tasks}</div><div style="font-size:.7rem;color:var(--ink2);">מטלות הושלמו</div></div>
+        <div style="flex:1;min-width:70px;background:#EDF3FF;border-radius:14px;padding:10px 6px;"><div style="font-size:1.3rem;font-weight:900;color:#4DABF7;">${math}</div><div style="font-size:.7rem;color:var(--ink2);">תרגילי חשבון</div></div>
+        <div style="flex:1;min-width:70px;background:#F5F0FF;border-radius:14px;padding:10px 6px;"><div style="font-size:1.3rem;font-weight:900;color:var(--purple,#7C5CFC);">${rewards}</div><div style="font-size:.7rem;color:var(--ink2);">פרסים נקנו</div></div>
+      </div>
+      ${top.length?'<div style="font-size:.82rem;font-weight:700;margin-bottom:4px;">מה חוזר הכי הרבה השבוע:</div>'+top.map(([l,n])=>`<div style="font-size:.82rem;color:var(--ink2);">· ${esc(l)} — ${n} פעמים</div>`).join(''):'<div class="card-sub">אין פעילות השבוע עדיין</div>'}
+      ${streakRows?'<div style="margin-top:8px;">'+streakRows+'</div>':''}
+    </div>`;
+  }
+  // calm-tools usage (family-wide, same source as the settings card)
+  const log=(await DB.get('cs_calmlog'))??[];
+  const calmWeek=log.filter(e=>e.ts>=weekAgo);
+  if(calmWeek.length){
+    const rated=calmWeek.filter(e=>e.before&&e.after);
+    const improved=rated.filter(e=>e.after<e.before).length;
+    html+=`<div class="card"><div class="card-h">🌿 כלי רגיעה השבוע</div>
+      <div class="card-sub">${calmWeek.length} שימושים${rated.length?' · ב-'+Math.round(improved/rated.length*100)+'% מהפעמים הרגיש יותר טוב אחרי':''}</div></div>`;
+  }
+  el.innerHTML=html||'<div class="empty"><span class="e-ic">📊</span>אין נתונים עדיין</div>';
 }
 
 /* ===== STREAK ADMIN ===== */
