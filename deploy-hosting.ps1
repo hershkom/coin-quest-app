@@ -7,3 +7,4 @@
 $env:Path += ';C:\Program Files\nodejs;C:\Users\mikeh\AppData\Roaming\npm'
 Set-Location $PSScriptRoot
 firebase.cmd deploy --only hosting
+exit $LASTEXITCODE

@@ -372,6 +372,7 @@
   .cal-cell.empty-cell{background:transparent;}
   .cal-cell.clean{background:linear-gradient(135deg,var(--mint),var(--mint-d));color:#fff;}
   .cal-cell.accident{background:linear-gradient(135deg,var(--coral),var(--coral-d));color:#fff;}
+  .cal-cell.frozen{background:linear-gradient(135deg,#8FD8FF,#4DABF7);color:#fff;}
   .cal-cell.today{box-shadow:0 0 0 2px var(--purple);}
   .cal-cell.editable{cursor:pointer;}
   .cal-legend{display:flex;gap:14px;justify-content:center;margin-top:14px;font-size:.9rem;color:var(--ink);font-weight:700;}
@@ -784,6 +785,12 @@
           <div class="card-sub" style="margin-bottom:10px;">לחיצה על יום בלוח עוברת בין: לא סומן → נקי → תקרית → לא סומן. אפשר גם לדווח מהר על תקרית היום:</div>
           <button class="btn coral sm" onclick="adminReportAccidentToday()">🚨 דווח על תקרית היום</button>
         </div>
+        <div class="card">
+          <div class="card-h" style="margin-bottom:6px;">🧊 יום חסד</div>
+          <div class="card-sub" style="margin-bottom:10px;">יום אחד שנשכח או היה קשה לא ישבור רצף שלם — סימון יום החסר האחרון כ"קפוא" משאיר את הרצף חי. זמין פעם בשבועיים לכל אתגר.</div>
+          <button class="btn sm" style="background:linear-gradient(135deg,#8FD8FF,#4DABF7);color:#fff;" id="streakFreezeBtn" onclick="applyStreakFreeze()">🧊 הפעל יום חסד</button>
+          <div class="card-sub" id="streakFreezeStatus" style="margin-top:8px;"></div>
+        </div>
       </div>
 
       <div class="admin-pane" id="pane-actions" style="display:none;">
@@ -932,6 +939,15 @@
             <button class="btn sm" id="calmToggle" onclick="toggleCalmMode()">כבוי</button>
           </div>
           <div class="card-sub" style="margin-top:8px;">מתאים לרגעים של עומס חושי. כפתור 🌿 בראש המסך פתוח לילד תמיד, בלי קשר להגדרה הזו.</div>
+        </div>
+        <div class="card">
+          <div class="card-h">💾 גיבוי ושחזור</div>
+          <div class="card-sub" style="margin-bottom:10px;">קובץ גיבוי מכיל את כל נתוני המשפחה במכשיר הזה (ילדים, יתרות, מטלות, רצפים...). שמור אותו במקום בטוח.</div>
+          <div style="display:flex;gap:8px;">
+            <button class="btn mint sm" onclick="exportBackup()">⬇️ ייצא גיבוי</button>
+            <button class="btn ghost sm" onclick="document.getElementById('backupFile').click()">⬆️ שחזר מגיבוי</button>
+          </div>
+          <input type="file" id="backupFile" accept=".json,application/json" style="display:none;" onchange="importBackup(event)">
         </div>
         <div class="card">
           <div class="card-h">🌿 שימוש בכלי הרגיעה</div>
@@ -1119,6 +1135,24 @@ async function detectBackend(){
   try{ if(window.localStorage){ localStorage.setItem('__cs_t','1'); localStorage.removeItem('__cs_t'); backend='local'; return; } }catch(e){}
   backend='mem';
 }
+// ---- sync dirty-tracking ----
+// Maps a storage key to the cloud payload section it belongs to. Pushes send
+// ONLY dirty sections via a multi-path update() instead of set()ing the whole
+// family tree — so two parents editing different things at the same time no
+// longer silently overwrite each other (the old whole-payload write meant
+// "last device to push wins" for EVERYTHING, even untouched sections).
+const SYNC_SECTIONS={cs_children:'children',cs_chores:'chores',cs_actions:'actions',
+  cs_rewards:'rewards',cs_math:'math',cs_streaks:'streaks',cs_badgedefs:'badgeDefs',
+  cs_anchored:'anchored',cs_events:'events',cs_calm:'calmMode',cs_games:'games',
+  cs_hwm_date:'hwmDate'};
+function keyToSyncSection(k){
+  if(SYNC_SECTIONS[k]) return SYNC_SECTIONS[k];
+  const m=k.match(/^cs_(bal|hist|daily|mathd|badges|matht|taskt|rwt|gtime)_(.+)$/);
+  return m?('kids/'+m[2]):null; // per-kid granularity: sibling edits don't collide
+}
+let syncDirty=new Set(), syncFullPush=false;
+function markSyncDirty(k){ const s=keyToSyncSection(k); if(s) syncDirty.add(s); }
+
 const DB={
   async get(k){
     if(backend==='cloud'){ try{ const r=await window.storage.get(k); return r&&r.value!=null?JSON.parse(r.value):null; }catch(e){ return null; } }
@@ -1128,14 +1162,18 @@ const DB={
   async set(k,v){ const s=JSON.stringify(v);
     // Any persisted change schedules a debounced cloud push, so no mutation can
     // be forgotten (previously many admin edits saved locally but never synced).
+    markSyncDirty(k);
     if(backend==='cloud'){ try{ await window.storage.set(k,s); scheduleSync(); return; }catch(e){} }
     if(backend==='local'){ try{ localStorage.setItem(k,s); scheduleSync(); return; }catch(e){} }
     mem[k]=v; scheduleSync();
   },
   async del(k){
-    if(backend==='cloud'){ try{ await window.storage.delete(k); return; }catch(e){} }
-    if(backend==='local'){ try{ localStorage.removeItem(k); return; }catch(e){} }
-    delete mem[k];
+    // Deletions matter to sync too: removing a child must also remove their
+    // cloud record, or the next pull resurrects a ghost kid on every device.
+    markSyncDirty(k);
+    if(backend==='cloud'){ try{ await window.storage.delete(k); scheduleSync(); return; }catch(e){} }
+    if(backend==='local'){ try{ localStorage.removeItem(k); scheduleSync(); return; }catch(e){} }
+    delete mem[k]; scheduleSync();
   }
 };
 
@@ -1861,7 +1899,7 @@ function buildCalendar(year, month, days, editable, onTap, todayKeyStr){
   for(let d=1; d<=daysInMonth; d++){
     const key=year+'-'+(month+1)+'-'+d;
     const status=days[key];
-    const cls=status==='clean'?'clean':status==='accident'?'accident':'';
+    const cls=status==='clean'?'clean':status==='accident'?'accident':status==='frozen'?'frozen':'';
     const isToday=key===todayKeyStr;
     const editAttr=editable?` onclick="${onTap}('${key}')"`:'';
     cells+=`<div class="cal-cell ${cls} ${isToday?'today':''} ${editable?'editable':''}"${editAttr}>${d}</div>`;
@@ -2204,10 +2242,8 @@ async function updateAnchoredPoints(period,i,v){
   toast('עודכן ✓');
 }
 async function delAnchoredTask(period,i){
-  state.anchored[period].splice(i,1);
-  await DB.set('cs_anchored',state.anchored);
-  renderAnchoredAdmin();
-  toast('נמחק ✓');
+  await delWithUndo(state.anchored[period],i,'cs_anchored',renderAnchoredAdmin,'המשימה',
+    async()=>{ await DB.set('cs_anchored',state.anchored); });
 }
 async function updateSleepTime(){
   const time=parseInt(document.getElementById('sleepTime').value);
@@ -2333,7 +2369,7 @@ function renderChoresAdmin(){
   });
 }
 async function updateChorePoints(i,v){ state.chores[i].points=parseInt(v)||1; await DB.set('cs_chores',state.chores); toast('עודכן ✓'); }
-async function delChore(i){ state.chores.splice(i,1); await DB.set('cs_chores',state.chores); renderChoresAdmin(); }
+async function delChore(i){ await delWithUndo(state.chores,i,'cs_chores',renderChoresAdmin,'המטלה'); }
 async function addChore(){
   const label=document.getElementById('newChoreLabel').value.trim(); if(!label){ toast('צריך שם למטלה'); return; }
   const emoji=document.getElementById('newChoreEmoji').value.trim()||'⭐';
@@ -2363,6 +2399,7 @@ function fillStreakAdmin(){
     `<div style="font-size:2rem;font-weight:900;color:var(--gold-d);">${s.icon||'🔥'} ${s.current}</div>
      <div style="font-size:.82rem;color:var(--ink2);">רצף נוכחי של ${esc(childName)} · שיא: ${s.best} · מטרה: ${s.goal}</div>`;
   renderAdminCalendar();
+  fillStreakFreezeStatus();
 }
 async function saveStreakConfig(){
   const s=getStreak(adminStreakId); if(!s) return;
@@ -2414,7 +2451,11 @@ function recomputeStreak(id){
   if(!s.days[dateKey(cursor)]){ cursor.setDate(cursor.getDate()-1); }
   while(true){
     const k=dateKey(cursor);
-    if(s.days[k]==='clean'){ count++; cursor.setDate(cursor.getDate()-1); }
+    // 'frozen' = a parent-granted grace day ("יום חסד") — bridges the streak
+    // exactly like a clean day, so one hard/forgotten day doesn't wipe out
+    // weeks of effort (which for this kid means a meltdown AND losing the
+    // whole motivation loop).
+    if(s.days[k]==='clean'||s.days[k]==='frozen'){ count++; cursor.setDate(cursor.getDate()-1); }
     else break;
   }
   s.current=count;
@@ -2422,6 +2463,44 @@ function recomputeStreak(id){
   s.best=best;
   if(s.current>=s.goal && !s.wonAt) s.wonAt=Date.now();
   if(s.current<s.goal) s.wonAt=s.wonAt;
+}
+/* -- streak freeze ("grace day"): bridge ONE recent missed day, max once per 14 days -- */
+const FREEZE_COOLDOWN_MS=14*24*3600*1000;
+function fillStreakFreezeStatus(){
+  const s=getStreak(adminStreakId); if(!s) return;
+  const btn=document.getElementById('streakFreezeBtn'), st=document.getElementById('streakFreezeStatus');
+  if(!btn||!st) return;
+  const left=s.freezeUsedAt?FREEZE_COOLDOWN_MS-(Date.now()-s.freezeUsedAt):0;
+  if(left>0){
+    btn.disabled=true; btn.style.opacity=.5;
+    st.textContent='יהיה זמין שוב בעוד '+Math.ceil(left/86400000)+' ימים';
+  }else{
+    btn.disabled=false; btn.style.opacity=1;
+    st.textContent='';
+  }
+}
+async function applyStreakFreeze(){
+  const s=getStreak(adminStreakId); if(!s) return;
+  if(s.freezeUsedAt&&Date.now()-s.freezeUsedAt<FREEZE_COOLDOWN_MS){ toast('יום חסד כבר נוצל בשבועיים האחרונים'); return; }
+  // find the most recent UNMARKED day among the 3 days before today —
+  // accidents stay accidents (freeze forgives forgetting, not incidents)
+  let target=null;
+  for(let back=1;back<=3;back++){
+    const d=new Date(); d.setDate(d.getDate()-back);
+    const k=dateKey(d);
+    if(!s.days[k]){ target=k; break; }
+    if(s.days[k]==='clean'||s.days[k]==='frozen') continue;
+    break; // hit an accident — nothing to bridge past it
+  }
+  if(!target){ toast('אין יום חסר לגשר — הרצף שלם 🎉'); return; }
+  s.days[target]='frozen';
+  s.freezeUsedAt=Date.now();
+  recomputeStreak(adminStreakId);
+  await DB.set('cs_streaks',state.streaks);
+  scheduleSync();
+  fillStreakAdmin(); renderStreakBanner();
+  if(currentView==='streak') renderStreakView();
+  toast('🧊 יום החסד הופעל — הרצף ניצל!');
 }
 function adminReportAccidentToday(){
   modalConfirm('🚨','לדווח על תקרית היום?','הרצף יתאפס ל-0. ניתן עדיין לערוך ימים בלוח.', async()=>{
@@ -2447,7 +2526,7 @@ function renderActionsAdmin(){
   });
 }
 async function updateActionPoints(i,v){ state.actions[i].points=parseInt(v)||1; await DB.set('cs_actions',state.actions); toast('עודכן ✓'); }
-async function delAction(i){ state.actions.splice(i,1); await DB.set('cs_actions',state.actions); renderActionsAdmin(); }
+async function delAction(i){ await delWithUndo(state.actions,i,'cs_actions',renderActionsAdmin,'הפעולה'); }
 async function addAction(){
   const label=document.getElementById('newActLabel').value.trim(); if(!label){ toast('צריך שם לפעולה'); return; }
   const emoji=document.getElementById('newActEmoji').value.trim()||'⭐';
@@ -2520,7 +2599,7 @@ function renderRewardsAdmin(){
   });
 }
 async function updateRewardCost(i,v){ state.rewards[i].cost=parseInt(v)||1; await DB.set('cs_rewards',state.rewards); toast('עודכן ✓'); }
-async function delReward(i){ state.rewards.splice(i,1); await DB.set('cs_rewards',state.rewards); renderRewardsAdmin(); }
+async function delReward(i){ await delWithUndo(state.rewards,i,'cs_rewards',renderRewardsAdmin,'הפרס'); }
 async function addReward(){
   const label=document.getElementById('newRwLabel').value.trim(); if(!label){ toast('צריך שם לפרס'); return; }
   const emoji=document.getElementById('newRwEmoji').value.trim()||'🎁', cost=parseInt(document.getElementById('newRwCost').value)||30;
@@ -2553,7 +2632,7 @@ function renderGamesAdmin(){
     DB.get('cs_gtime_'+ch.id).then(v=>{ const el=document.getElementById('gtw_'+ch.id); if(el) el.textContent='בארנק: '+fmtGT(v??0); });
   });
 }
-async function delGame(i){ state.games.splice(i,1); await DB.set('cs_games',state.games); renderGamesAdmin(); }
+async function delGame(i){ await delWithUndo(state.games,i,'cs_games',renderGamesAdmin,'המשחק'); }
 async function addGame(){
   const label=document.getElementById('newGameLabel').value.trim(); if(!label){ toast('צריך שם למשחק'); return; }
   let url=document.getElementById('newGameUrl').value.trim();
@@ -2605,7 +2684,7 @@ function renderBadgesAdmin(){
   onBdgMetricChange();
 }
 async function updateBadgeThreshold(i,v){ state.badgeDefs[i].threshold=parseInt(v)||1; await DB.set('cs_badgedefs',state.badgeDefs); scheduleSync(); toast('עודכן ✓'); }
-async function delBadgeDef(i){ state.badgeDefs.splice(i,1); await DB.set('cs_badgedefs',state.badgeDefs); scheduleSync(); renderBadgesAdmin(); toast('נמחק'); }
+async function delBadgeDef(i){ await delWithUndo(state.badgeDefs,i,'cs_badgedefs',renderBadgesAdmin,'התג'); }
 async function addBadgeDef(){
   const label=document.getElementById('newBdgLabel').value.trim(); if(!label){ toast('צריך שם לתג'); return; }
   const emoji=document.getElementById('newBdgEmoji').value.trim()||'⭐';
@@ -2619,6 +2698,62 @@ async function addBadgeDef(){
 }
 
 async function savePin(){ const v=document.getElementById('setPin').value.trim(); if(v.length<3){ toast('קוד קצר מדי'); return; } state.pin=v; await DB.set('cs_pin',v); scheduleSync(); document.getElementById('setPin').value=''; toast('הקוד עודכן ✓'); }
+
+/* ===== BACKUP / RESTORE ===== */
+function backupKeyList(){
+  const keys=['cs_children','cs_current','cs_chores','cs_actions','cs_rewards','cs_math',
+    'cs_streaks','cs_badgedefs','cs_anchored','cs_events','cs_pin','cs_calm','cs_games',
+    'cs_games_v3','cs_gtime_seeded','cs_hwm_date','cs_calmlog','cs_familyid'];
+  for(const ch of state.children){
+    for(const p of ['cs_bal_','cs_hist_','cs_daily_','cs_mathd_','cs_badges_','cs_matht_','cs_taskt_','cs_rwt_','cs_gtime_']){
+      keys.push(p+ch.id);
+    }
+  }
+  return keys;
+}
+async function exportBackup(){
+  const data={};
+  for(const k of backupKeyList()){
+    const v=await DB.get(k);
+    if(v!==null) data[k]=v;
+  }
+  // A fresh install may never have WRITTEN cs_children (defaults are used
+  // in-memory without persisting) — but import validation requires it, and a
+  // backup without the children list would be useless anyway.
+  if(!data.cs_children) data.cs_children=state.children;
+  const blob=new Blob([JSON.stringify({app:'coin-quest',version:1,exportedAt:new Date().toISOString(),data},null,1)],{type:'application/json'});
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(blob);
+  const d=new Date();
+  a.download='coin-quest-backup-'+d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0')+'.json';
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(()=>URL.revokeObjectURL(a.href),5000);
+  toast('קובץ הגיבוי ירד ✓ שמור אותו במקום בטוח');
+}
+async function importBackup(ev){
+  const f=ev.target.files&&ev.target.files[0];
+  ev.target.value='';
+  if(!f) return;
+  let parsed;
+  try{ parsed=JSON.parse(await f.text()); }
+  catch(e){ modalMsg('⚠️','קובץ לא תקין','זה לא קובץ גיבוי של כספת המטבעות.'); return; }
+  if(!parsed||parsed.app!=='coin-quest'||!parsed.data||!Array.isArray(parsed.data.cs_children)){
+    modalMsg('⚠️','קובץ לא תקין','זה לא קובץ גיבוי של כספת המטבעות.'); return;
+  }
+  const when=parsed.exportedAt?new Date(parsed.exportedAt).toLocaleDateString('he-IL'):'לא ידוע';
+  const kids=parsed.data.cs_children.map(c=>c.name).join(', ');
+  modalConfirm('💾','לשחזר מהגיבוי?','גיבוי מתאריך '+when+' עם הילדים: '+kids+'.\nכל הנתונים הנוכחיים במכשיר יוחלפו!', async()=>{
+    for(const [k,v] of Object.entries(parsed.data)){
+      // Only cs_* keys, and never the family/account linkage — restoring a
+      // backup onto a device signed into a DIFFERENT family must not
+      // cross-wire the two families' cloud records.
+      if(!k.startsWith('cs_')||k==='cs_familyid') continue;
+      await DB.set(k,v);
+    }
+    toast('שוחזר ✓ טוען מחדש...');
+    setTimeout(()=>location.reload(),800);
+  });
+}
 async function saveGroqKey(){ const v=document.getElementById('setGroqKey').value.trim(); if(!v){ toast('הכנס מפתח'); return; } GROQ_API_KEY=v; localStorage.setItem('cs_groq_key',v); document.getElementById('setGroqKey').value=''; document.getElementById('groqKeyStatus').textContent='✅ מפתח שמור'; toast('מפתח Groq נשמר ✓'); }
 
 /* ===== MODALS ===== */
@@ -2972,6 +3107,39 @@ function chime(low){
 }
 let toastTimer=null;
 function toast(msg){ const t=document.getElementById('toast'); t.textContent=msg; t.classList.add('show'); clearTimeout(toastTimer); toastTimer=setTimeout(()=>t.classList.remove('show'),2200); }
+// Toast with an UNDO button — for deletions, which used to be instantly
+// permanent (one mis-tap on a phone = data gone). The undo callback restores
+// the captured snapshot; the toast stays up longer than a normal one.
+// Shared delete-with-undo for the admin lists: capture item+position, delete,
+// offer restore at the same spot.
+async function delWithUndo(arr,i,storageKey,rerender,label,persist){
+  // persist override: for arrays nested inside a bigger stored object
+  // (e.g. anchored[period] inside cs_anchored), saving the bare array to the
+  // storage key would corrupt the stored shape.
+  const save=persist||(async()=>{ await DB.set(storageKey,arr); });
+  const [item]=arr.splice(i,1);
+  if(item===undefined) return;
+  await save();
+  rerender();
+  undoToast(label+' נמחק',async()=>{
+    arr.splice(Math.min(i,arr.length),0,item);
+    await save();
+    rerender();
+  });
+}
+function undoToast(msg,onUndo){
+  const t=document.getElementById('toast');
+  t.textContent='';
+  const span=document.createElement('span'); span.textContent=msg+' ';
+  const btn=document.createElement('button');
+  btn.textContent='↩️ בטל';
+  btn.style.cssText='border:none;background:rgba(255,255,255,.22);color:#fff;border-radius:14px;padding:4px 12px;margin-inline-start:8px;font-family:inherit;font-weight:800;font-size:.88rem;cursor:pointer;';
+  btn.onclick=async()=>{ clearTimeout(toastTimer); t.classList.remove('show'); await onUndo(); toast('שוחזר ✓'); };
+  t.appendChild(span); t.appendChild(btn);
+  t.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer=setTimeout(()=>t.classList.remove('show'),8000);
+}
 
 /* ===== UTILS ===== */
 function esc(s){ return (s+'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
@@ -3179,17 +3347,62 @@ async function pushToFirebase(){
     fbPendingPush=true;
     return;
   }
+  if(!syncFullPush&&syncDirty.size===0) return; // nothing changed on this device
   fbSyncing=true;
+  // Claim the dirty set up front: edits made WHILE this push is in flight
+  // re-mark their sections and get their own later push, instead of being
+  // wrongly cleared as "already sent".
+  const sections=[...syncDirty]; const wasFull=syncFullPush;
+  syncDirty.clear(); syncFullPush=false;
   try{
-    await ref.set(buildSyncPayload());
+    // A kid section can be dirty for a child whose data was never loaded into
+    // memory this session (e.g. the admin +/- game-minutes buttons write
+    // straight to storage). buildSyncPayload only serializes loaded kids, so
+    // load them first — otherwise the update below would write null and
+    // DELETE that child's cloud record.
+    for(const s of sections){
+      if(s.startsWith('kids/')){
+        const id=s.slice(5);
+        if(!state.kid[id]&&state.children.some(c=>c.id===id)) await loadKid(id);
+      }
+    }
+    const payload=buildSyncPayload();
+    if(wasFull){
+      // First seed of a brand-new family: write the whole tree.
+      await ref.set(payload);
+    }else{
+      const upd={};
+      for(const s of sections){
+        if(s.startsWith('kids/')){
+          const id=s.slice(5);
+          // null for a child that no longer exists => removes them in RTDB
+          upd[s]=payload.kids[id]??null;
+        }else{
+          upd[s]=payload[s]??null;
+        }
+      }
+      await ref.update(upd);
+    }
     showSyncStatus('✅ מסונכרן '+new Date().toLocaleTimeString('he-IL',{hour:'2-digit',minute:'2-digit'}),'var(--mint)');
-  }catch(e){ showSyncStatus('⚠️ שגיאת שמירה','var(--coral)'); }
+  }catch(e){
+    // Put the failed sections back so the retry actually retries them.
+    sections.forEach(s=>syncDirty.add(s));
+    if(wasFull) syncFullPush=true;
+    showSyncStatus('⚠️ שגיאת שמירה','var(--coral)');
+  }
   fbSyncing=false;
   if(fbPendingPush){ fbPendingPush=false; scheduleSync(); }
 }
 
 async function pullFromFirebase(){
   const ref=familyRef(); if(!ref) return false;
+  // Every pulled section is persisted locally via DB.set, which marks it
+  // dirty — but those writes are cloud ECHOES, not local edits. Without
+  // restoring the pre-pull dirty set afterward, every pull would schedule a
+  // full push of everything it just downloaded, re-clobbering any newer
+  // concurrent edit from another device (the exact race sectioned sync
+  // exists to prevent).
+  const dirtyBeforePull=new Set(syncDirty);
   try{
     const snap=await ref.once('value');
     const data=snap.val();
@@ -3274,6 +3487,7 @@ async function pullFromFirebase(){
         await DB.set('cs_gtime_'+id,kid.gtime);
       }
     }
+    syncDirty=dirtyBeforePull; // drop the echo-dirt, keep real pre-pull edits
     return true;
   }catch(e){ return false; }
 }
@@ -3572,6 +3786,7 @@ async function createNewFamily(){
     if(seedFromLocal){
       // The user confirmed this cached local data is genuinely theirs — carry
       // it into the new cloud family instead of wiping it with an empty wizard.
+      syncFullPush=true; // brand-new family: seed the entire tree, not just dirty sections
       await withTimeout(pushToFirebase(),15000,'שמירת נתונים');
       toast('המשפחה נוצרה עם הנתונים הקיימים במכשיר זה ✓');
       go('picker');
@@ -3625,6 +3840,7 @@ async function finishWizard(){
   state.pin=pin;
   await DB.set('cs_children',state.children);
   await DB.set('cs_pin',pin);
+  syncFullPush=true; // brand-new family from the wizard: seed the entire tree
   await pushToFirebase();
   closeModal();
   toast('המשפחה מוכנה! ברוכים הבאים 🎉');
