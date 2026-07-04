@@ -1126,6 +1126,13 @@ const firebaseConfig={
 };
 firebase.initializeApp(firebaseConfig);
 const fbAuth=firebase.auth(), fbDb=firebase.database();
+
+// Offline support: register the service worker (relative path, so the scope
+// is correct both at the Firebase Hosting root and under the GitHub Pages
+// subdirectory). Failures are non-fatal — the app just stays online-only.
+if('serviceWorker' in navigator){
+  window.addEventListener('load',()=>{ navigator.serviceWorker.register('sw.js').catch(()=>{}); });
+}
 let authUser=null;
 
 /* ===== STORAGE: artifact window.storage + localStorage fallback ===== */
@@ -1686,6 +1693,7 @@ function redeemToken(raw){
   const id=p[1];
   const task=findTaskById(id);
   if(!task){ stopCamera(); modalMsg('🤔','הקוד לא מתאים','הקוד הזה לא שייך לאף מטלה אמיתית.\nבקש מאמא או אבא קוד נכון.'); return; }
+  if(!taskForChild(task,state.current)){ stopCamera(); modalMsg('🤔','לא המטלה שלך','המטלה הזאת שייכת לילד אחר במשפחה.'); return; }
   const label=task.label, pts=task.points, maxd=task.max;
   const k=cur(); ensureTodayKid(state.current);
   const used=k.daily.counts[id]||0;
@@ -1745,13 +1753,17 @@ function updateMathProgress(){ const k=cur(); const d=k.mathDaily.done, t=state.
   document.getElementById('mathDone').textContent=d; document.getElementById('mathFill').style.width=Math.min(100,(d/t)*100)+'%'; }
 
 /* ===== CHORES (checkbox tasks) ===== */
+// Per-child task assignment: tasks with no kids list (or an empty one, the
+// pre-feature shape) belong to EVERYONE — so nothing changes for existing
+// families until a parent actively narrows a task down.
+function taskForChild(t,childId){ return !t.kids||!t.kids.length||t.kids.includes(childId); }
 function renderChores(){
   const wrap=document.getElementById('choresList'); if(!wrap) return;
   wrap.innerHTML='';
   const k=cur(); if(!k) return;
   ensureTodayKid(state.current);
   // Use time-based tasks if current view is home and this child has the schedule enabled
-  let tasks=state.chores;
+  let tasks=state.chores.filter(t=>taskForChild(t,state.current));
   if(childUsesSchedule(curChild())&&currentView==='home'){
     tasks=getTasksForTimeOfDay();
     const timeHour=new Date().getHours();
@@ -1828,6 +1840,7 @@ function renderFirstThen(){
 
 function markChore(id){
   const ch=findTaskById(id); if(!ch) return;
+  if(!taskForChild(ch,state.current)) return; // not this child's task
   const k=cur(); ensureTodayKid(state.current);
   const used=k.daily.counts[id]||0;
   if(used>=ch.max) return;
@@ -2358,11 +2371,33 @@ async function adminDelChild(id){
 }
 
 /* ===== CHORES ADMIN ===== */
+// Emoji chips showing WHICH children a task applies to; tapping toggles.
+// Dim chip = child excluded. When every child is on, the kids field is
+// removed entirely so the task stays in the "belongs to everyone" shape.
+function kidChipsHtml(listName,i,t){
+  return '<span style="display:inline-flex;gap:4px;">'+state.children.map(c=>{
+    const on=taskForChild(t,c.id);
+    return `<button title="${esc(c.name)}" onclick="toggleTaskKid('${listName}',${i},'${c.id}')" style="border:none;cursor:pointer;font-size:1rem;line-height:1;padding:3px 5px;border-radius:9px;background:${on?'#E7F8F0':'transparent'};opacity:${on?1:.28};">${c.emoji}</button>`;
+  }).join('')+'</span>';
+}
+async function toggleTaskKid(listName,i,kidId){
+  const arr=listName==='chores'?state.chores:state.actions;
+  const t=arr[i]; if(!t) return;
+  let kids=(t.kids&&t.kids.length)?[...t.kids]:state.children.map(c=>c.id);
+  if(kids.includes(kidId)){
+    if(kids.length===1){ toast('חייב להישאר לפחות ילד אחד למטלה'); return; }
+    kids=kids.filter(k=>k!==kidId);
+  }else kids.push(kidId);
+  if(kids.length===state.children.length) delete t.kids; else t.kids=kids;
+  await DB.set(listName==='chores'?'cs_chores':'cs_actions',arr);
+  listName==='chores'?renderChoresAdmin():renderActionsAdmin();
+  toast('עודכן ✓');
+}
 function renderChoresAdmin(){
   const c=document.getElementById('choresAdmin'); c.innerHTML='';
   state.chores.forEach((ch,i)=>{
     const row=document.createElement('div'); row.className='admin-row';
-    row.innerHTML=`<span class="emoji">${ch.emoji}</span><span class="t">${esc(ch.label)}<br><span style="font-size:.72rem;color:var(--muted);font-weight:400;">עד ${ch.max} פעמים ביום</span></span>
+    row.innerHTML=`<span class="emoji">${ch.emoji}</span><span class="t">${esc(ch.label)}<br><span style="font-size:.72rem;color:var(--muted);font-weight:400;">עד ${ch.max} פעמים ביום · </span>${kidChipsHtml('chores',i,ch)}</span>
       <input type="number" value="${ch.points}" min="1" style="width:62px;border:2px solid var(--line);border-radius:10px;padding:7px;text-align:center;font-family:inherit;font-weight:700;" onchange="updateChorePoints(${i},this.value)">
       <button class="icon-btn" onclick="delChore(${i})">🗑️</button>`;
     c.appendChild(row);
@@ -2519,7 +2554,7 @@ function renderActionsAdmin(){
   const c=document.getElementById('actionsAdmin'); c.innerHTML='';
   state.actions.forEach((a,i)=>{
     const row=document.createElement('div'); row.className='admin-row';
-    row.innerHTML=`<span class="emoji">${a.emoji}</span><span class="t">${esc(a.label)}<br><span style="font-size:.72rem;color:var(--muted);font-weight:400;">עד ${a.max} פעמים ביום</span></span>
+    row.innerHTML=`<span class="emoji">${a.emoji}</span><span class="t">${esc(a.label)}<br><span style="font-size:.72rem;color:var(--muted);font-weight:400;">עד ${a.max} פעמים ביום · </span>${kidChipsHtml('actions',i,a)}</span>
       <input type="number" value="${a.points}" min="1" style="width:62px;border:2px solid var(--line);border-radius:10px;padding:7px;text-align:center;font-family:inherit;font-weight:700;" onchange="updateActionPoints(${i},this.value)">
       <button class="icon-btn" onclick="delAction(${i})">🗑️</button>`;
     c.appendChild(row);
