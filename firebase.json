@@ -14,6 +14,16 @@
       "**/*.jar",
       "**/*.apk",
       "**/*.aab"
+    ],
+    "headers": [
+      {
+        "source": "/games/**",
+        "headers": [{"key": "Cache-Control", "value": "public, max-age=604800"}]
+      },
+      {
+        "source": "/static/**",
+        "headers": [{"key": "Cache-Control", "value": "public, max-age=604800"}]
+      }
     ]
   }
 }

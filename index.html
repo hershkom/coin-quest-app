@@ -955,6 +955,15 @@
           <input type="file" id="backupFile" accept=".json,application/json" style="display:none;" onchange="importBackup(event)">
         </div>
         <div class="card">
+          <div class="card-h">🩺 שגיאות אחרונות במכשיר</div>
+          <div class="card-sub" style="margin-bottom:10px;">אם משהו התנהג מוזר — הפרטים כאן עוזרים לתקן. אפשר להעתיק ולשלוח למפתח.</div>
+          <div id="errLogView"></div>
+          <div style="display:flex;gap:8px;margin-top:8px;">
+            <button class="btn ghost sm" onclick="copyErrLog()">📋 העתק הכל</button>
+            <button class="btn ghost sm" onclick="clearErrLog()">🗑️ נקה</button>
+          </div>
+        </div>
+        <div class="card">
           <div class="card-h">🌿 שימוש בכלי הרגיעה</div>
           <div class="card-sub" style="margin-bottom:10px;">מתי הילד השתמש, באיזה כלי, ואיך הרגיש לפני ואחרי — כדי שתדעו מה עובד בשבילו.</div>
           <div id="calmLogStats"></div>
@@ -1156,7 +1165,7 @@ async function detectBackend(){
 const SYNC_SECTIONS={cs_children:'children',cs_chores:'chores',cs_actions:'actions',
   cs_rewards:'rewards',cs_math:'math',cs_streaks:'streaks',cs_badgedefs:'badgeDefs',
   cs_anchored:'anchored',cs_events:'events',cs_calm:'calmMode',cs_games:'games',
-  cs_hwm_date:'hwmDate'};
+  cs_hwm_date:'hwmDate',cs_auditlog:'auditLog'};
 function keyToSyncSection(k){
   if(SYNC_SECTIONS[k]) return SYNC_SECTIONS[k];
   const m=k.match(/^cs_(bal|hist|daily|mathd|badges|matht|taskt|rwt|gtime)_(.+)$/);
@@ -1275,11 +1284,34 @@ async function checkBadges(){
     if(badgeIsEarned(def,k,state.current)){
       k.badges.push({id:def.id,ts:Date.now()});
       changed=true;
-      toast('🏅 תג חדש: '+def.label+' '+def.emoji);
+      queueBadgeCelebration(def);
     }
   }
   if(changed) await DB.set('cs_badges_'+state.current,k.badges);
   renderBadgesBanner();
+}
+// A new badge used to be a 2-second toast — easy to miss the one moment the
+// whole badge system builds toward. Now it's a full celebration modal with a
+// coin burst. Queued: if another modal is up (e.g. the reward-purchase
+// congratulations) or several badges land at once, celebrations wait their
+// turn instead of clobbering whatever the child is reading.
+const _badgeQueue=[];
+function queueBadgeCelebration(def){
+  _badgeQueue.push(def);
+  _tryShowBadgeCelebration();
+}
+function _tryShowBadgeCelebration(){
+  if(!_badgeQueue.length) return;
+  if(modalBg.classList.contains('show')){ setTimeout(_tryShowBadgeCelebration,900); return; }
+  const def=_badgeQueue.shift();
+  if(!state.calmMode){ try{ coinBurst(); chime(false); }catch(e){} }
+  modalContent.innerHTML=`
+    <div style="font-size:4.6rem;animation:calmpulse 1.6s ease-in-out infinite;">${def.emoji}</div>
+    <h3 style="margin:10px 0 4px;">🏅 תג חדש!</h3>
+    <div style="font-size:1.35rem;font-weight:900;color:var(--purple);margin-bottom:6px;">${esc(def.label)}</div>
+    <p style="margin-top:0;">כל הכבוד! התג נוסף לאוסף שלך.</p>
+    <button class="btn primary" onclick="closeModal();_tryShowBadgeCelebration();">מגניב! 🎉</button>`;
+  modalBg.classList.add('show');
 }
 function earnedBadgeCount(k){
   const ids=new Set(state.badgeDefs.map(d=>d.id));
@@ -1359,6 +1391,7 @@ async function loadState(){
   state.calmMode=(await DB.get('cs_calm'))    ??false;
   state.badgeDefs=(await DB.get('cs_badgedefs'))??DEFAULT_BADGE_DEFS;
   state.events=(await DB.get('cs_events'))??[];
+  state.auditLog=(await DB.get('cs_auditlog'))??[];
   state.familyId=(await DB.get('cs_familyid'))??null;
   _hwmDate=(await DB.get('cs_hwm_date'))??todayStr();
   _hwmAdvanceMono=performance.now();
@@ -1890,6 +1923,7 @@ async function markStreakCleanToday(id){
   const k=dateKey(new Date());
   if(s.days[k]) return; // already marked today
   s.days[k]='clean';
+  audit('אישר יום מוצלח באתגר "'+s.title+'"');
   const wasWon=!!s.wonAt;
   recomputeStreak(id);
   let justWon = !wasWon && !!s.wonAt;
@@ -2175,8 +2209,29 @@ async function renderCalmLogStats(){
   });
   el.innerHTML=html;
 }
+async function renderErrLog(){
+  const el=document.getElementById('errLogView'); if(!el) return;
+  const log=(await DB.get('cs_errlog'))??[];
+  if(!log.length){ el.innerHTML='<div class="card-sub">אין שגיאות 🎉</div>'; return; }
+  el.innerHTML=log.slice(0,5).map(e=>
+    `<div style="font-size:.74rem;padding:6px 0;border-bottom:1px solid var(--line);direction:ltr;text-align:left;font-family:monospace;">
+      <b>${new Date(e.ts).toLocaleString('he-IL')}</b> [${esc(e.kind)}] ${esc(e.msg)}</div>`).join('')
+    +(log.length>5?`<div class="card-sub" style="margin-top:6px;">ועוד ${log.length-5} ישנות יותר (בהעתקה מקבלים הכל)</div>`:'');
+}
+async function copyErrLog(){
+  const log=(await DB.get('cs_errlog'))??[];
+  try{
+    await navigator.clipboard.writeText(JSON.stringify(log,null,1));
+    toast('הועתק ✓');
+  }catch(e){ toast('ההעתקה נכשלה'); }
+}
+async function clearErrLog(){
+  await DB.del('cs_errlog');
+  renderErrLog(); toast('נוקה ✓');
+}
 function fillCalmToggle(){
   renderCalmLogStats();
+  renderErrLog();
   const btn=document.getElementById('calmToggle'); if(!btn) return;
   btn.textContent=state.calmMode?'פעיל ✓':'כבוי';
   btn.className='btn sm '+(state.calmMode?'mint':'ghost');
@@ -2328,7 +2383,9 @@ function editChild(id){
 async function adminSetBalance(id){
   const k=await loadKid(id), ch=state.children.find(c=>c.id===id);
   modalInput('🪙','תיקון יתרה','היתרה החדשה של '+ch.name+':',k.balance, async(v)=>{
-    const n=parseInt(v); if(isNaN(n))return; k.balance=n; await DB.set('cs_bal_'+id,n);
+    const n=parseInt(v); if(isNaN(n))return;
+    audit('תיקן יתרה של '+ch.name+': '+k.balance+' → '+n);
+    k.balance=n; await DB.set('cs_bal_'+id,n);
     if(id===state.current) renderBalance(); renderChildrenAdmin(); toast('עודכן ✓');
   });
 }
@@ -2338,6 +2395,7 @@ async function adminResetChild(id){
     const k=await loadKid(id);
     k.balance=0; k.history=[]; k.daily={date:todayStr(),counts:{}}; k.mathDaily={date:todayStr(),done:0};
     await DB.set('cs_bal_'+id,0); await DB.set('cs_hist_'+id,[]); await DB.set('cs_daily_'+id,k.daily); await DB.set('cs_mathd_'+id,k.mathDaily);
+    audit('איפס את '+ch.name+' (יתרה והיסטוריה)');
     if(id===state.current) renderBalance(); renderChildrenAdmin(); toast('אופס ✓');
   });
 }
@@ -2346,6 +2404,7 @@ async function adminDelChild(id){
   const ch=state.children.find(c=>c.id===id);
   modalConfirm('🗑️','למחוק את '+ch.name+'?','כל הנתונים של '+ch.name+' יימחקו לצמיתות.', async()=>{
     state.children=state.children.filter(c=>c.id!==id); await DB.set('cs_children',state.children);
+    audit('מחק את הילד/ה '+ch.name);
     for(const p of ['cs_bal_','cs_hist_','cs_daily_','cs_mathd_','cs_badges_','cs_matht_','cs_taskt_','cs_rwt_','cs_gtime_']){
       await DB.del(p+id);
     }
@@ -2460,6 +2519,14 @@ async function renderReportAdmin(){
     const improved=rated.filter(e=>e.after<e.before).length;
     html+=`<div class="card"><div class="card-h">🌿 כלי רגיעה השבוע</div>
       <div class="card-sub">${calmWeek.length} שימושים${rated.length?' · ב-'+Math.round(improved/rated.length*100)+'% מהפעמים הרגיש יותר טוב אחרי':''}</div></div>`;
+  }
+  // parent audit trail (synced — both parents see who did what)
+  const alog=state.auditLog||[];
+  if(alog.length){
+    html+=`<div class="card"><div class="card-h">📝 יומן פעולות הורים</div>`+
+      alog.slice(0,12).map(e=>`<div style="display:flex;gap:8px;font-size:.8rem;padding:5px 0;border-bottom:1px solid var(--line);">
+        <span style="flex:1;">${esc(e.action)}</span>
+        <span style="color:var(--muted);white-space:nowrap;">${esc((e.who||'').split('@')[0])} · ${timeAgo(e.ts)}</span></div>`).join('')+`</div>`;
   }
   el.innerHTML=html||'<div class="empty"><span class="e-ic">📊</span>אין נתונים עדיין</div>';
 }
@@ -2581,6 +2648,7 @@ async function applyStreakFreeze(){
   if(!target){ toast('אין יום חסר לגשר — הרצף שלם 🎉'); return; }
   s.days[target]='frozen';
   s.freezeUsedAt=Date.now();
+  audit('הפעיל יום חסד באתגר "'+s.title+'" ('+target+')');
   recomputeStreak(adminStreakId);
   await DB.set('cs_streaks',state.streaks);
   scheduleSync();
@@ -2593,6 +2661,7 @@ function adminReportAccidentToday(){
     const s=getStreak(adminStreakId); if(!s) return;
     const k=dateKey(new Date());
     s.days[k]='accident'; s.current=0;
+    audit('דיווח תקרית באתגר "'+s.title+'"');
     await DB.set('cs_streaks',state.streaks);
     scheduleSync();
     fillStreakAdmin(); renderStreakBanner();
@@ -2731,6 +2800,8 @@ async function addGame(){
 }
 async function adminAdjustGT(childId,minutes){
   const v=Math.max(0,((await DB.get('cs_gtime_'+childId))??0)+minutes*60);
+  const chName=(state.children.find(c=>c.id===childId)||{}).name||childId;
+  audit((minutes>0?'הוסיף ':'הוריד ')+Math.abs(minutes)+' דקות משחק ל'+chName);
   await DB.set('cs_gtime_'+childId,v);
   if(state.kid[childId]) state.kid[childId].gtime=v;
   renderGamesAdmin(); toast('עודכן ✓');
@@ -3196,6 +3267,18 @@ function toast(msg){ const t=document.getElementById('toast'); t.textContent=msg
 // Toast with an UNDO button — for deletions, which used to be instantly
 // permanent (one mis-tap on a phone = data gone). The undo callback restores
 // the captured snapshot; the toast stays up longer than a normal one.
+// Parent-action audit trail (backlog #14): who changed what, visible to both
+// parents via sync. Answers "רגע, מי נתן לו 50 מטבעות?" in a two-parent home.
+// Whole-list last-write-wins on a concurrent append is acceptable for a log.
+async function audit(action){
+  try{
+    const log=(await DB.get('cs_auditlog'))??[];
+    log.unshift({ts:Date.now(),who:(typeof authUser!=='undefined'&&authUser&&authUser.email)||'מכשיר מקומי',action});
+    if(log.length>50) log.length=50;
+    state.auditLog=log; // buildSyncPayload reads from state
+    await DB.set('cs_auditlog',log);
+  }catch(e){}
+}
 // Shared delete-with-undo for the admin lists: capture item+position, delete,
 // offer restore at the same spot.
 async function delWithUndo(arr,i,storageKey,rerender,label,persist){
@@ -3207,10 +3290,12 @@ async function delWithUndo(arr,i,storageKey,rerender,label,persist){
   if(item===undefined) return;
   await save();
   rerender();
+  audit('מחק '+label+': '+(item.label||item.name||''));
   undoToast(label+' נמחק',async()=>{
     arr.splice(Math.min(i,arr.length),0,item);
     await save();
     rerender();
+    audit('שחזר '+label+': '+(item.label||item.name||''));
   });
 }
 function undoToast(msg,onUndo){
@@ -3411,7 +3496,7 @@ function buildSyncPayload(){
   const payload={children:state.children,chores:state.chores,actions:state.actions,
     rewards:state.rewards,math:state.math,streaks:state.streaks,badgeDefs:state.badgeDefs,
     anchored:state.anchored,events:state.events||[],hwmDate:_hwmDate,calmMode:state.calmMode,
-    games:state.games,kids:{}};
+    games:state.games,auditLog:state.auditLog||[],kids:{}};
   for(const ch of state.children){
     const k=state.kid[ch.id];
     if(k){
@@ -3522,6 +3607,7 @@ async function pullFromFirebase(){
     }
     if(data.events){ state.events=data.events; await DB.set('cs_events',data.events); }
     if(data.games){ state.games=data.games; await DB.set('cs_games',data.games); }
+    if(data.auditLog){ state.auditLog=data.auditLog; await DB.set('cs_auditlog',data.auditLog); }
     // Use !==undefined (not truthiness) so an explicit false — calm mode
     // turned OFF on another device — still overwrites a local true.
     if(data.calmMode!==undefined){
@@ -4140,13 +4226,26 @@ function goHomeOrPicker(){
 // a third-party script, etc.), never leave the user staring at a blank
 // screen with no feedback. This is intentionally broad/generic since it
 // exists to catch things the more specific try/catches above did not.
+// Persist the last errors on-device (cs_errlog, capped) so a "זה לא עובד"
+// report from a real user is debuggable after the fact — before this, a
+// production error left zero trace anywhere. Shown in Admin Settings.
+async function recordError(kind,msg,stack){
+  try{
+    const log=(await DB.get('cs_errlog'))??[];
+    log.unshift({ts:Date.now(),kind,msg:String(msg||'').slice(0,300),stack:String(stack||'').slice(0,500),ver:document.getElementById('appVersionTag')?.textContent||''});
+    if(log.length>30) log.length=30;
+    await DB.set('cs_errlog',log);
+  }catch(e){}
+}
 window.addEventListener('error', (ev)=>{
   console.error('Uncaught error', ev.error||ev.message);
+  recordError('error',(ev.error&&ev.error.message)||ev.message,ev.error&&ev.error.stack);
   ensureActiveView();
   toast('⚠️ שגיאה: '+((ev.error&&ev.error.message)||ev.message||'נסה לרענן את הדף'));
 });
 window.addEventListener('unhandledrejection', (ev)=>{
   console.error('Unhandled promise rejection', ev.reason);
+  recordError('rejection',ev.reason&&ev.reason.message||ev.reason,ev.reason&&ev.reason.stack);
   ensureActiveView();
   toast('⚠️ שגיאה: '+((ev.reason&&ev.reason.message)||'נסה לרענן את הדף'));
 });
