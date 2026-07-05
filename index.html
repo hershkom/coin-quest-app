@@ -5,7 +5,10 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>כספת המטבעות 🪙</title>
 <link href="https://fonts.googleapis.com/css2?family=Varela+Round&family=Heebo:wght@400;500;700;800;900&display=swap" rel="stylesheet">
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jsQR/1.4.0/jsQR.js"></script>
+<!-- Self-hosted: the old cdnjs URL for jsQR was a 404 (the library was never
+     published there), so QR DECODING silently never worked — the camera/photo
+     paths failed with "jsQR is not defined". Local copy also works offline. -->
+<script src="vendor/jsqr.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
@@ -626,7 +629,9 @@
         <div class="scan-hint" id="scanHint">כוון את הקוד לתוך הריבוע</div>
         <div class="fallback-box" id="scanFallback" style="display:none;">
           <div style="font-size:2.4rem;">📷</div>
-          <p style="margin:8px 0 14px;font-size:.9rem;">המצלמה לא זמינה כאן —<br>אפשר לצלם או לבחור תמונה של הקוד</p>
+          <p style="margin:8px 0 6px;font-size:.9rem;">המצלמה לא זמינה כאן —<br>אפשר לצלם או לבחור תמונה של הקוד</p>
+          <p id="scanFailDetail" style="margin:0 0 10px;font-size:.78rem;color:var(--coral-d);font-weight:700;"></p>
+          <button class="btn mint sm" onclick="startCamera()">🔄 נסה שוב להפעיל מצלמה</button>
         </div>
       </div>
       <canvas id="scanCanvas" style="display:none;"></canvas>
@@ -636,7 +641,7 @@
         </label>
         <button class="btn ghost" onclick="toggleManual()">⌨️ הזנת קוד ידנית</button>
         <div id="manualBox" style="display:none;gap:8px;flex-direction:column;">
-          <input id="manualCode" style="width:100%;border:2px solid var(--line);border-radius:13px;padding:12px;font-family:monospace;direction:ltr;" placeholder="CSQR|...">
+          <input id="manualCode" style="width:100%;border:2px solid var(--line);border-radius:13px;padding:12px;font-family:monospace;direction:ltr;" placeholder="הקוד שרשום מתחת ל-QR">
           <button class="btn primary" onclick="redeemToken(document.getElementById('manualCode').value.trim())">אישור</button>
         </div>
       </div>
@@ -820,13 +825,17 @@
           <div id="streakQrResult" style="display:none;margin-top:12px;text-align:center;">
             <div id="streakQrBox" style="display:inline-block;padding:14px;background:#fff;border-radius:18px;box-shadow:0 6px 18px rgba(0,0,0,.12);"></div>
             <div id="streakQrLabel" style="font-weight:800;margin-top:10px;font-size:1rem;"></div>
+            <button class="btn ghost sm" style="margin-top:10px;" onclick="saveLastQR('streakQrBox')">💾 שמור כתמונה</button>
           </div>
         </div>
         <div id="qrResult" style="display:none;margin-top:16px;">
           <div id="qrBox"></div>
           <div id="qrLabel" style="font-weight:800;margin-top:10px;font-size:1.05rem;"></div>
           <div class="qr-token" id="qrToken"></div>
-          <button class="btn ghost sm" style="margin-top:10px;" onclick="window.print()">🖨️ הדפס</button>
+          <div style="display:flex;gap:8px;justify-content:center;margin-top:10px;">
+            <button class="btn ghost sm" onclick="saveLastQR('qrBox')">💾 שמור כתמונה</button>
+            <button class="btn ghost sm" onclick="window.print()">🖨️ הדפס</button>
+          </div>
         </div>
       </div>
       <div class="admin-pane" id="pane-math" style="display:none;">
@@ -1669,13 +1678,44 @@ let stream=null, scanning=false;
 const video=document.getElementById('scanVideo'), canvas=document.getElementById('scanCanvas');
 async function startCamera(){
   const fb=document.getElementById('scanFallback'),fr=document.getElementById('scanFrame'),ln=document.getElementById('scanLine'),hi=document.getElementById('scanHint');
+  let lastErr=null;
   try{
-    stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:'environment'}});
+    // ideal (not exact) facingMode: an exact 'environment' constraint throws
+    // OverconstrainedError outright on devices without a labeled back camera.
+    // Higher ideal resolution helps jsQR decode small/far codes.
+    try{
+      stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'environment'},width:{ideal:1280},height:{ideal:720}}});
+    }catch(e1){
+      lastErr=e1;
+      // Second chance with the loosest possible constraint — some WebViews
+      // and older devices reject anything more specific.
+      stream=await navigator.mediaDevices.getUserMedia({video:true});
+    }
+    // Continuous autofocus where the hardware supports it — without this,
+    // some phones lock focus at arm's length and the QR stays blurry forever.
+    try{
+      const track=stream.getVideoTracks()[0];
+      const caps=track.getCapabilities?track.getCapabilities():{};
+      if(caps.focusMode&&caps.focusMode.includes('continuous')){
+        await track.applyConstraints({advanced:[{focusMode:'continuous'}]});
+      }
+    }catch(e){}
     video.srcObject=stream; await video.play();
     video.style.display='';fb.style.display='none';fr.style.display='';ln.style.display='';hi.style.display='';
     scanning=true; requestAnimationFrame(scanTick);
   }catch(e){
+    lastErr=e;
     video.style.display='none';fb.style.display='block';fr.style.display='none';ln.style.display='none';hi.style.display='none';
+    // Say WHY and offer a retry — "gallery only" with no explanation left the
+    // parent unable to tell a denied permission from a missing camera.
+    const detail=document.getElementById('scanFailDetail');
+    if(detail){
+      const code=lastErr&&lastErr.name||'';
+      detail.textContent=code==='NotAllowedError'
+        ? 'ההרשאה למצלמה נדחתה — אשר גישה למצלמה בהגדרות הדפדפן/האפליקציה ונסה שוב'
+        : code==='NotFoundError' ? 'לא נמצאה מצלמה במכשיר הזה'
+        : 'שגיאת מצלמה: '+(code||lastErr&&lastErr.message||'לא ידועה');
+    }
   }
 }
 function stopCamera(){ scanning=false; if(stream){ stream.getTracks().forEach(t=>t.stop()); stream=null; } }
@@ -1702,7 +1742,11 @@ document.getElementById('photoInput').addEventListener('change',e=>{
 });
 function toggleManual(){ const b=document.getElementById('manualBox'); b.style.display=b.style.display==='flex'?'none':'flex'; }
 function redeemToken(raw){
-  raw=(raw||'').trim(); const p=raw.split('|');
+  raw=(raw||'').trim();
+  // Manual typing: accept the bare task id (what the QR screen now shows as
+  // "הקוד להקלדה ידנית") — typing CSQR|chore_xyz by hand was never realistic.
+  if(raw&&!raw.includes('|')&&findTaskById(raw)) raw='CSQR|'+raw;
+  const p=raw.split('|');
   // Streak reward QR — claiming the prize is a parent-confirmed moment just like
   // marking a clean day, so it goes through the same PIN gate. The displayed
   // prize name/emoji always comes from the admin-configured streak settings,
@@ -2708,24 +2752,62 @@ function fillQRSelect(){
   const ssel=document.getElementById('qrStreakSelect'); ssel.innerHTML='';
   state.streaks.forEach(st=>{ const o=document.createElement('option'); o.value=st.id; o.textContent=(st.icon||'🌟')+' '+st.title; ssel.appendChild(o); });
 }
+// QR tokens are MINIMAL — id only. The redeem path always reads points/label
+// from the stored config, never from the token (anti-forgery), so shipping
+// the label inside the QR was pure downside: Hebrew+emoji tokens overflow
+// qrcodejs's byte budget ("code length overflow", hit live with the
+// good-behavior streak), and it made the manual-typing code unusably long.
+let _lastQR=null; // {box, caption} of the last generated code, for image export
 function makeQR(){
   const val=document.getElementById('qrSelect').value; if(!val) return;
   const [type,id]=val.split('|');
   const a=(type==='chore'?state.chores:state.actions).find(x=>x.id===id); if(!a) return;
-  const token='CSQR|'+a.id+'|'+a.label+'|'+a.points+'|'+a.max;
+  const token='CSQR|'+a.id;
   const box=document.getElementById('qrBox'); box.innerHTML='';
   new QRCode(box,{text:token,width:200,height:200,colorDark:'#2A2440',colorLight:'#ffffff',correctLevel:QRCode.CorrectLevel.M});
   document.getElementById('qrLabel').textContent=a.emoji+' '+a.label+' · '+a.points+' מטבעות';
-  document.getElementById('qrToken').textContent=token;
+  document.getElementById('qrToken').textContent='קוד להקלדה ידנית: '+a.id;
   document.getElementById('qrResult').style.display='block';
+  _lastQR={boxId:'qrBox',caption:[a.emoji+' '+a.label, a.points+' מטבעות'],file:'qr-'+a.id};
 }
 function makeStreakQR(){
   const s=getStreak(document.getElementById('qrStreakSelect').value); if(!s) return;
-  const token='CSSTREAK|'+s.id+'|'+s.rewardLabel+'|'+s.rewardEmoji+'|'+s.goal;
+  const token='CSSTREAK|'+s.id;
   const box=document.getElementById('streakQrBox'); box.innerHTML='';
   new QRCode(box,{text:token,width:200,height:200,colorDark:'#D99409',colorLight:'#ffffff',correctLevel:QRCode.CorrectLevel.M});
-  document.getElementById('streakQrLabel').textContent=s.rewardEmoji+' '+s.rewardLabel+' — פרס '+s.goal+' ימים ('+s.title+')';
+  document.getElementById('streakQrLabel').innerHTML=esc(s.rewardEmoji+' '+s.rewardLabel+' — פרס '+s.goal+' ימים ('+s.title+')')+
+    '<br><span class="qr-token" style="font-size:.8rem;">קוד להקלדה ידנית: '+esc(token)+'</span>';
   document.getElementById('streakQrResult').style.display='block';
+  _lastQR={boxId:'streakQrBox',caption:['🏆 פרס אתגר: '+s.title, s.rewardLabel+' — '+s.goal+' ימים'],file:'qr-streak-'+s.id};
+}
+// Compose the QR + a human caption onto one canvas and download as PNG, so a
+// parent can print it or keep it on the computer ("what does this code give?"
+// is readable on the image itself).
+function downloadQRImage(boxId,captionLines,filename){
+  const box=document.getElementById(boxId);
+  const src=box.querySelector('canvas')||box.querySelector('img');
+  if(!src){ toast('צור קודם קוד QR'); return; }
+  const W=520,QS=380;
+  const H=QS+90+captionLines.length*44;
+  const c=document.createElement('canvas'); c.width=W; c.height=H;
+  const ctx=c.getContext('2d');
+  ctx.fillStyle='#ffffff'; ctx.fillRect(0,0,W,H);
+  ctx.imageSmoothingEnabled=false; // keep QR modules crisp when upscaling
+  ctx.drawImage(src,(W-QS)/2,40,QS,QS);
+  ctx.fillStyle='#2A2440'; ctx.textAlign='center';
+  captionLines.forEach((line,i)=>{
+    ctx.font=(i===0?'bold 30px':'24px')+' Arial, sans-serif';
+    ctx.fillText(line,W/2,QS+80+i*44,W-40);
+  });
+  const a=document.createElement('a');
+  a.href=c.toDataURL('image/png');
+  a.download=(filename||'coin-quest-qr')+'.png';
+  document.body.appendChild(a); a.click(); a.remove();
+  toast('התמונה ירדה ✓');
+}
+function saveLastQR(which){
+  if(!_lastQR||_lastQR.boxId!==which){ toast('צור קודם קוד QR'); return; }
+  downloadQRImage(_lastQR.boxId,_lastQR.caption,_lastQR.file);
 }
 function fillMathConfig(){
   const m=state.math;

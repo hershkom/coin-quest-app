@@ -7,7 +7,7 @@
 //    boot without) is stale-while-revalidate: instant from cache, silently
 //    refreshed in the background.
 // Bump CACHE_VERSION on breaking asset changes; activate cleans old caches.
-const CACHE_VERSION='cq-v1';
+const CACHE_VERSION='cq-v2';
 
 // All paths RELATIVE to the SW location, because the app lives at the domain
 // root on Firebase Hosting but under /coin-quest-app/ on GitHub Pages.
@@ -19,6 +19,7 @@ const PRECACHE=[
   'games/classicube/',
   'games/classicube/classicube.js',
   'static/default.zip',
+  'vendor/jsqr.js',
 ];
 // Cross-origin scripts the app cannot boot without.
 const CDN_HOSTS=['cdnjs.cloudflare.com','www.gstatic.com'];
