@@ -858,6 +858,8 @@
             <div class="field"><label>מטבעות לתשובה</label><input id="mathPts" type="number" value="2" min="1"></div>
           </div>
           <div class="field"><label>כמה תרגילים מזכים ביום</label><input id="mathDaily" type="number" value="10" min="1"></div>
+          <div class="card-sub" style="margin-bottom:10px;">💡 הקושי מסתגל אוטומטית: כל ילד מתחיל קל ומטפס עד ל"מספר המקסימלי" לפי ההצלחות שלו. הרמות של הילדים מוצגות למטה.</div>
+          <div id="mathLevels" style="margin-bottom:10px;"></div>
           <button class="btn primary" onclick="saveMathConfig()">שמור הגדרות חשבון</button>
         </div>
       </div>
@@ -1419,6 +1421,7 @@ async function loadKid(id){
     taskTotal:(await DB.get('cs_taskt_'+id)) ??0,
     rewardsTotal:(await DB.get('cs_rwt_'+id))??0,
     gtime:    (await DB.get('cs_gtime_'+id)) ??0, // game-time wallet, in seconds
+    mathLevel:(await DB.get('cs_mathlvl_'+id))??1, // adaptive difficulty 1..5
   };
   ensureTodayKid(id); return state.kid[id];
 }
@@ -1800,10 +1803,32 @@ function initMath(){
   document.getElementById('mathDisabled').style.display='none';
   document.getElementById('mathActive').style.display='block';
   document.getElementById('mathTarget').textContent=state.math.daily;
+  _mathStreak=0; // fresh per session/child, so one kid's run doesn't carry to another
   newProblem();
 }
+// Adaptive difficulty: the parent's maxNum is the CEILING; each child works up
+// to it through 5 levels based on their own recent accuracy, so a quick solver
+// gets harder problems and a struggling one isn't stuck failing. Level rises
+// after 4 correct in a row, eases after 2 wrong in a row (tracked in
+// _mathStreak), and persists per kid in cs_mathlvl_<id>.
+let _mathStreak=0; // >0 = consecutive correct, <0 = consecutive wrong
+function effectiveMaxNum(){
+  const k=cur(); const N=state.math.maxNum;
+  const lvl=Math.max(1,Math.min(5,(k&&k.mathLevel)||1));
+  // level 5 == full parent cap; lower levels use a fraction, min 5
+  return Math.max(5,Math.round(N*lvl/5));
+}
+async function bumpMathLevel(dir){
+  const k=cur(); if(!k) return;
+  const next=Math.max(1,Math.min(5,(k.mathLevel||1)+dir));
+  if(next!==k.mathLevel){
+    k.mathLevel=next;
+    await DB.set('cs_mathlvl_'+state.current,next);
+    if(dir>0) toast('כל הכבוד! התרגילים נהיים קצת יותר מאתגרים 📈');
+  }
+}
 function newProblem(){
-  const m=state.math, op=m.ops[Math.floor(Math.random()*m.ops.length)]; let a,b,ans; const N=m.maxNum;
+  const m=state.math, op=m.ops[Math.floor(Math.random()*m.ops.length)]; let a,b,ans; const N=effectiveMaxNum();
   if(op==='+'){ a=rnd(0,N); b=rnd(0,N); ans=a+b; }
   else if(op==='-'){ a=rnd(0,N); b=rnd(0,a); ans=a-b; }
   else if(op==='×'){ const M=Math.min(12,Math.max(2,Math.floor(N/2))); a=rnd(2,M); b=rnd(2,M); ans=a*b; }
@@ -1818,6 +1843,9 @@ function mathCheck(){
   if(mathStr==='') return;
   const k=cur();
   if(parseInt(mathStr)===mathCur.ans){
+    // adaptive: 4 correct in a row -> level up
+    _mathStreak=_mathStreak>0?_mathStreak+1:1;
+    if(_mathStreak>=4){ bumpMathLevel(1); _mathStreak=0; }
     if(k.mathDaily.done>=state.math.daily){ modalMsg('🏆','סיימת להיום!','פתרת את כל '+state.math.daily+' התרגילים המזכים. כל הכבוד!'); newProblem(); return; }
     k.mathDaily.done++; DB.set('cs_mathd_'+state.current,k.mathDaily);
     k.mathTotal=(k.mathTotal||0)+1; DB.set('cs_matht_'+state.current,k.mathTotal);
@@ -1826,6 +1854,9 @@ function mathCheck(){
     if(k.mathDaily.done>=state.math.daily){ setTimeout(()=>modalMsg('🏆','כל הכבוד!','סיימת את כל התרגילים המזכים להיום!'),300); }
     newProblem();
   }else{
+    // adaptive: 2 wrong in a row -> ease down so the child isn't stuck failing
+    _mathStreak=_mathStreak<0?_mathStreak-1:-1;
+    if(_mathStreak<=-2){ bumpMathLevel(-1); _mathStreak=0; }
     document.getElementById('mathAns').style.borderColor='var(--coral)'; toast('כמעט! נסה שוב 💪');
     mathStr=''; document.getElementById('mathAns').value='';
     setTimeout(()=>document.getElementById('mathAns').style.borderColor='',600);
@@ -1861,7 +1892,7 @@ function renderChores(){
     const full=used>=ch.max;
     const row=document.createElement('div'); row.className='chore-row'+(full?' done':'');
     row.innerHTML=`
-      <button class="chore-check ${full?'full':''}" ${full?'disabled':''} onclick="markChore('${ch.id}')">${full?'✓':ch.emoji}</button>
+      <button class="chore-check ${full?'full':''}" ${full?'disabled':''} onclick="markChore('${ch.id}')">${full?'✓':(ch.photo?`<img src="${ch.photo}" style="width:100%;height:100%;border-radius:50%;object-fit:cover;">`:ch.emoji)}</button>
       <div class="chore-info">
         <div class="ci-t">${esc(ch.label)}</div>
         <div class="ci-d">${full?'הושלם להיום ✅':(used+'/'+ch.max+' היום')}</div>
@@ -1911,11 +1942,12 @@ function renderFirstThen(){
     return;
   }
   const first=remaining[0], then=remaining[1];
+  const ftIcon=t=>t.photo?`<img class="ft-ic" src="${t.photo}" style="width:64px;height:64px;border-radius:16px;object-fit:cover;">`:`<span class="ft-ic">${t.emoji}</span>`;
   wrap.innerHTML=`<div class="ft-card">
-    <div class="ft-box first"><div class="ft-lbl">קודם</div><span class="ft-ic">${first.emoji}</span><div class="ft-t">${esc(first.label)}</div></div>
+    <div class="ft-box first"><div class="ft-lbl">קודם</div>${ftIcon(first)}<div class="ft-t">${esc(first.label)}</div></div>
     <div class="ft-arrow">←</div>
     <div class="ft-box then">${then
-      ?`<div class="ft-lbl">אחר כך</div><span class="ft-ic">${then.emoji}</span><div class="ft-t">${esc(then.label)}</div>`
+      ?`<div class="ft-lbl">אחר כך</div>${ftIcon(then)}<div class="ft-t">${esc(then.label)}</div>`
       :`<div class="ft-lbl">אחר כך</div><span class="ft-ic">🎉</span><div class="ft-t">סיימת!</div>`}</div>
   </div>`;
 }
@@ -2280,6 +2312,32 @@ function fillCalmToggle(){
   btn.textContent=state.calmMode?'פעיל ✓':'כבוי';
   btn.className='btn sm '+(state.calmMode?'mint':'ghost');
 }
+// Downscale any chosen image to a small square-ish thumbnail (JPEG, ~160px)
+// before storing — a full-res phone photo as a data URL would be megabytes,
+// blowing up localStorage and every cloud sync. A real photo of the child
+// doing the task is the evidence-based visual-schedule cue for kids on the
+// spectrum, so this is worth the few KB.
+function fileToThumb(file){
+  return new Promise((resolve,reject)=>{
+    const img=new Image();
+    img.onload=()=>{
+      const S=160, scale=Math.min(S/img.width,S/img.height,1);
+      const w=Math.round(img.width*scale), h=Math.round(img.height*scale);
+      const c=document.createElement('canvas'); c.width=w; c.height=h;
+      c.getContext('2d').drawImage(img,0,0,w,h);
+      URL.revokeObjectURL(img.src);
+      resolve(c.toDataURL('image/jpeg',0.72));
+    };
+    img.onerror=reject;
+    img.src=URL.createObjectURL(file);
+  });
+}
+// Small round thumbnail (photo if set, else emoji) reused by the child views.
+function taskIconHtml(task,size){
+  const s=size||44;
+  if(task.photo) return `<img src="${task.photo}" alt="" style="width:${s}px;height:${s}px;border-radius:50%;object-fit:cover;">`;
+  return `<span style="font-size:${Math.round(s*0.62)}px;">${task.emoji}</span>`;
+}
 function renderAnchoredAdmin(){
   const a=state.anchored;
   ['morning','afternoon','evening'].forEach(period=>{
@@ -2287,7 +2345,12 @@ function renderAnchoredAdmin(){
     c.innerHTML='';
     a[period].forEach((task,i)=>{
       const row=document.createElement('div'); row.className='admin-row';
-      row.innerHTML=`<span class="drag-handle" title="גרור לשינוי הסדר">⠿</span><span class="emoji">${task.emoji}</span><span class="t">${esc(task.label)}</span>
+      const icon=task.photo?`<img src="${task.photo}" style="width:34px;height:34px;border-radius:50%;object-fit:cover;">`:`<span class="emoji">${task.emoji}</span>`;
+      const photoCtrl=task.photo
+        ? `<button class="icon-btn" title="הסר תמונה" onclick="removeAnchoredPhoto('${period}',${i})">🖼️✖</button>`
+        : `<label class="icon-btn" title="הוסף תמונה" style="cursor:pointer;">📷<input type="file" accept="image/*" capture="environment" style="display:none;" onchange="attachAnchoredPhoto('${period}',${i},this)"></label>`;
+      row.innerHTML=`<span class="drag-handle" title="גרור לשינוי הסדר">⠿</span>${icon}<span class="t">${esc(task.label)}</span>
+        ${photoCtrl}
         <input type="number" value="${task.points}" min="1" style="width:50px;border:2px solid var(--line);border-radius:10px;padding:6px;text-align:center;font-family:inherit;" onchange="updateAnchoredPoints('${period}',${i},this.value)">
         <button class="icon-btn" onclick="delAnchoredTask('${period}',${i})">🗑️</button>`;
       c.appendChild(row);
@@ -2295,6 +2358,23 @@ function renderAnchoredAdmin(){
     });
   });
   document.getElementById('sleepTime').value=a.sleep_time;
+}
+async function attachAnchoredPhoto(period,i,input){
+  const f=input.files&&input.files[0]; input.value='';
+  if(!f) return;
+  const task=state.anchored[period][i]; if(!task) return;
+  try{
+    task.photo=await fileToThumb(f);
+    await DB.set('cs_anchored',state.anchored);
+    renderAnchoredAdmin();
+    toast('התמונה נוספה ✓');
+  }catch(e){ toast('לא הצלחתי לטעון את התמונה'); }
+}
+async function removeAnchoredPhoto(period,i){
+  const task=state.anchored[period][i]; if(!task) return;
+  delete task.photo;
+  await DB.set('cs_anchored',state.anchored);
+  renderAnchoredAdmin(); toast('התמונה הוסרה');
 }
 
 /* ---- Drag-to-reorder anchored tasks. Pointer Events (not the HTML5 Drag API)
@@ -2449,7 +2529,7 @@ async function adminDelChild(id){
   modalConfirm('🗑️','למחוק את '+ch.name+'?','כל הנתונים של '+ch.name+' יימחקו לצמיתות.', async()=>{
     state.children=state.children.filter(c=>c.id!==id); await DB.set('cs_children',state.children);
     audit('מחק את הילד/ה '+ch.name);
-    for(const p of ['cs_bal_','cs_hist_','cs_daily_','cs_mathd_','cs_badges_','cs_matht_','cs_taskt_','cs_rwt_','cs_gtime_']){
+    for(const p of ['cs_bal_','cs_hist_','cs_daily_','cs_mathd_','cs_badges_','cs_matht_','cs_taskt_','cs_rwt_','cs_gtime_','cs_mathlvl_']){
       await DB.del(p+id);
     }
     delete state.kid[id];
@@ -2815,6 +2895,24 @@ function fillMathConfig(){
   document.getElementById('mathToggle').textContent=m.enabled?'פעיל ✓':'כבוי';
   document.getElementById('mathToggle').className='btn sm '+(m.enabled?'mint':'ghost');
   document.querySelectorAll('#opChips .chip').forEach(ch=>ch.classList.toggle('on',m.ops.includes(ch.dataset.op)));
+  renderMathLevels();
+}
+async function renderMathLevels(){
+  const el=document.getElementById('mathLevels'); if(!el) return;
+  const rows=[];
+  for(const ch of state.children){
+    const lvl=(await DB.get('cs_mathlvl_'+ch.id))??1;
+    rows.push(`<div style="display:flex;align-items:center;gap:8px;font-size:.82rem;padding:3px 0;">
+      <span>${ch.emoji} ${esc(ch.name)}</span>
+      <span style="flex:1;">${'⭐'.repeat(lvl)}${'·'.repeat(5-lvl)} רמה ${lvl}/5</span>
+      <button class="icon-btn" title="אפס רמה" onclick="resetMathLevel('${ch.id}')">↺</button></div>`);
+  }
+  el.innerHTML=rows.join('');
+}
+async function resetMathLevel(id){
+  await DB.set('cs_mathlvl_'+id,1);
+  if(state.kid[id]) state.kid[id].mathLevel=1;
+  renderMathLevels(); toast('הרמה אופסה ✓');
 }
 function toggleMathEnabled(){ state.math.enabled=!state.math.enabled; fillMathConfig(); }
 function toggleOp(op){ const i=state.math.ops.indexOf(op); if(i>=0) state.math.ops.splice(i,1); else state.math.ops.push(op); fillMathConfig(); }
@@ -2944,7 +3042,7 @@ function backupKeyList(){
     'cs_streaks','cs_badgedefs','cs_anchored','cs_events','cs_pin','cs_calm','cs_games',
     'cs_games_v3','cs_gtime_seeded','cs_hwm_date','cs_calmlog','cs_familyid'];
   for(const ch of state.children){
-    for(const p of ['cs_bal_','cs_hist_','cs_daily_','cs_mathd_','cs_badges_','cs_matht_','cs_taskt_','cs_rwt_','cs_gtime_']){
+    for(const p of ['cs_bal_','cs_hist_','cs_daily_','cs_mathd_','cs_badges_','cs_matht_','cs_taskt_','cs_rwt_','cs_gtime_','cs_mathlvl_']){
       keys.push(p+ch.id);
     }
   }
@@ -3584,7 +3682,7 @@ function buildSyncPayload(){
     if(k){
       payload.kids[ch.id]={balance:k.balance,history:k.history,daily:k.daily,mathDaily:k.mathDaily,
         badges:k.badges,mathTotal:k.mathTotal,taskTotal:k.taskTotal,rewardsTotal:k.rewardsTotal,
-        gtime:k.gtime||0};
+        gtime:k.gtime||0,mathLevel:k.mathLevel||1};
     }
   }
   return payload;
@@ -3739,6 +3837,8 @@ async function pullFromFirebase(){
         await DB.set('cs_taskt_'+id,kid.taskTotal);
         await DB.set('cs_rwt_'+id,kid.rewardsTotal);
         await DB.set('cs_gtime_'+id,kid.gtime);
+        kid.mathLevel=Number.isFinite(kid.mathLevel)?Math.max(1,Math.min(5,kid.mathLevel)):1;
+        await DB.set('cs_mathlvl_'+id,kid.mathLevel);
       }
     }
     syncDirty=dirtyBeforePull; // drop the echo-dirt, keep real pre-pull edits
@@ -3785,7 +3885,7 @@ function hasExistingLocalData(){
 // device previously used in local-only mode by someone else).
 async function clearLocalFamilyData(){
   for(const ch of state.children){
-    for(const p of ['cs_bal_','cs_hist_','cs_daily_','cs_mathd_','cs_badges_','cs_matht_','cs_taskt_','cs_rwt_','cs_gtime_']){
+    for(const p of ['cs_bal_','cs_hist_','cs_daily_','cs_mathd_','cs_badges_','cs_matht_','cs_taskt_','cs_rwt_','cs_gtime_','cs_mathlvl_']){
       await DB.del(p+ch.id);
     }
   }
