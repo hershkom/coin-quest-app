@@ -300,3 +300,32 @@ test.describe('live cross-device sync', () => {
     expect(result.appliedLabel).toBe('REMOTE-EDIT');
   });
 });
+
+test.describe('demo mode', () => {
+  test('has zero storage footprint and shows seeded progress', async ({ page }) => {
+    await page.goto('/');
+    const before = await page.evaluate(() => localStorage.getItem('cs_children'));
+
+    await page.getByRole('button', { name: /נסה הדגמה/ }).click();
+    await expect(page.locator('#view-picker')).toHaveClass(/active/);
+    await expect(page.locator('#demoBanner')).toBeVisible();
+
+    const seeded = await page.evaluate(() => ({
+      backend, demoMode,
+      arielBalance: state.kid.ariel.balance,
+      cleanStreak: getStreak('clean').current,
+    }));
+    expect(seeded.backend).toBe('mem');
+    expect(seeded.demoMode).toBe(true);
+    expect(seeded.arielBalance).toBe(47);
+    expect(seeded.cleanStreak).toBe(6);
+
+    // The whole point: a demo visitor's clicks must never touch this
+    // device's real localStorage (which could belong to an actual family
+    // using a shared/kiosk device).
+    await page.locator('.kid-card', { hasText: 'אריאל' }).click();
+    await page.locator('.chore-row').first().locator('.chore-check').click();
+    const after = await page.evaluate(() => localStorage.getItem('cs_children'));
+    expect(after).toBe(before);
+  });
+});

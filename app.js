@@ -2919,6 +2919,62 @@ function continueLocalOnly(){
   localStorage.setItem('cs_local_only','1');
   go('picker');
 }
+
+/* ===== DEMO MODE (backlog #24: try the app with zero signup / zero footprint) =====
+   Forces the storage backend to pure in-memory (the same `mem` fallback DB
+   already uses when localStorage is unavailable) so nothing a demo visitor
+   does ever touches this device's real localStorage or any Firebase family —
+   a reload is a full, clean reset. Seeded with a few days of realistic
+   history/progress so a first-time visitor sees what the app looks like
+   after actual use, not an empty new install. */
+let demoMode=false;
+function seedDemoData(){
+  const now=Date.now(), today=todayStr();
+  state.kid['ariel']={
+    balance:47,
+    history:[
+      {ts:now-1000*60*30,  points:5,  label:'צחצוח שיניים',                type:'chore'},
+      {ts:now-1000*60*90,  points:2,  label:'תרגיל חשבון',                 type:'math'},
+      {ts:now-1000*60*200, points:8,  label:'פינוי אוכל אחרי שמסיימים',    type:'chore'},
+      {ts:now-1000*3600*5, points:-30,label:'פרס: 30 דקות מסך',            type:'spend'},
+      {ts:now-1000*3600*24,points:10, label:'סידור החדר',                  type:'chore'},
+    ],
+    daily:{date:today,counts:{chore_teeth:1}}, mathDaily:{date:today,done:3},
+    badges:[{id:'first_coin',ts:now-1000*3600*24*3}],
+    mathTotal:14, taskTotal:22, rewardsTotal:2, gtime:0, mathLevel:2,
+  };
+  state.kid['noa']={
+    balance:18,
+    history:[
+      {ts:now-1000*60*40,  points:3, label:'לשבת בשירותים', type:'chore'},
+      {ts:now-1000*3600*3, points:2, label:'תרגיל חשבון',   type:'math'},
+    ],
+    daily:{date:today,counts:{}}, mathDaily:{date:today,done:1},
+    badges:[], mathTotal:5, taskTotal:6, rewardsTotal:0, gtime:0, mathLevel:1,
+  };
+  const clean=getStreak('clean');
+  if(clean){
+    clean.childId='ariel'; clean.best=9; clean.wonAt=null; clean.days={};
+    for(let i=1;i<=6;i++){ const d=new Date(); d.setDate(d.getDate()-i); clean.days[dateKey(d)]='clean'; }
+    recomputeStreak('clean'); // derives `current` from the days above, not hand-set
+  }
+}
+async function enterDemoMode(){
+  backend='mem'; demoMode=true;
+  await loadState(); // fresh `mem` -> every DB.get resolves null -> pure defaults
+  seedDemoData();
+  state.current=null;
+  document.body.classList.add('demo-active');
+  document.getElementById('demoBanner').style.display='block';
+  syncReady=true; // no familyId ever set in demo mode, so scheduleSync stays a no-op
+  goHomeOrPicker();
+}
+function exitDemoMode(){
+  // A full reload is the simplest correct reset: demoMode/backend/mem are
+  // page-lifetime state, so relaunching the app fresh restores whatever this
+  // device's REAL local-only/cloud data was, untouched by the demo.
+  location.reload();
+}
 async function signOutOfAccount(){
   modalConfirm('🚪','להתנתק?','תוכל להתחבר שוב בכל עת עם אותו חשבון Google ולראות את כל המידע שלך.', async()=>{
     detachLiveSync();

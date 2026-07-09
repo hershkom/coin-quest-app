@@ -17,6 +17,10 @@
 </head>
 <body>
 <div id="appVersionTag" style="position:fixed;bottom:3px;left:6px;font-size:.62rem;color:#9a93b8;opacity:.55;z-index:5;pointer-events:none;font-family:inherit;">v%%APP_VERSION%%</div>
+<div id="demoBanner" style="display:none;position:fixed;top:0;left:0;right:0;z-index:300;background:linear-gradient(90deg,#7C5CFC,#4DABF7);color:#fff;text-align:center;padding:7px 10px;font-size:.82rem;font-weight:800;">
+  🎮 מצב הדגמה — הנתונים לא נשמרים
+  <button onclick="exitDemoMode()" style="border:none;background:rgba(255,255,255,.25);color:#fff;border-radius:12px;padding:3px 12px;margin-inline-start:8px;font-weight:800;cursor:pointer;">יציאה</button>
+</div>
 <script>
   // The GitHub Pages deploy workflow replaces %%APP_VERSION%% with the short
   // commit SHA + deploy date, so this always reflects exactly what's live.
@@ -55,6 +59,7 @@
           </span>
         </button>
         <button class="btn ghost" style="margin-top:10px;" onclick="continueLocalOnly()">המשך בלי חשבון (במכשיר הזה בלבד)</button>
+        <button class="btn ghost" style="margin-top:10px;" onclick="enterDemoMode()">🎮 נסה הדגמה (בלי הרשמה, בלי לשמור נתונים)</button>
         <div id="welcomeStatus" style="margin-top:14px;font-size:.85rem;color:var(--ink2);min-height:20px;"></div>
       </div>
     </div>
