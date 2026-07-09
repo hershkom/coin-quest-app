@@ -259,3 +259,44 @@ test.describe('anti-cheat invariants', () => {
     expect(kidSection).toBe('kids/noa');
   });
 });
+
+test.describe('live cross-device sync', () => {
+  // Full real-time Firebase E2E (two signed-in browsers) is out of scope for
+  // a no-credentials CI suite -- this mocks fbDb.ref the same way the whole
+  // app already treats Firebase as swappable, and verifies the actual
+  // contract: attach subscribes exactly once, a remote push is applied to
+  // local state via the shared applyRemoteSnapshot path, and detach cleans
+  // up the subscription (no leaked listeners across sign-out/sign-in).
+  test('attachLiveSync applies a remote change once and detachLiveSync unsubscribes', async ({ page }) => {
+    await enterLocalOnly(page);
+    await selectChild(page, 'נועה');
+
+    const result = await page.evaluate(() => new Promise((resolve) => {
+      const calls = { on: 0, off: 0 };
+      let handler = null;
+      const fakeRef = {
+        on: (event, cb) => { calls.on++; handler = cb; return cb; },
+        off: () => { calls.off++; },
+      };
+      const originalRef = fbDb.ref.bind(fbDb);
+      fbDb.ref = () => fakeRef;
+      state.familyId = 'faketest';
+
+      attachLiveSync();
+      const remoteChores = JSON.parse(JSON.stringify(state.chores));
+      remoteChores[0].label = 'REMOTE-EDIT';
+      handler({ val: () => ({ chores: remoteChores }) }); // simulate a push from another device
+
+      setTimeout(() => {
+        detachLiveSync();
+        fbDb.ref = originalRef;
+        state.familyId = null;
+        resolve({ calls, appliedLabel: state.chores[0].label });
+      }, 50);
+    }));
+
+    expect(result.calls.on).toBe(1);
+    expect(result.calls.off).toBe(1);
+    expect(result.appliedLabel).toBe('REMOTE-EDIT');
+  });
+});

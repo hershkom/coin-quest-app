@@ -2614,8 +2614,10 @@ async function pushToFirebase(){
   if(fbPendingPush){ fbPendingPush=false; scheduleSync(); }
 }
 
-async function pullFromFirebase(){
-  const ref=familyRef(); if(!ref) return false;
+// Applies a full family-data snapshot (from either a one-time pull or the
+// live listener below) to local state+storage. Shared so the two paths can
+// never drift apart.
+async function applyRemoteSnapshot(data){
   // Every pulled section is persisted locally via DB.set, which marks it
   // dirty — but those writes are cloud ECHOES, not local edits. Without
   // restoring the pre-pull dirty set afterward, every pull would schedule a
@@ -2624,8 +2626,6 @@ async function pullFromFirebase(){
   // exists to prevent).
   const dirtyBeforePull=new Set(syncDirty);
   try{
-    const snap=await ref.once('value');
-    const data=snap.val();
     if(!data||typeof data!=='object') return false;
     if(data.children){ state.children=data.children; await DB.set('cs_children',data.children); }
     if(data.chores){ state.chores=data.chores; await DB.set('cs_chores',data.chores); }
@@ -2713,6 +2713,56 @@ async function pullFromFirebase(){
     syncDirty=dirtyBeforePull; // drop the echo-dirt, keep real pre-pull edits
     return true;
   }catch(e){ return false; }
+}
+async function pullFromFirebase(){
+  const ref=familyRef(); if(!ref) return false;
+  try{
+    const snap=await ref.once('value');
+    return await applyRemoteSnapshot(snap.val());
+  }catch(e){ return false; }
+}
+
+// ---- live cross-device sync ----
+// A parent's edit on one device used to only reach a second parent's screen
+// once THEY happened to tap "sync now" or relaunch the app — the family
+// could easily be looking at stale data for a while. A persistent RTDB
+// listener (instead of the one-shot .once() pull above) pushes every remote
+// change to every other signed-in device within moments, with no polling.
+let _liveSyncRef=null, _liveSyncHandler=null;
+function attachLiveSync(){
+  detachLiveSync();
+  const ref=familyRef(); if(!ref) return;
+  _liveSyncRef=ref;
+  _liveSyncHandler=ref.on('value',async snap=>{
+    // Fires for OUR OWN writes too (Firebase echoes every write back over the
+    // same connection) — applyRemoteSnapshot is idempotent and cheap, and
+    // scheduleSync()/pushToFirebase() already no-op when nothing is actually
+    // dirty, so re-applying our own echo is harmless, not a feedback loop.
+    const applied=await applyRemoteSnapshot(snap.val());
+    if(applied) refreshUIAfterRemoteChange();
+  });
+}
+function detachLiveSync(){
+  if(_liveSyncRef&&_liveSyncHandler) _liveSyncRef.off('value',_liveSyncHandler);
+  _liveSyncRef=null; _liveSyncHandler=null;
+}
+// Re-render whatever's currently on screen so a change from another parent's
+// device (or another tab) shows up without the user having to navigate away
+// and back. Deliberately conservative in the admin screens: a parent who is
+// mid-edit there shouldn't have their unsaved typing wiped out by a remote
+// update redrawing the pane out from under them — state/storage are already
+// current by the time they do navigate, which is what actually matters.
+function refreshUIAfterRemoteChange(){
+  try{
+    if(!cur()) return;
+    renderBalance();
+    if(currentView==='home'){ renderChores(); renderStreakBanner(); renderGameTimeBanner(); renderEventsHome(); renderDayStrip(); renderFirstThen(); renderBadgesBanner(); }
+    else if(currentView==='rewards') renderRewards();
+    else if(currentView==='history') renderHistory();
+    else if(currentView==='streak') renderStreakView();
+    else if(currentView==='badges') renderBadgesView();
+    else if(currentView==='games') renderGamesView();
+  }catch(e){ console.error('refreshUIAfterRemoteChange failed',e); }
 }
 
 async function forceSyncNow(){
@@ -2871,6 +2921,7 @@ function continueLocalOnly(){
 }
 async function signOutOfAccount(){
   modalConfirm('🚪','להתנתק?','תוכל להתחבר שוב בכל עת עם אותו חשבון Google ולראות את כל המידע שלך.', async()=>{
+    detachLiveSync();
     // Clear the local cache before reloading — otherwise a DIFFERENT account
     // signing in on this same device afterward could inherit this family's
     // data (e.g. via createNewFamily's "seed from existing local data" path).
@@ -2915,6 +2966,7 @@ async function handleSignedInUser(user){
       await DB.set('cs_familyid',state.familyId);
       authStep('⏳ טוען את המשפחה שלך...','#F5B82E');
       await withTimeout(pullFromFirebase(),15000,'טעינת נתוני משפחה');
+      attachLiveSync();
       showSyncStatus('✅ מחובר כ-'+(user.email||''),'var(--mint)');
       if(state.current&&state.children.find(c=>c.id===state.current)){
         await loadKid(state.current); renderBalance(); go('home');
@@ -2972,6 +3024,7 @@ async function doJoinFamily(){
     state.familyId=familyId; await DB.set('cs_familyid',familyId);
     closeModal();
     await withTimeout(pullFromFirebase(),15000,'טעינת נתונים');
+    attachLiveSync();
     toast('הצטרפת למשפחה! ✓');
     go('picker');
   }catch(e){
@@ -3005,6 +3058,7 @@ async function createNewFamily(){
     const familyId='fam_'+randomId(14);
     await withTimeout(fbDb.ref('users/'+authUser.uid).set({familyId,role:'owner',email:authUser.email||'',name:authUser.displayName||''}),15000,'יצירת חשבון');
     state.familyId=familyId; await DB.set('cs_familyid',familyId);
+    attachLiveSync();
     closeModal();
     if(seedFromLocal){
       // The user confirmed this cached local data is genuinely theirs — carry
@@ -3082,7 +3136,8 @@ async function fillAccountSettings(){
     inviteBox.style.display='none';
     return;
   }
-  el.innerHTML='✅ מחובר כ-<b>'+esc(authUser.email||authUser.displayName||'')+'</b>';
+  el.innerHTML='✅ מחובר כ-<b>'+esc(authUser.email||authUser.displayName||'')+'</b>'+
+    (_liveSyncRef?'<div style="font-size:.78rem;color:var(--mint-d);font-weight:700;margin-top:4px;">🟢 עדכונים חיים בין מכשירים</div>':'');
   document.getElementById('signInBox').style.display='none';
   document.getElementById('forceSyncBtn').style.display='block';
   document.getElementById('signOutBtn').style.display='block';
