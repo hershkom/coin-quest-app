@@ -15,9 +15,15 @@
     },
     {
       "name": "coinquest",
-      "runtimeExecutable": "python",
-      "runtimeArgs": ["-m", "http.server", "3600", "--directory", "C:\\Claude\\Code"],
+      "runtimeExecutable": "py",
+      "runtimeArgs": ["-3", "-m", "http.server", "3600", "--directory", "C:\\Claude\\Code"],
       "port": 3600
+    },
+    {
+      "name": "scratchpad-preview",
+      "runtimeExecutable": "py",
+      "runtimeArgs": ["-3", "-m", "http.server", "3700", "--directory", "C:\\Users\\mikeh\\AppData\\Local\\Temp\\claude\\C--Claude-Code\\8dcce3ee-c276-415e-b3d7-6dc3ec92a6ca\\scratchpad"],
+      "port": 3700
     }
   ]
 }
