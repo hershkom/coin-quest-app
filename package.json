@@ -1,0 +1,11 @@
+{
+  "name": "coin-quest-app",
+  "private": true,
+  "description": "Dev-only tooling (Playwright E2E tests). The app itself has no build step -- index.html/app.js/styles.css are served as-is.",
+  "scripts": {
+    "test": "playwright test"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.48.0"
+  }
+}

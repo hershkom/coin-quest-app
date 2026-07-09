@@ -13,7 +13,13 @@
       "**/*.exe",
       "**/*.jar",
       "**/*.apk",
-      "**/*.aab"
+      "**/*.aab",
+      "tests/**",
+      "test-results/**",
+      "playwright-report/**",
+      "playwright.config.js",
+      "package.json",
+      "package-lock.json"
     ],
     "headers": [
       {
