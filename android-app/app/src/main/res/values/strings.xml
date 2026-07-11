@@ -1,4 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">כספת המטבעות</string>
+    <string name="game_time_accessibility_description">מאפשר לכספת המטבעות לזהות מתי משחק שנקנה בזמן נפתח, ולסגור אותו בעדינות כשהזמן שנקנה נגמר.</string>
+    <string name="game_time_overlay_close_cd">סגור את חלון הטיימר</string>
 </resources>

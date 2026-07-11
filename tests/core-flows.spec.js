@@ -329,3 +329,68 @@ test.describe('demo mode', () => {
     expect(after).toBe(before);
   });
 });
+
+test.describe('native game (real purchased app, e.g. Minecraft)', () => {
+  // window.CoinQuestNative only exists inside the Android wrapper's WebView;
+  // in this plain-browser CI environment it's absent, which is itself the
+  // condition under test -- the UI must degrade gracefully (clickable,
+  // explanatory, not just silently disabled) rather than pretend to work.
+  test('is visibly locked and explains itself when the native bridge is absent', async ({ page }) => {
+    await enterLocalOnly(page);
+    await selectChild(page, 'אריאל');
+    await page.evaluate(async () => { const k = cur(); k.gtime = 300; await DB.set('cs_gtime_ariel', 300); });
+    await page.evaluate(() => go('games'));
+
+    const nativeRow = page.locator('.game-row', { hasText: 'הגרסה שקנית' });
+    await expect(nativeRow).toHaveClass(/locked/);
+    // A real `disabled` attribute would silently swallow this click too --
+    // regression-tests the fix where that exact bug hid the explanation.
+    await nativeRow.click();
+    await expect(page.locator('#modalContent')).toContainText('זמין רק באפליקציה');
+    await page.locator('#modalContent button').click();
+  });
+
+  test('a mocked native bridge: happy path debits exactly the reported seconds, missing permissions block the session', async ({ page }) => {
+    await enterLocalOnly(page);
+    await selectChild(page, 'אריאל');
+
+    // Happy path: permissions granted, game installed.
+    const happyPath = await page.evaluate(async () => {
+      const k = cur(); k.gtime = 600; await DB.set('cs_gtime_ariel', 600);
+      const calls = [];
+      window.CoinQuestNative = {
+        isPackageInstalled: (pkg) => { calls.push(['isPackageInstalled', pkg]); return true; },
+        hasOverlayPermission: () => true,
+        hasAccessibilityPermission: () => true,
+        startNativeSession: (pkg, seconds) => { calls.push(['startNativeSession', pkg, seconds]); return true; },
+      };
+      const g = state.games.find(x => x.native);
+      await startNativeGameSession(g);
+      await onNativeGameSessionEnded(200); // native side reports 200s actually consumed
+      return { calls, wallet: await DB.get('cs_gtime_ariel') };
+    });
+    expect(happyPath.calls[0]).toEqual(['isPackageInstalled', 'com.mojang.minecraftpe']);
+    expect(happyPath.calls[1]).toEqual(['startNativeSession', 'com.mojang.minecraftpe', 600]);
+    expect(happyPath.wallet).toBe(400); // 600 - 200, NOT zeroed and NOT the full 600
+
+    // Missing permissions: a session that can't be enforced must never start,
+    // and the wallet must stay untouched.
+    const blocked = await page.evaluate(async () => {
+      const k = cur(); k.gtime = 300; await DB.set('cs_gtime_ariel', 300);
+      const requested = [];
+      window.CoinQuestNative = {
+        isPackageInstalled: () => true,
+        hasOverlayPermission: () => false,
+        hasAccessibilityPermission: () => false,
+        requestOverlayPermission: () => requested.push('overlay'),
+        requestAccessibilityPermission: () => requested.push('accessibility'),
+        startNativeSession: () => { throw new Error('must not be called without permissions'); },
+      };
+      const g = state.games.find(x => x.native);
+      await startNativeGameSession(g);
+      return { walletUntouched: await DB.get('cs_gtime_ariel') };
+    });
+    await expect(page.locator('#modalContent')).toContainText('נדרשת הרשאה חד-פעמית');
+    expect(blocked.walletUntouched).toBe(300);
+  });
+});

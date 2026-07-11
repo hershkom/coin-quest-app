@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- packageNames deliberately omitted (not restricted to one app): the
+     target package is chosen dynamically at runtime (whatever native game
+     the parent configures), filtered in code rather than in this static
+     config, so adding a second native game later needs no manifest change. -->
+<accessibility-service xmlns:android="http://schemas.android.com/apk/res/android"
+    android:accessibilityEventTypes="typeWindowStateChanged"
+    android:accessibilityFeedbackType="feedbackGeneric"
+    android:notificationTimeout="100"
+    android:canRetrieveWindowContent="false"
+    android:description="@string/game_time_accessibility_description" />

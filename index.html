@@ -413,7 +413,12 @@
           <div class="inline-row" style="margin-bottom:12px;">
             <div class="field"><label>אימוג'י</label><input id="newGameEmoji" placeholder="⛏️" maxlength="2"></div>
           </div>
-          <div class="field"><label>כתובת (URL)</label><input id="newGameUrl" placeholder="https://..." style="direction:ltr;text-align:left;"></div>
+          <div class="field" style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
+            <input type="checkbox" id="newGameNative" onchange="toggleNewGameNative()" style="width:20px;height:20px;">
+            <label style="margin:0;">אפליקציה אמיתית שהותקנה באנדרואיד (לא אתר) — עובד רק באפליקציה, לא בדפדפן</label>
+          </div>
+          <div class="field" id="newGameUrlField"><label>כתובת (URL)</label><input id="newGameUrl" placeholder="https://..." style="direction:ltr;text-align:left;"></div>
+          <div class="field" id="newGamePkgField" style="display:none;"><label>שם החבילה של האפליקציה (Package Name)</label><input id="newGamePkg" placeholder="com.mojang.minecraftpe" style="direction:ltr;text-align:left;"></div>
           <button class="btn primary" onclick="addGame()">הוסף משחק</button>
         </div>
         <div class="card">

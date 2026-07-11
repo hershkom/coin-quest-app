@@ -39,6 +39,11 @@ class MainActivity : AppCompatActivity() {
 
         requestPermissions()
         setupWebView()
+        // Real-purchased-game time enforcement (see NativeGameBridge/
+        // GameTimeOverlayService/GameTimeAccessibilityService) -- exposed as
+        // window.CoinQuestNative to app.js. Harmless no-op if the web app
+        // never calls it (e.g. running in a plain browser during dev).
+        webView.addJavascriptInterface(NativeGameBridge(this, webView), "CoinQuestNative")
         webView.loadUrl(APP_URL)
 
         swipeRefresh.setOnRefreshListener {
@@ -48,9 +53,16 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun requestPermissions() {
+        val needed = mutableListOf<String>()
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA)
-            != PackageManager.PERMISSION_GRANTED) {
-            ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.CAMERA), PERMISSION_REQUEST)
+            != PackageManager.PERMISSION_GRANTED) needed.add(Manifest.permission.CAMERA)
+        // So the game-time foreground-service notification is actually visible
+        // to the parent on Android 13+; not required for enforcement to work.
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU &&
+            ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS)
+            != PackageManager.PERMISSION_GRANTED) needed.add(Manifest.permission.POST_NOTIFICATIONS)
+        if (needed.isNotEmpty()) {
+            ActivityCompat.requestPermissions(this, needed.toTypedArray(), PERMISSION_REQUEST)
         }
     }
 

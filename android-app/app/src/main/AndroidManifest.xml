@@ -6,6 +6,18 @@
     <uses-permission android:name="android.permission.CAMERA" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
 
+    <!-- Native game-time enforcement (backlog: real purchased Minecraft, not the
+         web-embedded games): proven via the standalone ScreenTimeSpike project
+         (AccessibilityService foreground-detection + performGlobalAction(HOME),
+         confirmed working on a real device) before being integrated here. -->
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <queries>
+        <package android:name="com.mojang.minecraftpe" />
+    </queries>
+
     <uses-feature android:name="android.hardware.camera" android:required="false" />
 
     <application
@@ -29,6 +41,27 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <service
+            android:name=".GameTimeAccessibilityService"
+            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.accessibilityservice.AccessibilityService" />
+            </intent-filter>
+            <meta-data
+                android:name="android.accessibilityservice"
+                android:resource="@xml/game_time_accessibility_config" />
+        </service>
+
+        <service
+            android:name=".GameTimeOverlayService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="game-time-enforcement-overlay" />
+        </service>
 
     </application>
 

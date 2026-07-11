@@ -352,7 +352,7 @@
   .game-row{display:flex;align-items:center;gap:14px;background:#fff;border-radius:18px;padding:14px 16px;margin-bottom:10px;box-shadow:0 4px 14px rgba(42,36,64,.07);border:none;width:100%;text-align:right;font-family:inherit;cursor:pointer;}
   .game-row .g-emoji{font-size:2rem;}
   .game-row .g-label{flex:1;font-weight:800;font-size:1.05rem;}
-  .game-row[disabled]{opacity:.5;cursor:not-allowed;}
+  .game-row[disabled],.game-row.locked{opacity:.5;cursor:not-allowed;}
 
   .cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:6px;margin-top:6px;}
   .cal-dow{text-align:center;font-size:.68rem;color:var(--muted);font-weight:700;padding-bottom:2px;}

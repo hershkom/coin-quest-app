@@ -115,6 +115,13 @@ const DEFAULT_MATH={enabled:true, ops:['+','-'], maxNum:20, pts:2, daily:10};
 const DEFAULT_GAMES=[
   {id:'classicube', label:'קלאסיקיוב (בנייה חופשית, משחק יחיד)', emoji:'🧱', url:'games/classicube/'},
   {id:'mcclassic',  label:'מיינקראפט קלאסי (למחשב עם מקלדת)', emoji:'⛏️', url:'https://classic.minecraft.net/'},
+  // Native game (backlog: the REAL purchased Minecraft, not a web-embedded
+  // one) — `native:true` + `androidPackage` instead of `url`. Only playable
+  // inside the Android wrapper app, where window.CoinQuestNative exists; the
+  // enforced countdown runs natively (AccessibilityService + overlay, see
+  // android-app/.../GameTimeOverlayService.kt), not in this web page, since
+  // the WebView itself is backgrounded the whole time the game is open.
+  {id:'minecraft_real', label:'מיינקראפט (הגרסה שקנית)', emoji:'⛏️', native:true, androidPackage:'com.mojang.minecraftpe'},
 ];
 const DEFAULT_STREAKS=[
   {id:'clean',    title:'יום נקי',       dayWord:'יום נקי',      icon:'🧼', childId:'ariel', goal:30, rewardLabel:'Nintendo Switch 2', rewardEmoji:'🎮', days:{}, current:0, best:0, wonAt:null},
@@ -255,6 +262,15 @@ async function loadState(){
     await DB.set('cs_games',state.games);
     await DB.set('cs_games_v3',true);
     await DB.del('cs_games_v2');
+  }
+  // One-time migration v4: add the native real-Minecraft entry for devices
+  // that already synced a games list before it existed.
+  if(!(await DB.get('cs_games_v4'))){
+    if(!state.games.some(g=>g.native&&g.androidPackage==='com.mojang.minecraftpe')){
+      state.games.push({...DEFAULT_GAMES[DEFAULT_GAMES.length-1]});
+      await DB.set('cs_games',state.games);
+    }
+    await DB.set('cs_games_v4',true);
   }
   // One-time seed: make sure at least one coins→minutes package exists in the
   // rewards shop, so the whole buy-time flow works out of the box with zero
@@ -964,9 +980,19 @@ function renderGamesView(){
   const has=(k.gtime||0)>0;
   state.games.forEach(g=>{
     const row=document.createElement('button'); row.className='game-row';
-    if(!has) row.setAttribute('disabled','');
-    row.innerHTML=`<span class="g-emoji">${g.emoji}</span><span class="g-label">${esc(g.label)}</span><span style="font-weight:800;color:var(--mint-d);">${has?'▶ שחק':'🔒'}</span>`;
-    row.onclick=()=>{ if(has) startGameSession(g.id); else toast('אין זמן משחק — המר מטבעות בפרסים 🎁'); };
+    const nativeUnavailable=g.native&&!isNativeGameAvailable();
+    // A real `disabled` attribute would look right but silently swallows
+    // ALL clicks (native browser behavior) -- including the tap that's
+    // supposed to explain WHY it's locked. Use a CSS-only look-disabled
+    // class instead so the explanatory tap always works.
+    if(!has||nativeUnavailable) row.classList.add('locked');
+    const statusIc=nativeUnavailable?'📱':(has?'▶ שחק':'🔒');
+    row.innerHTML=`<span class="g-emoji">${g.emoji}</span><span class="g-label">${esc(g.label)}</span><span style="font-weight:800;color:var(--mint-d);">${statusIc}</span>`;
+    row.onclick=()=>{
+      if(nativeUnavailable){ modalMsg('📱','זמין רק באפליקציה','המשחק הזה עובד רק כשפותחים את כספת המטבעות מתוך אפליקציית האנדרואיד, לא בדפדפן.'); return; }
+      if(!has){ toast('אין זמן משחק — המר מטבעות בפרסים 🎁'); return; }
+      g.native ? startNativeGameSession(g) : startGameSession(g.id);
+    };
     list.appendChild(row);
   });
 }
@@ -1050,6 +1076,59 @@ async function endGameSession(expired){
     modalMsg('⏰','הזמן נגמר!','זמן המשחק שקנית הסתיים.\nאפשר להרוויח עוד מטבעות ולהמיר אותם לזמן משחק חדש! 💪');
   }
 }
+/* ---- native game sessions (a REAL purchased app, e.g. Minecraft) ----
+   Enforcement runs entirely in the Android wrapper (android-app/.../
+   GameTimeOverlayService.kt + GameTimeAccessibilityService.kt) because the
+   WebView is backgrounded the whole time the native game is in the
+   foreground — a JS countdown here would be throttled/paused by the OS and
+   couldn't reliably enforce anything. This just hands off the current
+   wallet balance and waits for the native callback below to report real
+   usage; the wallet is only ever debited by what the native side reports,
+   never by anything computed here. */
+function isNativeGameAvailable(){ return typeof window.CoinQuestNative!=='undefined'; }
+async function startNativeGameSession(g){
+  const k=cur(); if(!k) return;
+  if(!isNativeGameAvailable()){
+    modalMsg('📱','זמין רק באפליקציה','המשחק הזה עובד רק כשפותחים את כספת המטבעות מתוך אפליקציית האנדרואיד, לא בדפדפן.');
+    return;
+  }
+  if(!window.CoinQuestNative.isPackageInstalled(g.androidPackage)){
+    modalMsg('🤔','המשחק לא מותקן','לא מצאנו את '+g.label+' מותקן במכשיר. ודא שהוא הותקן מ-Google Play.');
+    return;
+  }
+  if(!window.CoinQuestNative.hasOverlayPermission()||!window.CoinQuestNative.hasAccessibilityPermission()){
+    modalConfirm('🔒','נדרשת הרשאה חד-פעמית','כדי לוודא שהזמן שנקנה נאכף בפועל, ההורה צריך לאשר פעם אחת חלון-צף והרשאת נגישות. לפתוח את ההגדרות עכשיו?',()=>{
+      if(!window.CoinQuestNative.hasOverlayPermission()) window.CoinQuestNative.requestOverlayPermission();
+      else window.CoinQuestNative.requestAccessibilityPermission();
+    });
+    return;
+  }
+  const seconds=Math.floor(k.gtime||0);
+  if(seconds<=0) return;
+  const started=window.CoinQuestNative.startNativeSession(g.androidPackage,seconds);
+  if(!started){ toast('לא הצלחתי להתחיל את המשחק'); return; }
+  toast(g.emoji+' '+g.label+' נפתח! '+fmtGT(seconds)+' זמן משחק');
+}
+// Called by the Android bridge when a native session ends (timeout, or the
+// child ending it early) — the ONLY source of truth for elapsed time, since
+// nothing runs here in JS while the native game had focus. Global on
+// purpose: a plain top-level function in a non-module script is reachable as
+// window.onNativeGameSessionEnded, which is exactly what the Kotlin side
+// calls via WebView.evaluateJavascript.
+async function onNativeGameSessionEnded(consumedSeconds){
+  const k=cur(); if(!k) return;
+  k.gtime=Math.max(0,(k.gtime||0)-Math.max(0,consumedSeconds|0));
+  await DB.set('cs_gtime_'+state.current,k.gtime);
+  renderGameTimeBanner();
+  if(currentView==='games') renderGamesView();
+  scheduleSync();
+  if(k.gtime<=0){
+    modalMsg('⏰','הזמן נגמר!','זמן המשחק שקנית הסתיים.\nאפשר להרוויח עוד מטבעות ולהמיר אותם לזמן משחק חדש! 💪');
+  }else{
+    toast('סיימת לשחק — נשארו לך '+fmtGT(k.gtime)+' 🎮');
+  }
+}
+
 // Pause the drain while the app is backgrounded / screen off: the child only
 // "spends" time actually spent playing. On return, restart the baseline.
 document.addEventListener('visibilitychange',()=>{
@@ -1821,7 +1900,10 @@ function renderGamesAdmin(){
   if(!state.games.length) c.innerHTML='<div class="empty"><span class="e-ic">🎮</span>אין משחקים</div>';
   state.games.forEach((g,i)=>{
     const row=document.createElement('div'); row.className='admin-row';
-    row.innerHTML=`<span class="emoji">${g.emoji}</span><span class="t">${esc(g.label)}<br><span style="font-size:.68rem;color:var(--muted);font-weight:400;direction:ltr;display:inline-block;">${esc(g.url)}</span></span>
+    const sub=g.native
+      ? '📱 אפליקציה אמיתית באנדרואיד · '+esc(g.androidPackage)
+      : esc(g.url||'');
+    row.innerHTML=`<span class="emoji">${g.emoji}</span><span class="t">${esc(g.label)}<br><span style="font-size:.68rem;color:var(--muted);font-weight:400;direction:ltr;display:inline-block;">${sub}</span></span>
       <button class="icon-btn" onclick="delGame(${i})">🗑️</button>`;
     c.appendChild(row);
   });
@@ -1837,14 +1919,30 @@ function renderGamesAdmin(){
   });
 }
 async function delGame(i){ await delWithUndo(state.games,i,'cs_games',renderGamesAdmin,'המשחק'); }
+function toggleNewGameNative(){
+  const native=document.getElementById('newGameNative').checked;
+  document.getElementById('newGameUrlField').style.display=native?'none':'block';
+  document.getElementById('newGamePkgField').style.display=native?'block':'none';
+}
 async function addGame(){
   const label=document.getElementById('newGameLabel').value.trim(); if(!label){ toast('צריך שם למשחק'); return; }
-  let url=document.getElementById('newGameUrl').value.trim();
-  if(!/^https:\/\//i.test(url)){ toast('הכתובת חייבת להתחיל ב-https://'); return; }
   const emoji=document.getElementById('newGameEmoji').value.trim()||'🎮';
-  state.games.push({id:'g'+Date.now().toString(36),label,emoji,url});
+  const native=document.getElementById('newGameNative').checked;
+  let game;
+  if(native){
+    const pkg=document.getElementById('newGamePkg').value.trim();
+    if(!pkg){ toast('צריך שם חבילה (package name)'); return; }
+    game={id:'g'+Date.now().toString(36),label,emoji,native:true,androidPackage:pkg};
+    document.getElementById('newGamePkg').value='';
+  }else{
+    const url=document.getElementById('newGameUrl').value.trim();
+    if(!/^https:\/\//i.test(url)){ toast('הכתובת חייבת להתחיל ב-https://'); return; }
+    game={id:'g'+Date.now().toString(36),label,emoji,url};
+    document.getElementById('newGameUrl').value='';
+  }
+  state.games.push(game);
   await DB.set('cs_games',state.games);
-  document.getElementById('newGameLabel').value=''; document.getElementById('newGameEmoji').value=''; document.getElementById('newGameUrl').value='';
+  document.getElementById('newGameLabel').value=''; document.getElementById('newGameEmoji').value='';
   renderGamesAdmin(); toast('נוסף! ✓');
 }
 async function adminAdjustGT(childId,minutes){
@@ -1909,7 +2007,7 @@ async function savePin(){ const v=document.getElementById('setPin').value.trim()
 function backupKeyList(){
   const keys=['cs_children','cs_current','cs_chores','cs_actions','cs_rewards','cs_math',
     'cs_streaks','cs_badgedefs','cs_anchored','cs_events','cs_pin','cs_calm','cs_games',
-    'cs_games_v3','cs_gtime_seeded','cs_hwm_date','cs_calmlog','cs_familyid'];
+    'cs_games_v3','cs_games_v4','cs_gtime_seeded','cs_hwm_date','cs_calmlog','cs_familyid'];
   for(const ch of state.children){
     for(const p of ['cs_bal_','cs_hist_','cs_daily_','cs_mathd_','cs_badges_','cs_matht_','cs_taskt_','cs_rwt_','cs_gtime_','cs_mathlvl_']){
       keys.push(p+ch.id);
@@ -2822,7 +2920,7 @@ async function clearLocalFamilyData(){
   // never set up at all.
   for(const k of ['cs_children','cs_current','cs_chores','cs_actions','cs_rewards','cs_math',
     'cs_streak','cs_streaks','cs_badgedefs','cs_anchored','cs_events','cs_hwm_date','cs_familyid',
-    'cs_games','cs_games_v2','cs_games_v3','cs_gtime_seeded']){
+    'cs_games','cs_games_v2','cs_games_v3','cs_games_v4','cs_gtime_seeded']){
     await DB.del(k);
   }
   _hwmDate=null; _hwmAdvanceMono=performance.now();

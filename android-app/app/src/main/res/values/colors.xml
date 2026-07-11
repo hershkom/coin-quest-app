@@ -4,4 +4,9 @@
     <color name="purple_dark">#5E3FD6</color>
     <color name="bg">#EEF0FF</color>
     <color name="white">#FFFFFF</color>
+    <!-- Game-time overlay countdown colors, matching the web app's own
+         warning thresholds (see GT_WARN_STEPS in app.js). -->
+    <color name="game_timer_green">#27C99A</color>
+    <color name="game_timer_amber">#F5B82E</color>
+    <color name="game_timer_red">#E84A4A</color>
 </resources>
