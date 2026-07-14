@@ -203,7 +203,7 @@ function _tryShowBadgeCelebration(){
   if(!_badgeQueue.length) return;
   if(modalBg.classList.contains('show')){ setTimeout(_tryShowBadgeCelebration,900); return; }
   const def=_badgeQueue.shift();
-  if(!state.calmMode){ try{ coinBurst(); chime(false); }catch(e){} }
+  if(!state.calmMode){ try{ coinBurst(); chime('celebrate'); }catch(e){} }
   modalContent.innerHTML=`
     <div style="font-size:4.6rem;animation:calmpulse 1.6s ease-in-out infinite;">${def.emoji}</div>
     <h3 style="margin:10px 0 4px;">🏅 תג חדש!</h3>
@@ -430,7 +430,15 @@ function renderBalance(){
     const br=document.getElementById('balRewards'); if(br) br.textContent=k.balance;
   }
 }
-async function addPoints(n,label,type){
+// srcEl (optional): the button/element the child actually tapped to earn
+// this. When given, a single coin visibly flies from there to the balance
+// pill instead of the generic full-screen burst -- ties the reward directly
+// to the action that caused it (DESIGN-IMPROVEMENTS.md V4).
+async function addPoints(n,label,type,srcEl){
+  // Snapshot the rect NOW, synchronously, before any awaits below -- a
+  // caller's own re-render (e.g. markChore -> renderChores()) can run before
+  // this function resumes and would detach srcEl otherwise (see coinFly()).
+  const srcRect=srcEl?srcEl.getBoundingClientRect():null;
   const id=state.current, k=cur();
   if(!Number.isFinite(n)) return;
   k.balance=Math.max(0,Math.min(1000000,Math.round(k.balance+n)));
@@ -439,7 +447,9 @@ async function addPoints(n,label,type){
   await DB.set('cs_bal_'+id,k.balance);
   await DB.set('cs_hist_'+id,k.history);
   if(type==='spend'){ k.rewardsTotal=(k.rewardsTotal||0)+1; await DB.set('cs_rwt_'+id,k.rewardsTotal); }
-  renderBalance(); coinBurst(); chime(type==='spend');
+  renderBalance();
+  if(srcRect && n>0) coinFly(srcRect); else coinBurst();
+  chime(type==='spend');
   scheduleSync();
   checkBadges();
 }
@@ -751,7 +761,7 @@ function mathCheck(){
     if(k.mathDaily.done>=state.math.daily){ modalMsg('🏆','סיימת להיום!','פתרת את כל '+state.math.daily+' התרגילים המזכים. כל הכבוד!'); newProblem(); return; }
     k.mathDaily.done++; DB.set('cs_mathd_'+state.current,k.mathDaily);
     k.mathTotal=(k.mathTotal||0)+1; DB.set('cs_matht_'+state.current,k.mathTotal);
-    addPoints(state.math.pts,'תרגיל חשבון','math');
+    addPoints(state.math.pts,'תרגיל חשבון','math',document.querySelector('.key.ok'));
     toast('נכון! +'+state.math.pts+' 🪙');
     if(k.mathDaily.done>=state.math.daily){ setTimeout(()=>modalMsg('🏆','כל הכבוד!','סיימת את כל התרגילים המזכים להיום!'),300); }
     newProblem();
@@ -918,7 +928,11 @@ function answerLearningQuestion(q,given,btnEl){
     if(k.learn.earnedToday.coins<state.learning.dailyMaxCoins){
       const n=Math.min(state.learning.coinsPerCorrect, state.learning.dailyMaxCoins-k.learn.earnedToday.coins);
       k.learn.earnedToday.coins+=n;
-      addPoints(n,'מכרה הידע — '+subjLabel(q.subject),'learn');
+      // Choice mode: fly from the tapped answer button. Typed mode has no
+      // btnEl (submitTypedLearningAnswer passes null) -- fall back to the
+      // visible "✓ בדוק" submit button as the coin's launch point.
+      const flySrc=btnEl||document.querySelector('#learnTypedWrap .btn.primary');
+      addPoints(n,'מכרה הידע — '+subjLabel(q.subject),'learn',flySrc);
     }
     if(!state.calmMode) toast('נכון! +'+state.learning.coinsPerCorrect+' 🪙');
   }else{
@@ -963,6 +977,7 @@ function finishLearningSession(){
   document.getElementById('learnActive').style.display='none';
   const summary=document.getElementById('learnSummary'); summary.style.display='';
   const perfect=s.correctCount===s.questions.length;
+  if(perfect && !state.calmMode){ try{ chime('celebrate'); }catch(e){} }
   _lastLearnSessionSize=s.questions.length; _lastLearnCorrectCount=s.correctCount;
   const canMinutes=perfect && state.learning.minutesPerSession>0 && k.learn.earnedToday.minutes<state.learning.dailyMaxMinutes;
   if(perfect && canMinutes){
@@ -1052,7 +1067,7 @@ function renderChores(){
     const full=used>=ch.max;
     const row=document.createElement('div'); row.className='chore-row'+(full?' done':'');
     row.innerHTML=`
-      <button class="chore-check ${full?'full':''}" ${full?'disabled':''} onclick="markChore('${ch.id}')">${full?'✓':(ch.photo?`<img src="${ch.photo}" style="width:100%;height:100%;border-radius:50%;object-fit:cover;">`:ch.emoji)}</button>
+      <button class="chore-check ${full?'full':''}" ${full?'disabled':''} onclick="markChore('${ch.id}',this)">${full?'✓':(ch.photo?`<img src="${ch.photo}" style="width:100%;height:100%;border-radius:50%;object-fit:cover;">`:ch.emoji)}</button>
       <div class="chore-info">
         <div class="ci-t">${esc(ch.label)}</div>
         <div class="ci-d">${full?'הושלם להיום ✅':(used+'/'+ch.max+' היום')}</div>
@@ -1112,7 +1127,7 @@ function renderFirstThen(){
   </div>`;
 }
 
-function markChore(id){
+function markChore(id,btnEl){
   const ch=findTaskById(id); if(!ch) return;
   if(!taskForChild(ch,state.current)) return; // not this child's task
   const k=cur(); ensureTodayKid(state.current);
@@ -1120,7 +1135,7 @@ function markChore(id){
   if(used>=ch.max) return;
   k.daily.counts[id]=used+1; DB.set('cs_daily_'+state.current,k.daily);
   k.taskTotal=(k.taskTotal||0)+1; DB.set('cs_taskt_'+state.current,k.taskTotal);
-  addPoints(ch.points, ch.label, 'chore');
+  addPoints(ch.points, ch.label, 'chore', btnEl);
   renderChores(); renderFirstThen(); renderDayStrip();
 }
 
@@ -2770,6 +2785,38 @@ async function toggleCalmMode(){
 }
 
 /* ===== FX ===== */
+// Flies one coin from a starting point to the balance pill in the topbar
+// (#balTop, always on-screen once a child profile is active) -- a targeted,
+// legible version of coinBurst() for the moment a specific action earns
+// coins. `from` is a DOMRect, NOT a live element -- callers must snapshot
+// getBoundingClientRect() before any re-render can detach/move the element
+// (e.g. markChore's renderChores() rebuilds the whole list via innerHTML=''
+// right after the tap, so capturing the rect late would always see a
+// detached, zero-size element). Falls back to coinBurst() if the rect is
+// missing/empty, and is a no-op under reduced-motion (same as coinBurst()).
+function coinFly(from){
+  if(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  const target=document.getElementById('balTop');
+  if(!from||!target){ coinBurst(); return; }
+  const to=target.getBoundingClientRect();
+  if(from.width===0&&from.height===0){ coinBurst(); return; } // detached/hidden element
+  const coin=document.createElement('div');
+  coin.textContent='🪙';
+  coin.style.cssText='position:fixed;z-index:150;pointer-events:none;font-size:1.6rem;will-change:transform,opacity;';
+  coin.style.left=(from.left+from.width/2-14)+'px';
+  coin.style.top=(from.top+from.height/2-14)+'px';
+  document.body.appendChild(coin);
+  const dx=(to.left+to.width/2)-(from.left+from.width/2), dy=(to.top+to.height/2)-(from.top+from.height/2);
+  const anim=coin.animate([
+    {transform:'translate(0,0) scale(1)',opacity:1,offset:0},
+    {transform:`translate(${dx*.5}px,${dy*.5-60}px) scale(1.15)`,opacity:1,offset:.55},
+    {transform:`translate(${dx}px,${dy}px) scale(.3)`,opacity:.6,offset:1},
+  ],{duration:650,easing:'cubic-bezier(.3,.1,.3,1)'});
+  let cleaned=false;
+  const cleanup=()=>{ if(cleaned) return; cleaned=true; coin.remove(); try{ target.animate([{transform:'scale(1.3)'},{transform:'scale(1)'}],{duration:260,easing:'ease-out'}); }catch(e){} };
+  anim.onfinish=cleanup;
+  setTimeout(cleanup,1200); // safety-net cleanup, same pattern as coinBurst()
+}
 function coinBurst(){
   // OS-level "reduce motion" is a stronger opt-out than calm mode: skip the
   // whole particle burst rather than just shrinking it (matches the CSS
@@ -2787,13 +2834,20 @@ function coinBurst(){
   }
 }
 let actx=null;
-function chime(low){
+// `mode` keeps the original boolean contract (true='spend'/low tone,
+// false='success') and adds 'celebrate' -- a longer 4-note arpeggio reserved
+// for badge unlocks and perfect learning sessions, so those moments sound
+// distinctly bigger than an ordinary +1 coin without needing a new asset
+// (still pure Web Audio, no files -- see DESIGN-IMPROVEMENTS.md V9). A wrong
+// answer never calls chime() at all, by design, everywhere in the app --
+// mistakes stay silent, never a harsh/buzzer sound.
+function chime(mode){
   try{ actx=actx||new (window.AudioContext||window.webkitAudioContext)();
     // See the matching comment in startCalmMusic(): resume a browser-suspended
     // context (e.g. after screen lock) so coin-earn sounds don't silently stop
     // working. Safe no-op if already running.
     if(actx.state==='suspended') actx.resume();
-    const notes=low?[392,330]:[523,659,784];
+    const notes=mode==='celebrate'?[523,659,784,1047]:(mode?[392,330]:[523,659,784]);
     const vol=state.calmMode?0.07:0.18; // quieter in calm mode — less sensory intensity
     notes.forEach((f,i)=>{ const o=actx.createOscillator(),g=actx.createGain(); o.type='triangle'; o.frequency.value=f; o.connect(g); g.connect(actx.destination);
       const t=actx.currentTime+i*0.09; g.gain.setValueAtTime(0,t); g.gain.linearRampToValueAtTime(vol,t+.02); g.gain.exponentialRampToValueAtTime(.001,t+.22); o.start(t); o.stop(t+.24); });
