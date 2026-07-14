@@ -45,10 +45,10 @@ async function detectBackend(){
 const SYNC_SECTIONS={cs_children:'children',cs_chores:'chores',cs_actions:'actions',
   cs_rewards:'rewards',cs_math:'math',cs_streaks:'streaks',cs_badgedefs:'badgeDefs',
   cs_anchored:'anchored',cs_events:'events',cs_calm:'calmMode',cs_games:'games',
-  cs_hwm_date:'hwmDate',cs_auditlog:'auditLog'};
+  cs_hwm_date:'hwmDate',cs_auditlog:'auditLog',cs_learning:'learning'};
 function keyToSyncSection(k){
   if(SYNC_SECTIONS[k]) return SYNC_SECTIONS[k];
-  const m=k.match(/^cs_(bal|hist|daily|mathd|badges|matht|taskt|rwt|gtime)_(.+)$/);
+  const m=k.match(/^cs_(bal|hist|daily|mathd|badges|matht|taskt|rwt|gtime|learn|learnlvl)_(.+)$/);
   return m?('kids/'+m[2]):null; // per-kid granularity: sibling edits don't collide
 }
 let syncDirty=new Set(), syncFullPush=false;
@@ -103,6 +103,15 @@ const DEFAULT_REWARDS=[
   {id:'movie', label:'ערב סרט', emoji:'🍿', cost:80},
 ];
 const DEFAULT_MATH={enabled:true, ops:['+','-'], maxNum:20, pts:2, daily:10};
+// "מכרה הידע" (Knowledge Mine) — Minecraft-themed learning quiz (math/english/
+// science) that earns coins and, optionally, game-time minutes. Family-wide
+// settings live in state.learning (this section); per-kid progress/level/
+// earned-today live in loadKid() like the rest of the per-kid state.
+const DEFAULT_LEARNING={enabled:true,
+  subjects:{math:true,english:true,science:true},
+  coinsPerCorrect:1, sessionBonus:2, dailyMaxCoins:10,
+  minutesPerSession:0, dailyMaxMinutes:15, // 0 = game-time reward option off
+  gateEnabled:false, customQuestions:[]};
 // Default games must be frame-embeddable (no X-Frame-Options/frame-ancestors
 // blocking). The primary game is SELF-HOSTED (games/classicube/ — the
 // open-source ClassiCube webclient launched straight into singleplayer):
@@ -149,6 +158,7 @@ const BADGE_METRICS={
   taskTotal:   {label:'מטלות/פעולות שהושלמו (סה״כ)',    kind:'threshold', get:k=>k.taskTotal||0},
   rewardsTotal:{label:'פרסים שנקנו (סה״כ)',              kind:'threshold', get:k=>k.rewardsTotal||0},
   streakGoal:  {label:'השלמת אתגר רצף כלשהו',           kind:'goal',      get:(k,id)=>state.streaks.some(s=>s.childId===id&&s.best>=s.goal)},
+  learnTotal:  {label:'תשובות נכונות במכרה הידע (סה״כ)', kind:'threshold', get:k=>Object.values((k.learn&&k.learn.correctTotal)||{}).reduce((a,b)=>a+b,0)},
 };
 const DEFAULT_BADGE_DEFS=[
   {id:'first_coin',  emoji:'🥇', label:'המטבע הראשון',   metric:'totalEarned',  threshold:1},
@@ -157,6 +167,8 @@ const DEFAULT_BADGE_DEFS=[
   {id:'math_50',     emoji:'🧮', label:'מלך החשבון',     metric:'mathTotal',    threshold:50},
   {id:'tasks_100',   emoji:'🧹', label:'גיבור המטלות',   metric:'taskTotal',    threshold:100},
   {id:'first_reward',emoji:'🎁', label:'הקנייה הראשונה', metric:'rewardsTotal', threshold:1},
+  {id:'learn_first',  emoji:'⛏️', label:'כורה מתחיל',    metric:'learnTotal',   threshold:1},
+  {id:'learn_master',emoji:'💎', label:'אשף מכרה הידע',  metric:'learnTotal',   threshold:150},
 ];
 function badgeIsEarned(def,k,kidId){
   const m=BADGE_METRICS[def.metric]; if(!m) return false;
@@ -283,6 +295,7 @@ async function loadState(){
     }
     await DB.set('cs_gtime_seeded',true);
   }
+  state.learning=(await DB.get('cs_learning'))??DEFAULT_LEARNING;
   state.pin     =(await DB.get('cs_pin'))     ??'1234';
   state.calmMode=(await DB.get('cs_calm'))    ??false;
   state.badgeDefs=(await DB.get('cs_badgedefs'))??DEFAULT_BADGE_DEFS;
@@ -307,6 +320,8 @@ async function loadKid(id){
     rewardsTotal:(await DB.get('cs_rwt_'+id))??0,
     gtime:    (await DB.get('cs_gtime_'+id)) ??0, // game-time wallet, in seconds
     mathLevel:(await DB.get('cs_mathlvl_'+id))??1, // adaptive difficulty 1..5
+    learn:    (await DB.get('cs_learn_'+id)) ??{progress:{},earnedToday:{date:'',coins:0,minutes:0,sessions:0},recent:{math:[],english:[],science:[]},correctTotal:{math:0,english:0,science:0}},
+    learnLevel:(await DB.get('cs_learnlvl_'+id))??{math:1,english:1,science:1}, // adaptive difficulty 1..3 per subject
   };
   ensureTodayKid(id); return state.kid[id];
 }
@@ -317,6 +332,7 @@ function ensureTodayKid(id){
   const t=effectiveToday(), k=state.kid[id]; if(!k) return;
   if(k.daily.date!==t){ k.daily={date:t,counts:{}}; DB.set('cs_daily_'+id,k.daily); }
   if(k.mathDaily.date!==t){ k.mathDaily={date:t,done:0}; DB.set('cs_mathd_'+id,k.mathDaily); }
+  if(k.learn && k.learn.earnedToday.date!==t){ k.learn.earnedToday={date:t,coins:0,minutes:0,sessions:0}; DB.set('cs_learn_'+id,k.learn); }
 }
 /* ---- anti-tamper helpers ---- */
 function dateToNum(str){ const a=(str||'').split('-').map(Number); return new Date(a[0]||1970,(a[1]||1)-1,a[2]||1).getTime(); }
@@ -474,6 +490,7 @@ function go(v){
   if(v==='streak') renderStreakView();
   if(v==='badges') renderBadgesView();
   if(v==='games') renderGamesView();
+  if(v==='learn') initLearningView();
 }
 // Self-heal: if something upstream (a thrown error mid-render, a race
 // between two go() calls, etc.) ever leaves zero .view elements with
@@ -749,6 +766,258 @@ function mathCheck(){
 }
 function updateMathProgress(){ const k=cur(); const d=k.mathDaily.done, t=state.math.daily;
   document.getElementById('mathDone').textContent=d; document.getElementById('mathFill').style.width=Math.min(100,(d/t)*100)+'%'; }
+
+/* ===== LEARNING QUIZ ("מכרה הידע") ===== */
+// Spaced-repetition boxes (Leitner, simplified): box 1 = due again tomorrow,
+// box 4 = mastered (due again in a month). Wrong answer always resets to box 1
+// so mistakes get seen again soon; right answer promotes one box at a time.
+const LEARN_BOX_DAYS=[1,1,3,7,30]; // index by box (1..4); index 0 unused
+function learnDueDays(box){ return LEARN_BOX_DAYS[Math.max(1,Math.min(4,box))]; }
+function daysBetween(a,b){ return Math.round((dateToNum(b)-dateToNum(a))/86400000); }
+
+let learnSession=null; // {questions:[], idx, correctCount, subjectFilter}
+// Called on entering the learn view: reset to the pre-session state (fresh
+// "start" button) so leaving mid-session and coming back doesn't show a stale
+// question screen from a session that was abandoned.
+function initLearningView(){
+  learnSession=null;
+  document.getElementById('learnActive').style.display='none';
+  document.getElementById('learnSummary').style.display='none';
+  const k=cur();
+  const capped=k && k.learn.earnedToday.coins>=state.learning.dailyMaxCoins;
+  document.getElementById('learnDisabled').style.display=capped?'':'none';
+  document.getElementById('learnDisabled').innerHTML='<div class="empty"><span class="e-ic">😴</span>המכרה נסגר להיום! ⛏️😴<br>חזור מחר לעוד סיבוב.</div>';
+  document.getElementById('learnStartBtn').style.display=capped?'none':'';
+}
+
+function subjectQuestionPool(subj){
+  const custom=(state.learning.customQuestions||[]).filter(q=>q.subject===subj);
+  return QUESTION_BANK.filter(q=>q.subject===subj).concat(custom);
+}
+// Picks 5 questions for a session: due-for-review questions first (by box
+// schedule), then never-seen questions, restricted to the child's current
+// level (and one level below, so review items don't vanish on level-up) for
+// each enabled subject.
+function pickSessionQuestions(){
+  const k=cur(); if(!k) return [];
+  const today=effectiveToday();
+  const enabled=Object.keys(state.learning.subjects).filter(s=>state.learning.subjects[s]);
+  let pool=[];
+  enabled.forEach(subj=>{
+    const lvl=(k.learnLevel&&k.learnLevel[subj])||1;
+    pool=pool.concat(subjectQuestionPool(subj).filter(q=>q.level<=lvl));
+  });
+  const seenToday=new Set(); // avoid repeating the same question twice in one session
+  const due=[], fresh=[];
+  pool.forEach(q=>{
+    const p=k.learn.progress[q.id];
+    if(!p){ fresh.push(q); return; }
+    const dueDays=learnDueDays(p.box);
+    if(daysBetween(p.lastSeen,today)>=dueDays) due.push(q);
+  });
+  shuffleArr(due); shuffleArr(fresh);
+  const picked=[];
+  for(const q of due.concat(fresh)){
+    if(picked.length>=5) break;
+    if(seenToday.has(q.id)) continue;
+    seenToday.add(q.id); picked.push(q);
+  }
+  return picked;
+}
+function shuffleArr(a){ for(let i=a.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [a[i],a[j]]=[a[j],a[i]]; } return a; }
+
+function startLearningSession(){
+  const k=cur(); if(!k||!state.learning.enabled) return;
+  if(k.learn.earnedToday.coins>=state.learning.dailyMaxCoins){
+    document.getElementById('learnDisabled').style.display='';
+    document.getElementById('learnActive').style.display='none';
+    document.getElementById('learnStartBtn').style.display='none';
+    return;
+  }
+  const qs=pickSessionQuestions();
+  if(!qs.length){
+    document.getElementById('learnDisabled').style.display='';
+    document.getElementById('learnActive').style.display='none';
+    document.getElementById('learnStartBtn').style.display='none';
+    document.getElementById('learnDisabled').innerHTML='<div class="empty"><span class="e-ic">📚</span>אין עוד שאלות זמינות כרגע. בקש מההורים להוסיף מקצועות בהגדרות!</div>';
+    return;
+  }
+  learnSession={questions:qs, idx:0, correctCount:0};
+  document.getElementById('learnDisabled').style.display='none';
+  document.getElementById('learnActive').style.display='';
+  document.getElementById('learnSummary').style.display='none';
+  document.getElementById('learnStartBtn').style.display='none';
+  renderLearningQuestion();
+}
+function renderLearningQuestion(){
+  const s=learnSession; if(!s) return;
+  const q=s.questions[s.idx];
+  document.getElementById('learnProgress').textContent=`שאלה ${s.idx+1} מתוך ${s.questions.length}`;
+  const dots=document.getElementById('learnDots');
+  dots.innerHTML='';
+  s.questions.forEach((_,i)=>{
+    const d=document.createElement('span');
+    d.className='learn-dot'+(i<s.idx?' done':i===s.idx?' active':'');
+    dots.appendChild(d);
+  });
+  document.getElementById('learnQ').textContent=q.q;
+  const choicesWrap=document.getElementById('learnChoices');
+  choicesWrap.innerHTML='';
+  document.getElementById('learnTypedWrap').style.display=q.type==='typed-number'?'':'none';
+  if(q.type==='typed-number'){
+    const inp=document.getElementById('learnTypedInput'); inp.value=''; inp.disabled=false;
+    choicesWrap.style.display='none';
+  }else{
+    choicesWrap.style.display='';
+    const choices=shuffleArr([...q.choices]);
+    choices.forEach(c=>{
+      const btn=document.createElement('button');
+      btn.className='learn-choice-btn'; btn.textContent=c;
+      btn.onclick=()=>answerLearningQuestion(q,c,btn);
+      choicesWrap.appendChild(btn);
+    });
+  }
+}
+function submitTypedLearningAnswer(){
+  const s=learnSession; if(!s) return;
+  const q=s.questions[s.idx];
+  const val=document.getElementById('learnTypedInput').value.trim();
+  if(val==='') return;
+  answerLearningQuestion(q,val,null);
+}
+// The ONLY place that checks correctness and credits coins — always against
+// QUESTION_BANK/customQuestions, never trusting anything about which DOM
+// button was clicked, same anti-cheat pattern as markChore/redeemToken.
+function answerLearningQuestion(q,given,btnEl){
+  const s=learnSession; if(!s) return;
+  const k=cur();
+  const correct=String(given).trim()===String(q.answer).trim();
+  const p=k.learn.progress[q.id]||{box:0,lastSeen:'',correct:0,wrong:0};
+  const today=effectiveToday();
+  if(correct){
+    p.box=Math.min(4,(p.box||0)+1); p.correct=(p.correct||0)+1;
+  }else{
+    p.box=1; p.wrong=(p.wrong||0)+1;
+  }
+  p.lastSeen=today;
+  k.learn.progress[q.id]=p;
+  k.learn.correctTotal[q.subject]=(k.learn.correctTotal[q.subject]||0)+(correct?1:0);
+  // adaptive difficulty bookkeeping (see bumpLearningLevel)
+  k.learn.recent[q.subject]=k.learn.recent[q.subject]||[];
+  k.learn.recent[q.subject].push(correct?1:0);
+  if(k.learn.recent[q.subject].length>10) k.learn.recent[q.subject].shift();
+  bumpLearningLevel(q.subject);
+  if(correct){
+    s.correctCount++;
+    if(btnEl){ btnEl.classList.add('correct'); }
+    if(k.learn.earnedToday.coins<state.learning.dailyMaxCoins){
+      const n=Math.min(state.learning.coinsPerCorrect, state.learning.dailyMaxCoins-k.learn.earnedToday.coins);
+      k.learn.earnedToday.coins+=n;
+      addPoints(n,'מכרה הידע — '+subjLabel(q.subject),'learn');
+    }
+    if(!state.calmMode) toast('נכון! +'+state.learning.coinsPerCorrect+' 🪙');
+  }else{
+    if(btnEl){ btnEl.classList.add('wrong'); }
+    document.querySelectorAll('#learnChoices .learn-choice-btn').forEach(b=>{ if(b.textContent===String(q.answer)) b.classList.add('correct'); });
+    toast('כמעט! התשובה הנכונה: '+q.answer);
+  }
+  DB.set('cs_learn_'+state.current,k.learn);
+  if(document.getElementById('learnTypedInput')) document.getElementById('learnTypedInput').disabled=true;
+  document.querySelectorAll('#learnChoices .learn-choice-btn').forEach(b=>b.disabled=true);
+  setTimeout(()=>{
+    s.idx++;
+    if(s.idx>=s.questions.length){ finishLearningSession(); } else { renderLearningQuestion(); }
+  }, correct?900:1800);
+}
+function subjLabel(subj){ return {math:'חשבון',english:'אנגלית',science:'מדעים'}[subj]||subj; }
+// Adaptive difficulty per subject, same 4-correct-up/2-wrong-down pattern as
+// bumpMathLevel — kept separate (own state, own levels 1-3) since a child can
+// be at different levels in math vs english vs science.
+function bumpLearningLevel(subj){
+  const k=cur(); if(!k) return;
+  const recent=k.learn.recent[subj]||[];
+  const lastN=recent.slice(-4);
+  if(lastN.length>=4 && lastN.every(v=>v===1)){
+    const next=Math.min(3,(k.learnLevel[subj]||1)+1);
+    if(next!==k.learnLevel[subj]){ k.learnLevel[subj]=next; DB.set('cs_learnlvl_'+state.current,k.learnLevel); toast('עלית לרמה '+next+' ב'+subjLabel(subj)+'! ⛏️📈'); }
+    k.learn.recent[subj]=[];
+  }
+  const last2=recent.slice(-2);
+  if(last2.length>=2 && last2.every(v=>v===0)){
+    const next=Math.max(1,(k.learnLevel[subj]||1)-1);
+    if(next!==k.learnLevel[subj]){ k.learnLevel[subj]=next; DB.set('cs_learnlvl_'+state.current,k.learnLevel); }
+    k.learn.recent[subj]=[];
+  }
+}
+function finishLearningSession(){
+  const s=learnSession; if(!s) return;
+  const k=cur();
+  k.learn.earnedToday.sessions=(k.learn.earnedToday.sessions||0)+1;
+  DB.set('cs_learn_'+state.current,k.learn);
+  document.getElementById('learnActive').style.display='none';
+  const summary=document.getElementById('learnSummary'); summary.style.display='';
+  const perfect=s.correctCount===s.questions.length;
+  _lastLearnSessionSize=s.questions.length; _lastLearnCorrectCount=s.correctCount;
+  const canMinutes=perfect && state.learning.minutesPerSession>0 && k.learn.earnedToday.minutes<state.learning.dailyMaxMinutes;
+  if(perfect && canMinutes){
+    // Perfect session + game-time reward enabled: let the child choose coins
+    // vs. minutes instead of always granting both automatically.
+    summary.innerHTML=`<div style="text-align:center;">
+      <div style="font-size:2.6rem;">🏆</div>
+      <h3>ענית נכון על ${s.correctCount} מתוך ${s.questions.length}! מפגש מושלם!</h3>
+      <p>בחר את הבונוס שלך:</p>
+      <div style="display:flex;flex-direction:column;gap:10px;margin-bottom:10px;">
+        <button class="btn primary" onclick="claimLearningBonus('coins')">🪙 קח ${state.learning.sessionBonus} מטבעות בונוס</button>
+        <button class="btn mint" onclick="claimLearningBonus('minutes')">🎮 קח ${state.learning.minutesPerSession} דקות משחק</button>
+      </div>
+    </div>`;
+  }else{
+    let bonus=0;
+    if(perfect && k.learn.earnedToday.coins<state.learning.dailyMaxCoins){
+      bonus=Math.min(state.learning.sessionBonus, state.learning.dailyMaxCoins-k.learn.earnedToday.coins);
+      if(bonus>0){ k.learn.earnedToday.coins+=bonus; addPoints(bonus,'בונוס מפגש מושלם 🌟','learn'); DB.set('cs_learn_'+state.current,k.learn); }
+    }
+    renderLearningSummaryFinal(s,bonus,0);
+  }
+  checkBadges();
+  learnSession=null;
+}
+function renderLearningSummaryFinal(s,bonusCoins,bonusMinutes){
+  const k=cur();
+  const summary=document.getElementById('learnSummary');
+  summary.innerHTML=`<div style="text-align:center;">
+    <div style="font-size:2.6rem;">${s.correctCount===s.questions.length?'🏆':'⛏️'}</div>
+    <h3>ענית נכון על ${s.correctCount} מתוך ${s.questions.length}!</h3>
+    <p>הרווחת ${s.correctCount+bonusCoins} 🪙${bonusMinutes?' ו-'+bonusMinutes+' דקות משחק 🎮':''}</p>
+    ${k.learn.earnedToday.coins<state.learning.dailyMaxCoins
+      ? '<button class="btn primary" onclick="startLearningSession()">עוד סיבוב! ⛏️</button>'
+      : '<div class="empty"><span class="e-ic">😴</span>המכרה נסגר להיום — חזור מחר!</div>'}
+    <button class="btn ghost" onclick="go(\'home\')">חזרה הביתה</button>
+  </div>`;
+}
+// Reached only from the perfect-session choice screen above (session/idx
+// state is already gone by then) — needs its own small closure over the
+// last session's counts, kept on the button's onclick via a module var.
+let _lastLearnSessionSize=0, _lastLearnCorrectCount=0;
+async function claimLearningBonus(kind){
+  const k=cur();
+  const s={questions:{length:_lastLearnSessionSize},correctCount:_lastLearnCorrectCount};
+  if(kind==='coins'){
+    const bonus=Math.min(state.learning.sessionBonus, state.learning.dailyMaxCoins-k.learn.earnedToday.coins);
+    if(bonus>0){ k.learn.earnedToday.coins+=bonus; addPoints(bonus,'בונוס מפגש מושלם 🌟','learn'); DB.set('cs_learn_'+state.current,k.learn); }
+    renderLearningSummaryFinal(s,bonus,0);
+  }else{
+    const minutes=Math.min(state.learning.minutesPerSession, state.learning.dailyMaxMinutes-k.learn.earnedToday.minutes);
+    if(minutes>0){
+      k.learn.earnedToday.minutes+=minutes;
+      k.gtime=(k.gtime||0)+minutes*60;
+      await DB.set('cs_gtime_'+state.current,k.gtime);
+      await DB.set('cs_learn_'+state.current,k.learn);
+      toast('קיבלת '+minutes+' דקות משחק! 🎮');
+    }
+    renderLearningSummaryFinal(s,0,minutes);
+  }
+}
 
 /* ===== CHORES (checkbox tasks) ===== */
 // Per-child task assignment: tasks with no kids list (or an empty one, the
@@ -1207,6 +1476,7 @@ function adminTab(t){
   if(t==='actions') renderActionsAdmin();
   if(t==='qr') fillQRSelect();
   if(t==='math') fillMathConfig();
+  if(t==='learn') fillLearningConfig();
   if(t==='rewards') renderRewardsAdmin();
   if(t==='games') renderGamesAdmin();
   if(t==='events') renderEventsAdmin();
@@ -1861,6 +2131,26 @@ async function resetMathLevel(id){
   await DB.set('cs_mathlvl_'+id,1);
   if(state.kid[id]) state.kid[id].mathLevel=1;
   renderMathLevels(); toast('הרמה אופסה ✓');
+}
+function fillLearningConfig(){
+  document.getElementById('learnToggle').textContent=state.learning.enabled?'פעיל ✓':'כבוי';
+  document.querySelectorAll('#learnSubjChips .chip').forEach(c=>c.classList.toggle('on',!!state.learning.subjects[c.dataset.subj]));
+  document.getElementById('learnCoinsPerCorrect').value=state.learning.coinsPerCorrect;
+  document.getElementById('learnSessionBonus').value=state.learning.sessionBonus;
+  document.getElementById('learnDailyMaxCoins').value=state.learning.dailyMaxCoins;
+  document.getElementById('learnMinutesPerSession').value=state.learning.minutesPerSession;
+  document.getElementById('learnDailyMaxMinutes').value=state.learning.dailyMaxMinutes;
+}
+function toggleLearningEnabled(){ state.learning.enabled=!state.learning.enabled; fillLearningConfig(); }
+function toggleLearningSubject(subj){ state.learning.subjects[subj]=!state.learning.subjects[subj]; fillLearningConfig(); }
+async function saveLearningConfig(){
+  state.learning.coinsPerCorrect=Math.max(1,parseInt(document.getElementById('learnCoinsPerCorrect').value)||1);
+  state.learning.sessionBonus=Math.max(0,parseInt(document.getElementById('learnSessionBonus').value)||0);
+  state.learning.dailyMaxCoins=Math.max(1,parseInt(document.getElementById('learnDailyMaxCoins').value)||10);
+  state.learning.minutesPerSession=Math.max(0,parseInt(document.getElementById('learnMinutesPerSession').value)||0);
+  state.learning.dailyMaxMinutes=Math.max(0,parseInt(document.getElementById('learnDailyMaxMinutes').value)||0);
+  if(!Object.values(state.learning.subjects).some(Boolean)){ toast('בחר לפחות מקצוע אחד'); return; }
+  await DB.set('cs_learning',state.learning); scheduleSync(); toast('הגדרות נשמרו ✓');
 }
 function toggleMathEnabled(){ state.math.enabled=!state.math.enabled; fillMathConfig(); }
 function toggleOp(op){ const i=state.math.ops.indexOf(op); if(i>=0) state.math.ops.splice(i,1); else state.math.ops.push(op); fillMathConfig(); }
@@ -2643,13 +2933,13 @@ function buildSyncPayload(){
   const payload={children:state.children,chores:state.chores,actions:state.actions,
     rewards:state.rewards,math:state.math,streaks:state.streaks,badgeDefs:state.badgeDefs,
     anchored:state.anchored,events:state.events||[],hwmDate:_hwmDate,calmMode:state.calmMode,
-    games:state.games,auditLog:state.auditLog||[],kids:{}};
+    games:state.games,auditLog:state.auditLog||[],learning:state.learning,kids:{}};
   for(const ch of state.children){
     const k=state.kid[ch.id];
     if(k){
       payload.kids[ch.id]={balance:k.balance,history:k.history,daily:k.daily,mathDaily:k.mathDaily,
         badges:k.badges,mathTotal:k.mathTotal,taskTotal:k.taskTotal,rewardsTotal:k.rewardsTotal,
-        gtime:k.gtime||0,mathLevel:k.mathLevel||1};
+        gtime:k.gtime||0,mathLevel:k.mathLevel||1,learn:k.learn,learnLevel:k.learnLevel||{math:1,english:1,science:1}};
     }
   }
   return payload;
@@ -2806,8 +3096,17 @@ async function applyRemoteSnapshot(data){
         await DB.set('cs_gtime_'+id,kid.gtime);
         kid.mathLevel=Number.isFinite(kid.mathLevel)?Math.max(1,Math.min(5,kid.mathLevel)):1;
         await DB.set('cs_mathlvl_'+id,kid.mathLevel);
+        if(!kid.learn||typeof kid.learn!=='object') kid.learn={progress:{},earnedToday:{date:'',coins:0,minutes:0,sessions:0},recent:{math:[],english:[],science:[]},correctTotal:{math:0,english:0,science:0}};
+        if(!kid.learn.progress||typeof kid.learn.progress!=='object') kid.learn.progress={};
+        if(!kid.learn.earnedToday||typeof kid.learn.earnedToday!=='object') kid.learn.earnedToday={date:'',coins:0,minutes:0,sessions:0};
+        if(!kid.learn.recent||typeof kid.learn.recent!=='object') kid.learn.recent={math:[],english:[],science:[]};
+        if(!kid.learn.correctTotal||typeof kid.learn.correctTotal!=='object') kid.learn.correctTotal={math:0,english:0,science:0};
+        await DB.set('cs_learn_'+id,kid.learn);
+        if(!kid.learnLevel||typeof kid.learnLevel!=='object') kid.learnLevel={math:1,english:1,science:1};
+        await DB.set('cs_learnlvl_'+id,kid.learnLevel);
       }
     }
+    if(data.learning){ state.learning=data.learning; await DB.set('cs_learning',data.learning); }
     syncDirty=dirtyBeforePull; // drop the echo-dirt, keep real pre-pull edits
     return true;
   }catch(e){ return false; }
@@ -3040,6 +3339,8 @@ function seedDemoData(){
     daily:{date:today,counts:{chore_teeth:1}}, mathDaily:{date:today,done:3},
     badges:[{id:'first_coin',ts:now-1000*3600*24*3}],
     mathTotal:14, taskTotal:22, rewardsTotal:2, gtime:0, mathLevel:2,
+    learn:{progress:{},earnedToday:{date:today,coins:4,minutes:0,sessions:1},recent:{math:[1,1],english:[1,0],science:[1,1,1,1]},correctTotal:{math:12,english:6,science:9}},
+    learnLevel:{math:2,english:1,science:1},
   };
   state.kid['noa']={
     balance:18,
@@ -3049,6 +3350,8 @@ function seedDemoData(){
     ],
     daily:{date:today,counts:{}}, mathDaily:{date:today,done:1},
     badges:[], mathTotal:5, taskTotal:6, rewardsTotal:0, gtime:0, mathLevel:1,
+    learn:{progress:{},earnedToday:{date:today,coins:0,minutes:0,sessions:0},recent:{math:[],english:[],science:[]},correctTotal:{math:0,english:0,science:0}},
+    learnLevel:{math:1,english:1,science:1},
   };
   const clean=getStreak('clean');
   if(clean){

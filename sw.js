@@ -7,7 +7,7 @@
 //    boot without) is stale-while-revalidate: instant from cache, silently
 //    refreshed in the background.
 // Bump CACHE_VERSION on breaking asset changes; activate cleans old caches.
-const CACHE_VERSION='cq-v4';
+const CACHE_VERSION='cq-v5';
 
 // All paths RELATIVE to the SW location, because the app lives at the domain
 // root on Firebase Hosting but under /coin-quest-app/ on GitHub Pages.
@@ -15,6 +15,7 @@ const PRECACHE=[
   './',
   'index.html',
   'app.js',
+  'questions.js',
   'styles.css',
   'privacy.html',
   'terms.html',

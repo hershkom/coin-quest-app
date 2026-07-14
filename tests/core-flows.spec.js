@@ -394,3 +394,97 @@ test.describe('native game (real purchased app, e.g. Minecraft)', () => {
     expect(blocked.walletUntouched).toBe(300);
   });
 });
+
+test.describe('learning quiz ("מכרה הידע")', () => {
+  test('a correct answer credits exactly coinsPerCorrect, a wrong answer credits nothing', async ({ page }) => {
+    await enterLocalOnly(page);
+    await selectChild(page, 'נועה');
+    const balBefore = await page.locator('#balTop').textContent();
+
+    const result = await page.evaluate(() => {
+      startLearningSession();
+      const q = learnSession.questions[learnSession.idx];
+      const before = cur().balance;
+      answerLearningQuestion(q, q.answer, null); // correct
+      return { before, after: cur().balance, coinsPerCorrect: state.learning.coinsPerCorrect };
+    });
+    expect(result.after - result.before).toBe(result.coinsPerCorrect);
+
+    const wrongResult = await page.evaluate(() => {
+      const q = learnSession.questions[learnSession.idx];
+      const before = cur().balance;
+      answerLearningQuestion(q, '__definitely_wrong__', null);
+      return { before, after: cur().balance };
+    });
+    expect(wrongResult.after).toBe(wrongResult.before);
+  });
+
+  // Mutation-test style: call the crediting function directly past the daily
+  // cap, bypassing any UI state, to prove the guard lives in the function
+  // itself (same anti-cheat pattern as markChore's daily-max check).
+  test('daily coin cap is enforced even when answerLearningQuestion is called directly past it', async ({ page }) => {
+    await enterLocalOnly(page);
+    await selectChild(page, 'נועה');
+    const result = await page.evaluate(() => {
+      startLearningSession();
+      const k = cur();
+      k.learn.earnedToday.coins = state.learning.dailyMaxCoins; // simulate already at cap
+      const q = learnSession.questions[learnSession.idx];
+      const before = k.balance;
+      answerLearningQuestion(q, q.answer, null); // correct, but capped
+      return { before, after: k.balance, coins: k.learn.earnedToday.coins };
+    });
+    expect(result.after).toBe(result.before);
+    expect(result.coins).toBe(await page.evaluate(() => state.learning.dailyMaxCoins));
+  });
+
+  // answerLearningQuestion advances to the next question (or finishes the
+  // session) inside a real setTimeout, so driving a whole session from
+  // page.evaluate needs to actually wait out those timers, not just loop
+  // synchronously (which would spin forever on a session that never advances).
+  test('a perfect 5/5 session shows the summary and, once capped, the mine "closed for today" message on re-entry', async ({ page }) => {
+    await enterLocalOnly(page);
+    await selectChild(page, 'נועה');
+    await page.evaluate(async () => {
+      state.learning.dailyMaxCoins = 3; // small cap so a single session trips it
+      startLearningSession();
+      while (learnSession) {
+        const q = learnSession.questions[learnSession.idx];
+        answerLearningQuestion(q, q.answer, null);
+        await new Promise(r => setTimeout(r, 1000));
+      }
+    });
+    await expect(page.locator('#learnSummary')).toContainText('ענית נכון על');
+    // Re-entering the view after the cap is hit must show the closed message,
+    // not a fresh "start session" button (the daily cap must persist across nav).
+    await page.evaluate(() => { go('home'); go('learn'); });
+    await expect(page.locator('#learnDisabled')).toBeVisible();
+    await expect(page.locator('#learnStartBtn')).toBeHidden();
+  });
+
+  test('a perfect session with minutesPerSession enabled offers coins-vs-minutes choice, and the minutes path credits the game-time wallet without touching coins', async ({ page }) => {
+    await enterLocalOnly(page);
+    await selectChild(page, 'נועה');
+    const outcome = await page.evaluate(async () => {
+      state.learning.minutesPerSession = 5;
+      state.learning.dailyMaxMinutes = 15;
+      const k = cur();
+      const balBefore = k.balance;
+      startLearningSession();
+      while (learnSession) {
+        const q = learnSession.questions[learnSession.idx];
+        answerLearningQuestion(q, q.answer, null);
+        await new Promise(r => setTimeout(r, 1000));
+      }
+      return { balBefore };
+    });
+    await expect(page.locator('#learnSummary')).toContainText('בחר את הבונוס שלך');
+    await page.evaluate(() => claimLearningBonus('minutes'));
+    const after = await page.evaluate(() => ({ gtime: cur().gtime, balance: cur().balance }));
+    expect(after.gtime).toBe(300); // 5 minutes * 60
+    // Per-question coins (1 each, 5 correct) still apply regardless of which
+    // bonus is chosen -- only the session-completion BONUS becomes minutes
+    // instead of coins, so balance is +5, not the untouched pre-session value.
+    expect(after.balance).toBe(outcome.balBefore + 5);
+  });
+});

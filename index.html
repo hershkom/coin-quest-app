@@ -91,6 +91,7 @@
         <button class="bigbtn math" onclick="go('math')"><span class="ic">➗</span>חשבון<span class="sub">פתור תרגילים והרווח</span></button>
         <button class="bigbtn rewards" onclick="go('rewards')"><span class="ic">🎁</span>פרסים<span class="sub">החלף מטבעות בפרסים</span></button>
         <button class="bigbtn history" onclick="go('history')"><span class="ic">📜</span>היומן שלי<span class="sub">כל מה שהרווחת</span></button>
+        <button class="bigbtn learn" onclick="go('learn')"><span class="ic">⛏️</span>מכרה הידע<span class="sub">למד והרווח מטבעות</span></button>
       </div>
 
       <div id="eventsWrap"></div>
@@ -194,6 +195,28 @@
       </div>
     </div>
 
+    <div class="view" id="view-learn">
+      <button class="backbtn" onclick="go('home')">→ חזרה</button>
+      <div class="section-title">⛏️ מכרה הידע</div>
+      <div id="learnDisabled" style="display:none;">
+        <div class="empty"><span class="e-ic">😴</span>המכרה נסגר להיום! ⛏️😴<br>חזור מחר לעוד סיבוב.</div>
+      </div>
+      <div id="learnActive" style="display:none;">
+        <div style="text-align:center;font-size:.82rem;color:var(--ink2);margin-bottom:6px;" id="learnProgress">שאלה 1 מתוך 5</div>
+        <div id="learnDots" style="display:flex;justify-content:center;gap:8px;margin-bottom:16px;"></div>
+        <div class="card" style="text-align:center;">
+          <div style="font-size:1.3rem;font-weight:800;margin-bottom:16px;" id="learnQ">—</div>
+          <div id="learnChoices" style="display:flex;flex-direction:column;gap:10px;"></div>
+          <div id="learnTypedWrap" style="display:none;flex-direction:column;gap:10px;">
+            <input type="number" id="learnTypedInput" style="width:100%;text-align:center;font-size:1.4rem;border:2px solid var(--line);border-radius:13px;padding:12px;" placeholder="?">
+            <button class="btn primary" onclick="submitTypedLearningAnswer()">✓ בדוק</button>
+          </div>
+        </div>
+      </div>
+      <div id="learnSummary" style="display:none;"></div>
+      <button class="btn mint" id="learnStartBtn" style="margin-top:14px;" onclick="startLearningSession()">▶️ התחל מפגש למידה</button>
+    </div>
+
     <div class="view" id="view-rewards">
       <button class="backbtn" onclick="go('home')">→ חזרה</button>
       <div class="section-title">🎁 חנות הפרסים</div>
@@ -221,6 +244,7 @@
         <button class="atab" data-atab="actions" onclick="adminTab('actions')">🏆 פעולות</button>
         <button class="atab" data-atab="qr" onclick="adminTab('qr')">🔳 QR</button>
         <button class="atab" data-atab="math" onclick="adminTab('math')">➗ חשבון</button>
+        <button class="atab" data-atab="learn" onclick="adminTab('learn')">⛏️ למידה</button>
         <button class="atab" data-atab="rewards" onclick="adminTab('rewards')">🎁 פרסים</button>
         <button class="atab" data-atab="games" onclick="adminTab('games')">🎮 משחקים</button>
         <button class="atab" data-atab="events" onclick="adminTab('events')">📅 אירועים</button>
@@ -388,6 +412,33 @@
           <div class="card-sub" style="margin-bottom:10px;">💡 הקושי מסתגל אוטומטית: כל ילד מתחיל קל ומטפס עד ל"מספר המקסימלי" לפי ההצלחות שלו. הרמות של הילדים מוצגות למטה.</div>
           <div id="mathLevels" style="margin-bottom:10px;"></div>
           <button class="btn primary" onclick="saveMathConfig()">שמור הגדרות חשבון</button>
+        </div>
+      </div>
+      <div class="admin-pane" id="pane-learn" style="display:none;">
+        <div class="card"><div class="card-h">⛏️ מכרה הידע</div><div class="card-sub">שאלות חשבון, אנגלית ומדעים בעטיפת מיינקראפט — הילד מרוויח מטבעות (ואפשר גם דקות משחק) על תשובות נכונות. הקושי מסתגל אוטומטית לכל ילד ולכל מקצוע.</div></div>
+        <div class="card">
+          <div class="field" style="display:flex;align-items:center;justify-content:space-between;">
+            <label style="margin:0;">הפעל את מכרה הידע</label>
+            <button class="btn sm" id="learnToggle" onclick="toggleLearningEnabled()">פעיל ✓</button>
+          </div>
+          <div class="field"><label>מקצועות</label>
+            <div class="chip-toggle" id="learnSubjChips">
+              <div class="chip on" data-subj="math" onclick="toggleLearningSubject('math')">➗ חשבון</div>
+              <div class="chip on" data-subj="english" onclick="toggleLearningSubject('english')">🔤 אנגלית</div>
+              <div class="chip on" data-subj="science" onclick="toggleLearningSubject('science')">🔬 מדעים</div>
+            </div>
+          </div>
+          <div class="inline-row" style="margin-bottom:12px;">
+            <div class="field"><label>מטבעות לתשובה נכונה</label><input id="learnCoinsPerCorrect" type="number" value="1" min="1"></div>
+            <div class="field"><label>בונוס מפגש מושלם (5/5)</label><input id="learnSessionBonus" type="number" value="2" min="0"></div>
+          </div>
+          <div class="field"><label>תקרת מטבעות יומית מלמידה</label><input id="learnDailyMaxCoins" type="number" value="10" min="1"></div>
+          <div class="inline-row" style="margin-bottom:12px;">
+            <div class="field"><label>דקות משחק על מפגש מושלם (0=כבוי)</label><input id="learnMinutesPerSession" type="number" value="0" min="0"></div>
+            <div class="field"><label>תקרת דקות יומית מלמידה</label><input id="learnDailyMaxMinutes" type="number" value="15" min="0"></div>
+          </div>
+          <div class="card-sub" style="margin-bottom:10px;">💡 כשמופעלות דקות משחק, בסוף מפגש מושלם הילד יוכל לבחור בין בונוס מטבעות לבין דקות משחק ישירות.</div>
+          <button class="btn primary" onclick="saveLearningConfig()">שמור הגדרות למידה</button>
         </div>
       </div>
       <div class="admin-pane" id="pane-rewards" style="display:none;">
@@ -660,6 +711,7 @@
   </div>
 </div>
 <div id="toast"></div>
+<script src="questions.js"></script>
 <script src="app.js"></script>
 </body>
 </html>
