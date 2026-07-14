@@ -490,7 +490,12 @@ function go(v){
   if(v==='home'){
     renderChores(); renderStreakBanner(); renderGameTimeBanner(); renderEventsHome(); renderDayStrip(); renderFirstThen(); renderBadgesBanner();
     if(childUsesSchedule(curChild())){
-      clockInterval=setInterval(()=>{ renderChores(); renderDayStrip(); renderFirstThen(); },45000);
+      clockInterval=setInterval(()=>{
+        renderChores(); renderDayStrip(); renderFirstThen();
+        // Catch the day->night decoration switch across the sleep-time
+        // boundary, same cadence as the schedule refresh above.
+        if(document.querySelector('.app').classList.contains('minecraft-mode')) addMinecraftDecorations();
+      },45000);
     }
   }
   if(v==='scan') startCamera();
@@ -569,19 +574,38 @@ async function selectChild(id){
     removeMinecraftDecorations();
   }
 }
+// Living background instead of static transparent emoji: slow pixel clouds
+// drifting across a sky, a grass/dirt strip along the bottom, and a night
+// palette (dark sky + moon + fixed stars, no drifting) once the child's own
+// configured sleep time hits -- reusing currentPeriodKey()'s existing
+// day/sleep logic rather than re-deriving it. Motion is intentionally very
+// slow (90s/110s per pass) so it reads as ambient, not distracting; it's
+// fully killed by both calm mode and prefers-reduced-motion (see the
+// `body.calm-mode #mc-deco *` rule in styles.css -- the global reduced-motion
+// media query already covers this element via its universal selector).
 function addMinecraftDecorations(){
+  const isNight=currentPeriodKey()==='sleep';
   let deco=document.getElementById('mc-deco');
-  if(!deco){
-    deco=document.createElement('div');
-    deco.id='mc-deco';
-    deco.style.cssText='position:fixed;inset:0;pointer-events:none;z-index:-1;overflow:hidden;';
-    deco.innerHTML=`
-      <div style="position:fixed;right:-8%;top:5%;font-size:4rem;opacity:.08;transform:rotate(-15deg);">🌳🌲🌳</div>
-      <div style="position:fixed;left:-10%;bottom:10%;font-size:3rem;opacity:.06;">🪵🪵🪵<br>🪨🪨🪨</div>
-      <div style="position:fixed;right:-5%;bottom:5%;font-size:2.5rem;opacity:.07;">⛏️⛏️</div>
-    `;
-    document.body.appendChild(deco);
-  }
+  if(deco && deco.dataset.night===String(isNight)) return; // already correct, don't restart animations
+  if(deco) deco.remove();
+  deco=document.createElement('div');
+  deco.id='mc-deco';
+  deco.dataset.night=String(isNight);
+  // Absolutely positioned INSIDE .app (not document.body): .app itself has
+  // an opaque !important sky background in minecraft-mode and is full-width
+  // on a phone screen, so a body-level layer behind it would never be
+  // visible on the actual target device. Prepended as .app's first child so
+  // later siblings (topbar/main/bottomnav, none of which set z-index) paint
+  // over it purely by source order -- no z-index juggling needed.
+  deco.style.cssText='position:absolute;inset:0;pointer-events:none;overflow:hidden;transition:background 1.5s;background:'
+    +(isNight?'linear-gradient(180deg,#0B1130,#1B2550)':'linear-gradient(180deg,#87CEEB,#E0F6FF)')+';';
+  const cloud=(top,scale,dur,delay)=>`<div class="mc-cloud" style="top:${top}%;animation-duration:${dur}s;animation-delay:${delay}s;transform:scale(${scale});"></div>`;
+  const star=(l,t)=>`<div class="mc-star" style="left:${l}%;top:${t}%;"></div>`;
+  deco.innerHTML = isNight
+    ? `<div class="mc-moon"></div>`+Array.from({length:18},(_, i)=>star((i*53.7)%100,(i*29.3)%60)).join('')+`<div class="mc-ground"></div>`
+    : cloud(8,1,95,0)+cloud(18,.7,120,-30)+cloud(30,.85,110,-60)+`<div class="mc-ground"></div>`;
+  const app=document.querySelector('.app');
+  app.insertBefore(deco,app.firstChild);
 }
 function removeMinecraftDecorations(){
   const deco=document.getElementById('mc-deco');
@@ -798,6 +822,34 @@ function initLearningView(){
   document.getElementById('learnDisabled').style.display=capped?'':'none';
   document.getElementById('learnDisabled').innerHTML='<div class="empty"><span class="e-ic">😴</span>המכרה נסגר להיום! ⛏️😴<br>חזור מחר לעוד סיבוב.</div>';
   document.getElementById('learnStartBtn').style.display=capped?'none':'';
+  renderLearnToolBar();
+}
+// Purely cosmetic progression (DESIGN-IMPROVEMENTS.md V7) -- driven by total
+// correct answers across all subjects ever, never affects coins/minutes.
+const LEARN_TOOLS=[
+  {min:0,   emoji:'🪵',label:'מכוש עץ'},
+  {min:25,  emoji:'🪨',label:'מכוש אבן'},
+  {min:75,  emoji:'⚙️',label:'מכוש ברזל'},
+  {min:150, emoji:'✨',label:'מכוש זהב'},
+  {min:300, emoji:'💎',label:'מכוש יהלום'},
+];
+function currentTool(k){
+  const total=Object.values((k&&k.learn&&k.learn.correctTotal)||{}).reduce((a,b)=>a+b,0);
+  let idx=0;
+  for(let i=0;i<LEARN_TOOLS.length;i++) if(total>=LEARN_TOOLS[i].min) idx=i;
+  const cur=LEARN_TOOLS[idx], next=LEARN_TOOLS[idx+1];
+  return {total,cur,next};
+}
+function renderLearnToolBar(){
+  const el=document.getElementById('learnToolBar'); if(!el) return;
+  const k=cur(); if(!k){ el.innerHTML=''; return; }
+  const {total,cur:tool,next}=currentTool(k);
+  if(!next){
+    el.innerHTML=`<span class="tb-ic">${tool.emoji}</span><div class="tb-info"><div class="tb-lbl">${tool.label} — הכלי הכי טוב!</div><div class="tb-next">${total} תשובות נכונות בסה״כ</div></div>`;
+    return;
+  }
+  const span=next.min-tool.min, pct=Math.min(100,Math.round((total-tool.min)/span*100));
+  el.innerHTML=`<span class="tb-ic">${tool.emoji}</span><div class="tb-info"><div class="tb-lbl">${tool.label}</div><div class="tb-bar"><div class="tb-fill" style="width:${pct}%"></div></div><div class="tb-next">עוד ${next.min-total} תשובות נכונות ל${next.label} ${next.emoji}</div></div>`;
 }
 
 function subjectQuestionPool(subj){
@@ -1006,15 +1058,18 @@ function finishLearningSession(){
 function renderLearningSummaryFinal(s,bonusCoins,bonusMinutes){
   const k=cur();
   const summary=document.getElementById('learnSummary');
+  const {cur:tool}=currentTool(k);
   summary.innerHTML=`<div style="text-align:center;">
     <div style="font-size:2.6rem;">${s.correctCount===s.questions.length?'🏆':'⛏️'}</div>
     <h3>ענית נכון על ${s.correctCount} מתוך ${s.questions.length}!</h3>
     <p>הרווחת ${s.correctCount+bonusCoins} 🪙${bonusMinutes?' ו-'+bonusMinutes+' דקות משחק 🎮':''}</p>
+    <p style="font-size:.85rem;color:var(--ink2);">${tool.emoji} הכלי שלך: ${tool.label}</p>
     ${k.learn.earnedToday.coins<state.learning.dailyMaxCoins
       ? '<button class="btn primary" onclick="startLearningSession()">עוד סיבוב! ⛏️</button>'
       : '<div class="empty"><span class="e-ic">😴</span>המכרה נסגר להיום — חזור מחר!</div>'}
     <button class="btn ghost" onclick="go(\'home\')">חזרה הביתה</button>
   </div>`;
+  renderLearnToolBar();
 }
 // Reached only from the perfect-session choice screen above (session/idx
 // state is already gone by then) — needs its own small closure over the
@@ -2775,7 +2830,13 @@ async function calmFinish(after){
 }
 function closeCalmBreak(){ calmFinish(null); }
 document.getElementById('breakBtn').onclick=openCalmBreak;
-function applyCalmModeClass(){ document.querySelector('.app').classList.toggle('calm-mode',!!state.calmMode); }
+function applyCalmModeClass(){
+  document.querySelector('.app').classList.toggle('calm-mode',!!state.calmMode);
+  // #mc-deco lives outside .app (a fixed full-viewport background layer), so
+  // `.app.calm-mode` selectors can't reach it -- mirror the flag onto body
+  // too, purely so styles.css can freeze its cloud-drift animation.
+  document.body.classList.toggle('calm-mode',!!state.calmMode);
+}
 async function toggleCalmMode(){
   state.calmMode=!state.calmMode;
   await DB.set('cs_calm',state.calmMode);

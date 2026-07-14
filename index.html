@@ -198,23 +198,29 @@
     <div class="view" id="view-learn">
       <button class="backbtn" onclick="go('home')">→ חזרה</button>
       <div class="section-title">⛏️ מכרה הידע</div>
-      <div id="learnDisabled" style="display:none;">
-        <div class="empty"><span class="e-ic">😴</span>המכרה נסגר להיום! ⛏️😴<br>חזור מחר לעוד סיבוב.</div>
-      </div>
-      <div id="learnActive" style="display:none;">
-        <div style="text-align:center;font-size:.82rem;color:var(--ink2);margin-bottom:6px;" id="learnProgress">שאלה 1 מתוך 5</div>
-        <div id="learnDots" style="display:flex;justify-content:center;gap:8px;margin-bottom:16px;"></div>
-        <div class="card" style="text-align:center;">
-          <div style="font-size:1.3rem;font-weight:800;margin-bottom:16px;" id="learnQ">—</div>
-          <div id="learnChoices" style="display:flex;flex-direction:column;gap:10px;"></div>
-          <div id="learnTypedWrap" style="display:none;flex-direction:column;gap:10px;">
-            <input type="number" id="learnTypedInput" style="width:100%;text-align:center;font-size:1.4rem;border:2px solid var(--line);border-radius:13px;padding:12px;" placeholder="?">
-            <button class="btn primary" onclick="submitTypedLearningAnswer()">✓ בדוק</button>
+      <div class="mine-bg">
+        <div class="mine-gem" style="top:20%;left:12%;"></div>
+        <div class="mine-gem" style="top:55%;left:80%;"></div>
+        <div class="mine-gem" style="top:75%;left:20%;"></div>
+        <div id="learnToolBar" class="tool-bar"></div>
+        <div id="learnDisabled" style="display:none;">
+          <div class="empty"><span class="e-ic">😴</span>המכרה נסגר להיום! ⛏️😴<br>חזור מחר לעוד סיבוב.</div>
+        </div>
+        <div id="learnActive" style="display:none;">
+          <div style="text-align:center;font-size:.82rem;color:var(--ink2);margin-bottom:6px;" id="learnProgress">שאלה 1 מתוך 5</div>
+          <div id="learnDots" style="display:flex;justify-content:center;gap:8px;margin-bottom:16px;"></div>
+          <div class="card" style="text-align:center;">
+            <div style="font-size:1.3rem;font-weight:800;margin-bottom:16px;" id="learnQ">—</div>
+            <div id="learnChoices" style="display:flex;flex-direction:column;gap:10px;"></div>
+            <div id="learnTypedWrap" style="display:none;flex-direction:column;gap:10px;">
+              <input type="number" id="learnTypedInput" style="width:100%;text-align:center;font-size:1.4rem;border:2px solid var(--line);border-radius:13px;padding:12px;" placeholder="?">
+              <button class="btn primary" onclick="submitTypedLearningAnswer()">✓ בדוק</button>
+            </div>
           </div>
         </div>
+        <div id="learnSummary" style="display:none;"></div>
+        <button class="btn mint" id="learnStartBtn" style="margin-top:14px;" onclick="startLearningSession()">▶️ התחל מפגש למידה</button>
       </div>
-      <div id="learnSummary" style="display:none;"></div>
-      <button class="btn mint" id="learnStartBtn" style="margin-top:14px;" onclick="startLearningSession()">▶️ התחל מפגש למידה</button>
     </div>
 
     <div class="view" id="view-rewards">
