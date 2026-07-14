@@ -87,6 +87,11 @@ const DEFAULT_CHILDREN=[
 // original hardcoded behavior (schedule shown only for 'ariel') so upgrading
 // doesn't silently change anyone's home screen until the parent opts in.
 function childUsesSchedule(ch){ return ch?.useSchedule??(ch?.id==='ariel'); }
+// Same "field may not exist on old saved data" fallback pattern as
+// childUsesSchedule() above -- children saved before themes existed get the
+// original hardcoded look (minecraft for ariel, unicorn for noa, none for
+// anyone else/a newly added child) so nobody's screen silently changes.
+function childTheme(ch){ return ch?.theme??(ch?.id==='ariel'?'minecraft':ch?.id==='noa'?'unicorn':'none'); }
 const DEFAULT_CHORES=[
   {id:'chore_teeth', label:'צחצוח שיניים', emoji:'🦷', points:5, max:2},
   {id:'chore_toilet', label:'לשבת בשירותים', emoji:'🚽', points:3, max:6},
@@ -457,7 +462,22 @@ async function addPoints(n,label,type,srcEl){
 /* ===== NAV ===== */
 let currentView='picker';
 let clockInterval=null;
+// The splash screen (index.html) is rendered straight from HTML before any
+// JS runs, covering the async detectBackend/loadState/auth bootstrap. The
+// very first real navigation is the right moment to remove it -- by then
+// SOME view is genuinely ready to show, whichever branch of the bootstrap
+// got there (welcome, picker, or straight to a child's home). A hard
+// setTimeout fallback in index.html itself covers the case where startup
+// throws before go() is ever reached.
+let _splashHidden=false;
+function hideSplash(){
+  if(_splashHidden) return; _splashHidden=true;
+  const s=document.getElementById('splash'); if(!s) return;
+  s.style.opacity='0';
+  setTimeout(()=>s.remove(),300);
+}
 function go(v){
+  hideSplash();
   if(currentView==='scan' && v!=='scan') stopCamera();
   if((v!=='picker'&&v!=='admin'&&v!=='welcome') && !cur()){ v='picker'; }
   currentView=v;
@@ -494,7 +514,7 @@ function go(v){
         renderChores(); renderDayStrip(); renderFirstThen();
         // Catch the day->night decoration switch across the sleep-time
         // boundary, same cadence as the schedule refresh above.
-        if(document.querySelector('.app').classList.contains('minecraft-mode')) addMinecraftDecorations();
+        if(document.querySelector('.app').classList.contains('minecraft-mode')) addThemeDecorations('minecraft');
       },45000);
     }
   }
@@ -564,51 +584,74 @@ function renderPicker(){
 async function selectChild(id){
   state.current=id; await DB.set('cs_current',id);
   await loadKid(id); renderBalance(); go('home');
-  // Apply Minecraft theme if Ariel is selected
-  const app=document.querySelector('.app');
-  if(id==='ariel'){
-    app.classList.add('minecraft-mode');
-    addMinecraftDecorations();
-  }else{
-    app.classList.remove('minecraft-mode');
-    removeMinecraftDecorations();
-  }
+  applyChildTheme(id);
 }
-// Living background instead of static transparent emoji: slow pixel clouds
-// drifting across a sky, a grass/dirt strip along the bottom, and a night
-// palette (dark sky + moon + fixed stars, no drifting) once the child's own
-// configured sleep time hits -- reusing currentPeriodKey()'s existing
-// day/sleep logic rather than re-deriving it. Motion is intentionally very
-// slow (90s/110s per pass) so it reads as ambient, not distracting; it's
-// fully killed by both calm mode and prefers-reduced-motion (see the
-// `body.calm-mode #mc-deco *` rule in styles.css -- the global reduced-motion
-// media query already covers this element via its universal selector).
-function addMinecraftDecorations(){
-  const isNight=currentPeriodKey()==='sleep';
-  let deco=document.getElementById('mc-deco');
-  if(deco && deco.dataset.night===String(isNight)) return; // already correct, don't restart animations
+// Generalized per-child visual theme (V6): each child can have their own
+// world instead of only Ariel getting one. `theme` is looked up via
+// childTheme() (falls back to the original hardcoded ariel=minecraft/
+// noa=unicorn/other=none for children saved before this field existed).
+// Kept as one dispatcher so every call site (selectChild, child deletion,
+// sign-in restore, cold-start restore) goes through the same logic instead
+// of five copies of an if/else.
+function applyChildTheme(id){
+  const app=document.querySelector('.app');
+  const ch=state.children.find(c=>c.id===id);
+  const theme=childTheme(ch);
+  app.classList.toggle('minecraft-mode',theme==='minecraft');
+  app.classList.toggle('unicorn-mode',theme==='unicorn');
+  if(theme==='none'){ removeThemeDecorations(); return; }
+  addThemeDecorations(theme);
+}
+// Living background instead of a static image/nothing: for minecraft-mode,
+// slow pixel clouds drifting across a sky, a grass/dirt strip along the
+// bottom, and a night palette (dark sky + moon + fixed stars, no drifting)
+// once the child's own configured sleep time hits -- reusing
+// currentPeriodKey()'s existing day/sleep logic rather than re-deriving it.
+// unicorn-mode gets a lighter pastel-cloud/twinkling-star version, no night
+// palette (kept simple -- see DESIGN-IMPROVEMENTS.md V6). Motion is
+// intentionally very slow (90-120s per pass) so it reads as ambient, not
+// distracting; it's fully killed by both calm mode and prefers-reduced-motion
+// (see the `body.calm-mode #theme-deco *` rule in styles.css -- the global
+// reduced-motion media query already covers this element via its universal
+// selector).
+function addThemeDecorations(theme){
+  const isNight=theme==='minecraft'&&currentPeriodKey()==='sleep';
+  let deco=document.getElementById('theme-deco');
+  if(deco && deco.dataset.theme===theme && deco.dataset.night===String(isNight)) return; // already correct, don't restart animations
   if(deco) deco.remove();
   deco=document.createElement('div');
-  deco.id='mc-deco';
+  deco.id='theme-deco';
+  deco.dataset.theme=theme;
   deco.dataset.night=String(isNight);
   // Absolutely positioned INSIDE .app (not document.body): .app itself has
-  // an opaque !important sky background in minecraft-mode and is full-width
-  // on a phone screen, so a body-level layer behind it would never be
-  // visible on the actual target device. Prepended as .app's first child so
-  // later siblings (topbar/main/bottomnav, none of which set z-index) paint
-  // over it purely by source order -- no z-index juggling needed.
-  deco.style.cssText='position:absolute;inset:0;pointer-events:none;overflow:hidden;transition:background 1.5s;background:'
-    +(isNight?'linear-gradient(180deg,#0B1130,#1B2550)':'linear-gradient(180deg,#87CEEB,#E0F6FF)')+';';
-  const cloud=(top,scale,dur,delay)=>`<div class="mc-cloud" style="top:${top}%;animation-duration:${dur}s;animation-delay:${delay}s;transform:scale(${scale});"></div>`;
-  const star=(l,t)=>`<div class="mc-star" style="left:${l}%;top:${t}%;"></div>`;
-  deco.innerHTML = isNight
-    ? `<div class="mc-moon"></div>`+Array.from({length:18},(_, i)=>star((i*53.7)%100,(i*29.3)%60)).join('')+`<div class="mc-ground"></div>`
-    : cloud(8,1,95,0)+cloud(18,.7,120,-30)+cloud(30,.85,110,-60)+`<div class="mc-ground"></div>`;
+  // an opaque !important background in theme mode and is full-width on a
+  // phone screen, so a body-level layer behind it would never be visible on
+  // the actual target device. Prepended as .app's first child so later
+  // siblings (topbar/main/bottomnav, none of which set z-index) paint over it
+  // purely by source order -- no z-index juggling needed.
+  deco.style.cssText='position:absolute;inset:0;pointer-events:none;overflow:hidden;transition:background 1.5s;background:'+themeBgFor(theme,isNight)+';';
+  if(theme==='minecraft'){
+    const cloud=(top,scale,dur,delay)=>`<div class="mc-cloud" style="top:${top}%;animation-duration:${dur}s;animation-delay:${delay}s;transform:scale(${scale});"></div>`;
+    const star=(l,t)=>`<div class="mc-star" style="left:${l}%;top:${t}%;"></div>`;
+    deco.innerHTML = isNight
+      ? `<div class="mc-moon"></div>`+Array.from({length:18},(_, i)=>star((i*53.7)%100,(i*29.3)%60)).join('')+`<div class="mc-ground"></div>`
+      : cloud(8,1,95,0)+cloud(18,.7,120,-30)+cloud(30,.85,110,-60)+`<div class="mc-ground"></div>`;
+  }else if(theme==='unicorn'){
+    const cloud=(top,scale,dur,delay)=>`<div class="uni-cloud" style="top:${top}%;animation-duration:${dur}s;animation-delay:${delay}s;transform:scale(${scale});"></div>`;
+    const star=(l,t,d)=>`<div class="uni-star" style="left:${l}%;top:${t}%;animation-delay:${d}s;">${d%2?'✨':'⭐'}</div>`;
+    deco.innerHTML = cloud(10,1,100,0)+cloud(22,.75,125,-40)+cloud(34,.9,115,-70)
+      +Array.from({length:10},(_, i)=>star((i*37.3)%100,(i*17.7)%50,i)).join('');
+  }
   const app=document.querySelector('.app');
   app.insertBefore(deco,app.firstChild);
 }
-function removeMinecraftDecorations(){
-  const deco=document.getElementById('mc-deco');
+function themeBgFor(theme,isNight){
+  if(theme==='minecraft') return isNight?'linear-gradient(180deg,#0B1130,#1B2550)':'linear-gradient(180deg,#87CEEB,#E0F6FF)';
+  if(theme==='unicorn') return 'linear-gradient(180deg,#FFE3F3,#F3E9FF)';
+  return 'transparent';
+}
+function removeThemeDecorations(){
+  const deco=document.getElementById('theme-deco');
   if(deco) deco.remove();
 }
 
@@ -1816,9 +1859,16 @@ async function addChild(){
 function editChild(id){
   const ch=state.children.find(c=>c.id===id);
   const usesSchedule=childUsesSchedule(ch);
+  const theme=childTheme(ch);
+  const themeOpt=(v,label)=>`<option value="${v}" ${theme===v?'selected':''}>${label}</option>`;
   modalContent.innerHTML=`<div class="m-emoji">${ch.emoji}</div><h3>עריכת ${esc(ch.name)}</h3>
     <div class="field" style="text-align:right;"><label>שם</label><input id="ecName" value="${esc(ch.name)}" style="width:100%;border:2px solid var(--line);border-radius:13px;padding:11px;font-family:inherit;"></div>
     <div class="field" style="text-align:right;"><label>אימוג'י</label><input id="ecEmoji" value="${ch.emoji}" maxlength="2" style="width:100%;border:2px solid var(--line);border-radius:13px;padding:11px;font-family:inherit;"></div>
+    <div class="field" style="text-align:right;"><label>🎨 העולם שלו/ה באפליקציה</label>
+      <select id="ecTheme" style="width:100%;border:2px solid var(--line);border-radius:13px;padding:11px;font-family:inherit;">
+        ${themeOpt('none','ללא (ברירת מחדל)')}${themeOpt('minecraft','⛏️ מיינקראפט')}${themeOpt('unicorn','🦄 חד-קרן')}
+      </select>
+    </div>
     <div class="field" style="display:flex;align-items:center;justify-content:space-between;">
       <label style="margin:0;">🕐 לוח יום ויזואלי (קודם→אחר כך)</label>
       <button class="btn sm ${usesSchedule?'mint':'ghost'}" id="ecSchedule" type="button">${usesSchedule?'פעיל ✓':'כבוי'}</button>
@@ -1835,8 +1885,9 @@ function editChild(id){
     ch.name=document.getElementById('ecName').value.trim()||ch.name;
     ch.emoji=document.getElementById('ecEmoji').value.trim()||ch.emoji;
     ch.useSchedule=scheduleOn;
+    ch.theme=document.getElementById('ecTheme').value;
     await DB.set('cs_children',state.children);
-    if(id===state.current){ renderBalance(); renderDayStrip(); renderFirstThen(); renderChores(); }
+    if(id===state.current){ renderBalance(); renderDayStrip(); renderFirstThen(); renderChores(); applyChildTheme(id); }
     closeModal(); renderChildrenAdmin(); toast('נשמר ✓');
   };
 }
@@ -1870,12 +1921,13 @@ async function adminDelChild(id){
     }
     delete state.kid[id];
     if(state.current===id){ state.current=null; await DB.set('cs_current',null); }
-    // The Minecraft theme/decorations are only ever removed by selectChild()'s
-    // else-branch — deleting the active Ariel profile bypassed that entirely
-    // and left the theme visually stuck on for whoever's picked next.
-    if(id==='ariel'){
-      document.querySelector('.app').classList.remove('minecraft-mode');
-      removeMinecraftDecorations();
+    // The per-child theme/decorations are only ever removed by
+    // applyChildTheme()'s no-theme branch — deleting the currently active
+    // child profile bypassed that entirely and left the theme visually stuck
+    // on for whoever's picked next.
+    if(state.current===null){
+      document.querySelector('.app').classList.remove('minecraft-mode','unicorn-mode');
+      removeThemeDecorations();
     }
     // Each streak challenge is assigned to one child via childId. Deleting
     // that child would otherwise leave childId pointing at a ghost id: the
@@ -3642,8 +3694,7 @@ async function handleSignedInUser(user){
       showSyncStatus('✅ מחובר כ-'+(user.email||''),'var(--mint)');
       if(state.current&&state.children.find(c=>c.id===state.current)){
         await loadKid(state.current); renderBalance(); go('home');
-        const app=document.querySelector('.app');
-        if(state.current==='ariel'){ app.classList.add('minecraft-mode'); addMinecraftDecorations(); }
+        applyChildTheme(state.current);
       }else{ state.current=null; go('picker'); }
     }else{
       authStep('');
@@ -3991,11 +4042,10 @@ function closeEventReminder(){
 
 /* ===== INIT ===== */
 function goHomeOrPicker(){
-  const app=document.querySelector('.app');
   if(state.current&&state.children.find(c=>c.id===state.current)){
     loadKid(state.current).then(()=>{
       renderBalance(); go('home');
-      if(state.current==='ariel'){ app.classList.add('minecraft-mode'); addMinecraftDecorations(); }
+      applyChildTheme(state.current);
     });
   }else{ state.current=null; go('picker'); }
 }

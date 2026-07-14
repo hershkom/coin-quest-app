@@ -29,6 +29,18 @@
   // Locally (no deploy step ran) the placeholder never gets substituted.
   (function(){ var t=document.getElementById('appVersionTag'); if(t&&t.textContent.includes('%%')) t.textContent='v-dev'; })();
 </script>
+<!-- Splash (V10): rendered straight from HTML, before any JS runs, so the
+     child never sees a blank white page during the async auth/state-load
+     bootstrap in app.js. Hidden by the first go() call (see hideSplash() in
+     app.js) with a hard 4s timeout fallback below in case startup itself
+     throws before ever reaching a go() call. -->
+<div id="splash" style="position:fixed;inset:0;z-index:400;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;background:linear-gradient(160deg,#EEF0FF 0%,#FBEEFF 50%,#E8FBFF 100%);transition:opacity .25s;">
+  <div class="picker-logo" style="margin:0;">🪙</div>
+  <div style="font-weight:800;font-size:1.2rem;color:#2A2440;">כספת המטבעות</div>
+</div>
+<script>
+  setTimeout(function(){ var s=document.getElementById('splash'); if(s) s.remove(); },4000);
+</script>
 <div class="app">
   <div class="topbar">
     <button class="profile-switch" id="profileSwitch" onclick="go('picker')">
