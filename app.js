@@ -116,7 +116,8 @@ const DEFAULT_LEARNING={enabled:true,
   subjects:{math:true,english:true,science:true},
   coinsPerCorrect:1, sessionBonus:2, dailyMaxCoins:10,
   minutesPerSession:0, dailyMaxMinutes:15, // 0 = game-time reward option off
-  gateEnabled:false, customQuestions:[]};
+  gateEnabled:false, customQuestions:[],
+  readAloud:true}; // default ON: the target child reads Hebrew/English poorly
 // Default games must be frame-embeddable (no X-Frame-Options/frame-ancestors
 // blocking). The primary game is SELF-HOSTED (games/classicube/ — the
 // open-source ClassiCube webclient launched straight into singleplayer):
@@ -317,7 +318,7 @@ async function loadKid(id){
   state.kid[id]={
     balance:  (await DB.get('cs_bal_'+id))  ??0,
     history:  (await DB.get('cs_hist_'+id)) ??[],
-    daily:    (await DB.get('cs_daily_'+id))??{date:'',counts:{}},
+    daily:    (await DB.get('cs_daily_'+id))??{date:'',counts:{},lastMark:{}},
     mathDaily:(await DB.get('cs_mathd_'+id))??{date:'',done:0},
     badges:   (await DB.get('cs_badges_'+id))??[],
     mathTotal:(await DB.get('cs_matht_'+id)) ??0,
@@ -335,7 +336,11 @@ function curChild(){ return state.children.find(c=>c.id===state.current); }
 function todayStr(){ const d=new Date(); return d.getFullYear()+'-'+(d.getMonth()+1)+'-'+d.getDate(); }
 function ensureTodayKid(id){
   const t=effectiveToday(), k=state.kid[id]; if(!k) return;
-  if(k.daily.date!==t){ k.daily={date:t,counts:{}}; DB.set('cs_daily_'+id,k.daily); }
+  if(k.daily.date!==t){ k.daily={date:t,counts:{},lastMark:{}}; DB.set('cs_daily_'+id,k.daily); }
+  // Devices/cloud data saved before the per-chore cooldown existed have
+  // `daily` without `lastMark` -- patch it in-place rather than replacing
+  // `daily` wholesale, which would wipe today's already-earned counts.
+  if(!k.daily.lastMark||typeof k.daily.lastMark!=='object') k.daily.lastMark={};
   if(k.mathDaily.date!==t){ k.mathDaily={date:t,done:0}; DB.set('cs_mathd_'+id,k.mathDaily); }
   if(k.learn && k.learn.earnedToday.date!==t){ k.learn.earnedToday={date:t,coins:0,minutes:0,sessions:0}; DB.set('cs_learn_'+id,k.learn); }
 }
@@ -478,6 +483,7 @@ function hideSplash(){
 }
 function go(v){
   hideSplash();
+  stopSpeaking();
   if(currentView==='scan' && v!=='scan') stopCamera();
   if((v!=='picker'&&v!=='admin'&&v!=='welcome') && !cur()){ v='picker'; }
   currentView=v;
@@ -931,6 +937,88 @@ function pickSessionQuestions(){
 }
 function shuffleArr(a){ for(let i=a.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [a[i],a[j]]=[a[j],a[i]]; } return a; }
 
+/* ---- read-aloud (TTS) for learning questions/answers ----
+   The target child can't read Hebrew fluently and can't read English at all,
+   so a quiz that's just text on screen is unusable to them without a parent
+   narrating every question by hand. This speaks the question (word-by-word
+   highlighted, via the SpeechSynthesisUtterance `boundary` event) and then
+   each answer choice in turn (whole-button highlight, English words spoken
+   with an English voice so they're pronounced correctly instead of read as
+   Hebrew). Purely an accessibility aid: never touches scoring/crediting. */
+const TTS_SUPPORTED=typeof window!=='undefined'&&'speechSynthesis' in window;
+function ttsEnabled(){ return TTS_SUPPORTED && state.learning.readAloud!==false; }
+// Bumped by stopSpeaking() and by every new speakWithHighlight() call. A
+// cancelled/interrupted utterance's `error` event still fires and would
+// otherwise call finish()->onEnd, which for the question->choices chain
+// means "answer clicked mid-narration" kept right on talking (cancel()
+// doesn't stop a chain, only the current utterance) -- verified live: after
+// calling stopSpeaking(), speechSynthesis.speaking was still true because the
+// interrupted utterance's onerror advanced to the next queued step. Each
+// call captures the generation at its own start; finish() only invokes onEnd
+// if nothing newer (another stopSpeaking() or speak) has superseded it.
+let _ttsGen=0;
+function stopSpeaking(){ _ttsGen++; if(TTS_SUPPORTED){ try{ speechSynthesis.cancel(); }catch(e){} } }
+function isLatinText(s){ return /^[A-Za-z]/.test((s||'').trim()); }
+// Speaks `text` while highlighting the word currently being said inside
+// `el` (replaces el's content with one <span> per word). Calls onEnd exactly
+// once, always -- including when TTS isn't supported/enabled, when the
+// browser has no installed voice for the language (utterance fires `error`
+// instead of ever completing), or when `boundary`/`end` events simply never
+// arrive (a real cross-browser gap, not hypothetical) -- via a duration-based
+// safety-net timeout, same belt-and-suspenders pattern as coinFly()/coinBurst().
+function speakWithHighlight(text,el,lang,onEnd){
+  const myGen=++_ttsGen;
+  const words=[]; const re=/\S+/g; let m;
+  while((m=re.exec(text))) words.push({start:m.index,end:m.index+m[0].length,text:m[0]});
+  if(el) el.innerHTML=words.map((w,i)=>`<span class="tts-word" data-i="${i}">${esc(w.text)}</span>`).join(' ');
+  let done=false;
+  const finish=()=>{
+    if(done) return; done=true;
+    if(el) el.querySelectorAll('.tts-word').forEach(s=>s.classList.remove('reading'));
+    if(myGen!==_ttsGen) return; // superseded by a stopSpeaking()/newer speak -- don't continue the chain
+    onEnd&&onEnd();
+  };
+  if(!ttsEnabled()){ finish(); return; }
+  try{
+    const utter=new SpeechSynthesisUtterance(text);
+    utter.lang=lang||'he-IL'; utter.rate=0.9;
+    utter.onboundary=(ev)=>{
+      if(done||!el||myGen!==_ttsGen) return;
+      if(ev.name&&ev.name!=='word') return;
+      let idx=words.findIndex(w=>ev.charIndex>=w.start&&ev.charIndex<w.end);
+      if(idx<0) idx=words.reduce((best,w,i)=>w.start<=ev.charIndex?i:best,-1);
+      const spans=el.querySelectorAll('.tts-word');
+      spans.forEach(s=>s.classList.remove('reading'));
+      if(idx>=0&&spans[idx]) spans[idx].classList.add('reading');
+    };
+    utter.onend=finish; utter.onerror=finish;
+    speechSynthesis.speak(utter);
+    // ~110ms/word at rate 0.9 is a generous overestimate; +1.5s margin covers
+    // startup latency. If the real speech finishes first, finish() already
+    // ran and this is a no-op (the `done` guard).
+    setTimeout(finish,Math.max(1500,words.length*650));
+  }catch(e){ finish(); }
+}
+// Reads the question (word-highlighted in `qEl`), then each answer button in
+// `choiceEls` in turn (English words get an English voice via isLatinText so
+// they're not mispronounced as Hebrew). No-op chain if TTS is off/unsupported
+// -- callers don't need to branch on that themselves.
+function speakQuestionThenChoices(qText,qEl,choiceEls){
+  stopSpeaking();
+  speakWithHighlight(qText,qEl,'he-IL',()=>{
+    const speakOne=(i)=>{
+      if(i>=choiceEls.length) return;
+      const btn=choiceEls[i];
+      btn.classList.add('tts-speaking');
+      speakWithHighlight(btn.textContent,null,isLatinText(btn.textContent)?'en-US':'he-IL',()=>{
+        btn.classList.remove('tts-speaking');
+        speakOne(i+1);
+      });
+    };
+    speakOne(0);
+  });
+}
+
 function startLearningSession(){
   const k=cur(); if(!k||!state.learning.enabled) return;
   if(k.learn.earnedToday.coins>=state.learning.dailyMaxCoins){
@@ -965,23 +1053,32 @@ function renderLearningQuestion(){
     d.className='learn-dot'+(i<s.idx?' done':i===s.idx?' active':'');
     dots.appendChild(d);
   });
-  document.getElementById('learnQ').textContent=q.q;
+  const qEl=document.getElementById('learnQ');
+  qEl.textContent=q.q;
   const choicesWrap=document.getElementById('learnChoices');
   choicesWrap.innerHTML='';
   document.getElementById('learnTypedWrap').style.display=q.type==='typed-number'?'':'none';
+  let choiceEls=[];
   if(q.type==='typed-number'){
     const inp=document.getElementById('learnTypedInput'); inp.value=''; inp.disabled=false;
     choicesWrap.style.display='none';
   }else{
     choicesWrap.style.display='';
     const choices=shuffleArr([...q.choices]);
-    choices.forEach(c=>{
+    choiceEls=choices.map(c=>{
       const btn=document.createElement('button');
       btn.className='learn-choice-btn'; btn.textContent=c;
       btn.onclick=()=>answerLearningQuestion(q,c,btn);
       choicesWrap.appendChild(btn);
+      return btn;
     });
   }
+  if(ttsEnabled()) speakQuestionThenChoices(q.q,qEl,choiceEls);
+}
+function replayLearningQuestionAudio(){
+  const s=learnSession; if(!s) return;
+  const q=s.questions[s.idx];
+  speakQuestionThenChoices(q.q,document.getElementById('learnQ'),[...document.querySelectorAll('#learnChoices .learn-choice-btn')]);
 }
 function submitTypedLearningAnswer(){
   const s=learnSession; if(!s) return;
@@ -999,6 +1096,7 @@ function submitTypedLearningAnswer(){
 // on learnSession existing — only the session-specific bits (correctCount,
 // auto-advance to the next question) are skipped when there's no session.
 function answerLearningQuestion(q,given,btnEl){
+  stopSpeaking(); // the child answered -- cut off any in-progress narration
   const s=learnSession; // may be null (gate-mode call) — guarded below
   const k=cur();
   const correct=String(given).trim()===String(q.answer).trim();
@@ -1225,13 +1323,24 @@ function renderFirstThen(){
   </div>`;
 }
 
+// Minimum real-world gap between two marks of the SAME chore: without this,
+// the only guard was a pure daily COUNT (`used>=ch.max`), which is time-blind
+// -- a child could tap "brushed teeth" twice in the same second and bank the
+// full day's points for a task never actually done. This doesn't require any
+// new admin config: it's a floor under every chore's existing max, not a
+// per-chore setting. Not meant to defeat a determined child waiting a minute
+// between fake taps (no UI checkbox can prove real-world behavior) -- it's a
+// friction floor against the specific "mark everything in 3 seconds" exploit.
+const CHORE_MIN_GAP_MS=60000;
 function markChore(id,btnEl){
   const ch=findTaskById(id); if(!ch) return;
   if(!taskForChild(ch,state.current)) return; // not this child's task
   const k=cur(); ensureTodayKid(state.current);
   const used=k.daily.counts[id]||0;
   if(used>=ch.max) return;
-  k.daily.counts[id]=used+1; DB.set('cs_daily_'+state.current,k.daily);
+  const lastMark=k.daily.lastMark[id]||0;
+  if(Date.now()-lastMark<CHORE_MIN_GAP_MS){ toast('רגע קטן... 🙂 אפשר לסמן שוב עוד דקה'); return; }
+  k.daily.counts[id]=used+1; k.daily.lastMark[id]=Date.now(); DB.set('cs_daily_'+state.current,k.daily);
   k.taskTotal=(k.taskTotal||0)+1; DB.set('cs_taskt_'+state.current,k.taskTotal);
   addPoints(ch.points, ch.label, 'chore', btnEl);
   renderChores(); renderFirstThen(); renderDayStrip();
@@ -1418,10 +1527,17 @@ function renderGateQuestion(){
     : shuffleArr([...q.choices]).map(c=>`<button class="learn-choice-btn" onclick="answerGateQuestion(${JSON.stringify(c)})">${esc(c)}</button>`).join('');
   modalContent.innerHTML=`<div style="text-align:center;">
     <div style="font-size:.8rem;color:var(--ink2);margin-bottom:6px;">⛏️ חימום מוח (${s.idx+1}/${s.questions.length})</div>
-    <h3 style="margin-top:0;">${esc(q.q)}</h3>
-    <div style="display:flex;flex-direction:column;gap:8px;">${choicesHtml}</div>
+    <button class="tts-replay-btn" onclick="replayGateQuestionAudio()" title="הקרא שוב">🔊</button>
+    <h3 style="margin-top:0;" id="gateQ">${esc(q.q)}</h3>
+    <div style="display:flex;flex-direction:column;gap:8px;" id="gateChoices">${choicesHtml}</div>
   </div>`;
   modalBg.classList.add('show');
+  if(ttsEnabled()) speakQuestionThenChoices(q.q,document.getElementById('gateQ'),[...document.querySelectorAll('#gateChoices .learn-choice-btn')]);
+}
+function replayGateQuestionAudio(){
+  const s=_gateSession; if(!s) return;
+  const q=s.questions[s.idx];
+  speakQuestionThenChoices(q.q,document.getElementById('gateQ'),[...document.querySelectorAll('#gateChoices .learn-choice-btn')]);
 }
 function answerGateQuestion(given){
   const s=_gateSession; if(!s) return;
@@ -2322,11 +2438,13 @@ function fillLearningConfig(){
   document.getElementById('learnMinutesPerSession').value=state.learning.minutesPerSession;
   document.getElementById('learnDailyMaxMinutes').value=state.learning.dailyMaxMinutes;
   document.getElementById('learnGateToggle').textContent=state.learning.gateEnabled?'פעיל ✓':'כבוי';
+  document.getElementById('learnReadAloudToggle').textContent=state.learning.readAloud!==false?'פעיל ✓':'כבוי';
   renderCustomQuestionsAdmin();
 }
 function toggleLearningEnabled(){ state.learning.enabled=!state.learning.enabled; fillLearningConfig(); }
 function toggleLearningSubject(subj){ state.learning.subjects[subj]=!state.learning.subjects[subj]; fillLearningConfig(); }
 function toggleLearningGate(){ state.learning.gateEnabled=!state.learning.gateEnabled; fillLearningConfig(); }
+function toggleLearningReadAloud(){ state.learning.readAloud=!(state.learning.readAloud!==false); if(!state.learning.readAloud) stopSpeaking(); fillLearningConfig(); }
 async function saveLearningConfig(){
   state.learning.coinsPerCorrect=Math.max(1,parseInt(document.getElementById('learnCoinsPerCorrect').value)||1);
   state.learning.sessionBonus=Math.max(0,parseInt(document.getElementById('learnSessionBonus').value)||0);
@@ -2568,7 +2686,7 @@ async function saveGroqKey(){ const v=document.getElementById('setGroqKey').valu
 
 /* ===== MODALS ===== */
 const modalBg=document.getElementById('modalBg'), modalContent=document.getElementById('modalContent');
-function closeModal(){ modalBg.classList.remove('show'); }
+function closeModal(){ modalBg.classList.remove('show'); stopSpeaking(); }
 modalBg.addEventListener('click',e=>{ if(e.target===modalBg) closeModal(); });
 function modalMsg(emoji,title,text){ modalContent.innerHTML=`<div class="m-emoji">${emoji}</div><h3>${esc(title)}</h3><p style="white-space:pre-line;">${esc(text)}</p><button class="btn primary" onclick="closeModal()">יאללה!</button>`; modalBg.classList.add('show'); }
 function modalConfirm(emoji,title,text,onYes){
@@ -3332,14 +3450,27 @@ async function applyRemoteSnapshot(data){
       // real protection requires Firebase auth + server-side validation rules.
       for(const [id,kid] of Object.entries(data.kids)){
         if(!kid||typeof kid!=='object') continue;
+        // If THIS device has a local edit for this kid that hasn't been
+        // pushed yet (e.g. a reward just redeemed, adding game-time minutes,
+        // a split-second before pushToFirebase's own network round-trip
+        // finishes), an incoming snapshot here is necessarily older than
+        // that edit — applying it would silently revert the fresh purchase
+        // back to its pre-purchase value. The one exception already handled
+        // below (an active game session, via `_gt`) isn't enough: it only
+        // covers gtime while actively draining, not a reward just bought.
+        // Skip the whole kid rather than merge field-by-field; the pending
+        // local push will correct the cloud, and its own echo (this same
+        // listener firing again) will apply cleanly once nothing is dirty.
+        if(dirtyBeforePull.has('kids/'+id)) continue;
         const balOk=Number.isFinite(kid.balance);
         kid.balance=balOk?Math.max(0,Math.min(1000000,Math.round(kid.balance))):0;
         if(!Array.isArray(kid.history)) kid.history=[];
         // Every map/array below can be dropped by Firebase when empty, which
         // would later crash reads like k.daily.counts[id] or k.badges.map(...).
         // Restore all of them to the same defaults loadKid() uses.
-        if(!kid.daily||typeof kid.daily!=='object') kid.daily={date:'',counts:{}};
+        if(!kid.daily||typeof kid.daily!=='object') kid.daily={date:'',counts:{},lastMark:{}};
         if(!kid.daily.counts||typeof kid.daily.counts!=='object') kid.daily.counts={};
+        if(!kid.daily.lastMark||typeof kid.daily.lastMark!=='object') kid.daily.lastMark={};
         if(!kid.mathDaily||typeof kid.mathDaily!=='object') kid.mathDaily={date:'',done:0};
         if(!Array.isArray(kid.badges)) kid.badges=[];
         if(!Number.isFinite(kid.mathTotal)) kid.mathTotal=0;

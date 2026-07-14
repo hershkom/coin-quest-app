@@ -54,6 +54,12 @@ test.describe('chores (golden path)', () => {
     // "לשבת בשירותים": 3 points, max 6/day
     const row = page.locator('.chore-row', { hasText: 'לשבת בשירותים' });
     for (let i = 1; i <= 6; i++) {
+      // Marking the SAME chore twice within CHORE_MIN_GAP_MS is blocked (the
+      // anti-cheat cooldown this test file's own "rapid same-chore tapping"
+      // test below verifies) -- clear the cooldown timestamp between clicks
+      // to simulate real time passing, since this test's whole point is the
+      // per-day COUNT cap, not the per-mark cooldown.
+      await page.evaluate(() => { cur().daily.lastMark = {}; });
       await row.locator('.chore-check').click();
       await dismissBadgeCelebrationIfAny(page); // first coin ever -> badge modal
       await expect(page.locator('#balTop')).toHaveText(String(3 * i));
@@ -63,8 +69,22 @@ test.describe('chores (golden path)', () => {
     // ...but the REAL protection must be server-side logic, not just a
     // disabled attribute (which a forged/replayed QR redemption bypasses
     // entirely by calling markChore directly) -- a 7th call must not pay out.
+    // Clear the cooldown again so it's specifically the daily MAX guard being
+    // tested here, not the unrelated per-mark cooldown.
+    await page.evaluate(() => { cur().daily.lastMark = {}; });
     await page.evaluate((id) => markChore(id), 'chore_toilet');
     await expect(page.locator('#balTop')).toHaveText('18');
+  });
+
+  test('rapid-tapping the SAME chore twice in a row only pays out once (anti-cheat cooldown)', async ({ page }) => {
+    await enterLocalOnly(page);
+    await selectChild(page, 'נועה');
+    const row = page.locator('.chore-row', { hasText: 'לשבת בשירותים' });
+    await row.locator('.chore-check').click();
+    await dismissBadgeCelebrationIfAny(page);
+    await expect(page.locator('#balTop')).toHaveText('3');
+    await row.locator('.chore-check').click(); // immediately again, no time cleared
+    await expect(page.locator('#balTop')).toHaveText('3'); // unchanged -- blocked by the cooldown
   });
 });
 
@@ -298,6 +318,50 @@ test.describe('live cross-device sync', () => {
     expect(result.calls.on).toBe(1);
     expect(result.calls.off).toBe(1);
     expect(result.appliedLabel).toBe('REMOTE-EDIT');
+  });
+
+  // Regression test for a real reported bug: a child buys game-time minutes
+  // with coins, but a remote snapshot -- pulled/echoed a split-second before
+  // this device's own push of the purchase reaches the server -- carries the
+  // OLD (pre-purchase) gtime and would silently revert the wallet, making it
+  // look like "the time wasn't added". applyRemoteSnapshot must skip a kid
+  // entirely while this device has an unpushed local edit for them.
+  test('a pending local edit is not clobbered by a stale remote snapshot for the same kid', async ({ page }) => {
+    await enterLocalOnly(page);
+    await selectChild(page, 'נועה');
+    const result = await page.evaluate(async () => {
+      const k = cur();
+      k.balance = 100; await DB.set('cs_bal_noa', 100);
+      const staleSnapshot = JSON.parse(JSON.stringify(buildSyncPayload()));
+      staleSnapshot.kids.noa.gtime = 0; // stale: predates the purchase below
+
+      state.rewards.push({ id: 'test_gtime', label: 'טסט', cost: 10, minutes: 20 });
+      await addPoints(-10, 'פרס: טסט', 'spend');
+      k.gtime = (k.gtime || 0) + 20 * 60;
+      await DB.set('cs_gtime_noa', k.gtime); // marks kids/noa dirty -- purchase not yet "pushed"
+      const afterPurchase = k.gtime;
+
+      await applyRemoteSnapshot(staleSnapshot); // simulates the race
+      const afterStalePull = cur().gtime;
+
+      state.rewards.pop();
+      return { afterPurchase, afterStalePull };
+    });
+    expect(result.afterPurchase).toBe(1200);
+    expect(result.afterStalePull).toBe(1200); // NOT reverted to the stale 0
+  });
+
+  test('a remote snapshot still applies normally once nothing is locally pending', async ({ page }) => {
+    await enterLocalOnly(page);
+    await selectChild(page, 'נועה');
+    const gtime = await page.evaluate(async () => {
+      syncDirty.clear(); // simulate: this device's own earlier push already completed
+      const snap = JSON.parse(JSON.stringify(buildSyncPayload()));
+      snap.kids.noa.gtime = 777;
+      await applyRemoteSnapshot(snap);
+      return cur().gtime;
+    });
+    expect(gtime).toBe(777);
   });
 });
 
@@ -542,5 +606,53 @@ test.describe('custom parent-authored questions (L8)', () => {
       return state.learning.customQuestions.length;
     });
     expect(afterDelete).toBe(0);
+  });
+});
+
+test.describe('read-aloud (TTS) for learning questions', () => {
+  test('the question is wrapped into per-word spans for highlighting', async ({ page }) => {
+    await enterLocalOnly(page);
+    await selectChild(page, 'נועה');
+    await page.evaluate(() => { go('learn'); startLearningSession(); });
+    await expect(page.locator('#learnQ .tts-word').first()).toBeVisible();
+    const wordCount = await page.locator('#learnQ .tts-word').count();
+    expect(wordCount).toBeGreaterThan(0);
+  });
+
+  // Regression test for a real bug found during manual testing: calling
+  // stopSpeaking() (speechSynthesis.cancel()) still left speechSynthesis
+  // reporting speaking/pending afterward, because the interrupted utterance's
+  // own `error` event advanced the question->choices chain to the NEXT step,
+  // which called speak() again right after the cancel. Fixed with a
+  // generation counter (_ttsGen) that invalidates any in-flight chain once
+  // stopSpeaking() (or a newer speak) supersedes it.
+  test('answering mid-narration actually stops speech, not just the current utterance', async ({ page }) => {
+    await enterLocalOnly(page);
+    await selectChild(page, 'נועה');
+    await page.evaluate(() => { go('learn'); startLearningSession(); });
+    await page.waitForTimeout(80);
+    await page.evaluate(() => {
+      const q = learnSession.questions[learnSession.idx];
+      if (q.type === 'typed-number') {
+        document.getElementById('learnTypedInput').value = q.answer;
+        submitTypedLearningAnswer();
+      } else {
+        answerLearningQuestion(q, q.answer, document.querySelector('#learnChoices .learn-choice-btn'));
+      }
+    });
+    await page.waitForTimeout(150);
+    const stillTalking = await page.evaluate(() => speechSynthesis.speaking || speechSynthesis.pending);
+    expect(stillTalking).toBe(false);
+  });
+
+  test('disabling read-aloud in settings shows plain text with no speech spans', async ({ page }) => {
+    await enterLocalOnly(page);
+    await selectChild(page, 'נועה');
+    const q = await page.evaluate(() => {
+      state.learning.readAloud = false;
+      go('learn'); startLearningSession();
+      return document.getElementById('learnQ').querySelectorAll('.tts-word').length;
+    });
+    expect(q).toBe(0);
   });
 });
