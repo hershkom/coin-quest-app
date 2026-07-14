@@ -5,7 +5,7 @@
     --coral:#FF6B6B; --coral-d:#E84A4A;
     --sky:#4DABF7; --sky-d:#2D8FE0;
     --pink:#FF8FCB; --pink-d:#E96BB0;
-    --ink:#2A2440; --ink2:#6B6585; --muted:#9B96B0;
+    --ink:#2A2440; --ink2:#6B6585; --muted:#807A99; /* darkened from #9B96B0 -- was below 4.5:1 on white for small text */
     --card:#FFFFFF; --line:#ECE9F5;
     --bg1:#EEF0FF; --bg2:#FBEEFF; --bg3:#E8FBFF;
     /* Minecraft colors for Ariel */
@@ -288,7 +288,7 @@
   .admin-row.dragging{box-shadow:0 10px 22px rgba(124,92,252,.28);z-index:50;background:#fff;}
   .drag-handle{cursor:grab;touch-action:none;color:var(--muted);font-size:1.15rem;flex-shrink:0;padding:4px;line-height:1;user-select:none;}
   .drag-handle:active{cursor:grabbing;}
-  .icon-btn{background:#fff;border:none;border-radius:10px;width:34px;height:34px;font-size:.95rem;cursor:pointer;box-shadow:0 2px 6px rgba(0,0,0,.06);}
+  .icon-btn{background:#fff;border:none;border-radius:10px;width:44px;height:44px;font-size:.95rem;cursor:pointer;box-shadow:0 2px 6px rgba(0,0,0,.06);}
   .kid-admin{display:flex;align-items:center;gap:12px;background:#FAF9FF;border-radius:16px;padding:12px;margin-bottom:10px;border-right:4px solid var(--kc,var(--purple));}
   .kid-admin .ka-av{width:46px;height:46px;border-radius:50%;background:var(--kc,var(--purple));display:flex;align-items:center;justify-content:center;font-size:1.5rem;flex-shrink:0;}
   .kid-admin .ka-info{flex:1;min-width:0;}
@@ -408,7 +408,7 @@
   .chat-mic-btn{width:48px;height:48px;border-radius:50%;border:none;cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:1.4rem;flex-shrink:0;transition:transform .15s;background:#F2F0FB;}
   .chat-mic-btn.recording{background:linear-gradient(135deg,var(--coral),var(--coral-d));animation:pulse-mic .7s ease-in-out infinite;}
   @keyframes pulse-mic{0%,100%{transform:scale(1);}50%{transform:scale(1.12);}}
-  .chat-speak-btn{width:30px;height:30px;border-radius:50%;border:none;cursor:pointer;font-size:.9rem;background:#EEF0FF;margin-right:4px;flex-shrink:0;}
+  .chat-speak-btn{width:44px;height:44px;border-radius:50%;border:none;cursor:pointer;font-size:.9rem;background:#EEF0FF;margin-right:4px;flex-shrink:0;}
   .chat-speak-btn.playing{background:var(--mint);animation:pulse-mic .7s ease-in-out infinite;}
 
   /* ---- Day strip (visual schedule) ---- */
@@ -471,7 +471,25 @@
   .app.calm-mode .picker-logo,
   .app.calm-mode .chat-mic-btn.recording,
   .app.calm-mode .chat-speak-btn.playing,
-  .app.calm-mode .event-card.imminent{animation:none!important;}
+  .app.calm-mode .event-card.imminent,
+  .app.calm-mode .learn-dot.active{animation:none!important;transform:none!important;}
+
+  /* ---- prefers-reduced-motion: OS-level opt-out, independent of calm mode ----
+     Purely decorative motion is killed outright. A few animations stay
+     because they carry real information (the QR scan-line shows the scanner
+     is actually running; the game-timer pulse is a time-critical warning,
+     not decoration) -- same reasoning the participatory-autism-design
+     research behind DESIGN-IMPROVEMENTS.md V1 calls out: motion is fine when
+     it's functional, not when it's just for show. */
+  @media (prefers-reduced-motion: reduce){
+    *,*::before,*::after{
+      animation-duration:.01ms !important;
+      animation-iteration-count:1 !important;
+      transition-duration:.01ms !important;
+      scroll-behavior:auto !important;
+    }
+    .scan-line,#gameTimerChip.warning{animation-duration:revert !important;animation-iteration-count:revert !important;}
+  }
 
   /* ---- Badges ---- */
   .badges-banner{border:none;width:100%;text-align:right;font-family:inherit;cursor:pointer;border-radius:22px;padding:14px 18px;margin-top:12px;background:linear-gradient(135deg,#E6E1FF,#D9F0FF);box-shadow:0 6px 18px rgba(124,92,252,.14);display:flex;align-items:center;gap:12px;}

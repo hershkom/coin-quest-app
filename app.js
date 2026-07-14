@@ -2771,13 +2771,19 @@ async function toggleCalmMode(){
 
 /* ===== FX ===== */
 function coinBurst(){
+  // OS-level "reduce motion" is a stronger opt-out than calm mode: skip the
+  // whole particle burst rather than just shrinking it (matches the CSS
+  // @media rule — decorative motion is cut, not merely dampened).
+  if(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
   const E=['🪙','⭐','✨','🌟','💫'];
-  const n=state.calmMode?4:14; // fewer particles in calm mode — less visual intensity
+  const n=state.calmMode?4:12; // fewer particles in calm mode — less visual intensity
   for(let i=0;i<n;i++){
     const s=document.createElement('div'); s.className='burst'; s.textContent=E[Math.floor(Math.random()*E.length)];
     s.style.left=(50+(Math.random()*30-15))+'%'; s.style.top='30%'; document.body.appendChild(s);
     const dx=(Math.random()*260-130), dy=-(Math.random()*180+80), rot=Math.random()*720-360;
-    s.animate([{transform:'translate(0,0) rotate(0) scale(1)',opacity:1},{transform:`translate(${dx}px,${dy}px) rotate(${rot}deg) scale(.4)`,opacity:0}],{duration:900+Math.random()*400,easing:'cubic-bezier(.2,.8,.3,1)'}).onfinish=()=>s.remove();
+    const anim=s.animate([{transform:'translate(0,0) rotate(0) scale(1)',opacity:1},{transform:`translate(${dx}px,${dy}px) rotate(${rot}deg) scale(.4)`,opacity:0}],{duration:900+Math.random()*400,easing:'cubic-bezier(.2,.8,.3,1)'});
+    anim.onfinish=()=>s.remove();
+    setTimeout(()=>s.remove(),2000); // safety-net cleanup if onfinish never fires
   }
 }
 let actx=null;
