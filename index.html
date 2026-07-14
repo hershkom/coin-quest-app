@@ -438,7 +438,28 @@
             <div class="field"><label>תקרת דקות יומית מלמידה</label><input id="learnDailyMaxMinutes" type="number" value="15" min="0"></div>
           </div>
           <div class="card-sub" style="margin-bottom:10px;">💡 כשמופעלות דקות משחק, בסוף מפגש מושלם הילד יוכל לבחור בין בונוס מטבעות לבין דקות משחק ישירות.</div>
+          <div class="field" style="display:flex;align-items:center;justify-content:space-between;">
+            <label style="margin:0;">שער למידה לפני משחק (3 שאלות חימום, לא חוסם)</label>
+            <button class="btn sm" id="learnGateToggle" onclick="toggleLearningGate()">כבוי</button>
+          </div>
           <button class="btn primary" onclick="saveLearningConfig()">שמור הגדרות למידה</button>
+        </div>
+        <div class="card">
+          <div class="card-h" style="margin-bottom:10px;">➕ הוסף שאלה מותאמת אישית</div>
+          <div class="card-sub" style="margin-bottom:10px;">שאלה משלכם — למשל מילים שהמורה שלחה השבוע.</div>
+          <div class="field"><label>מקצוע</label>
+            <select id="newLqSubject" style="width:100%;border:2px solid var(--line);border-radius:10px;padding:8px;font-family:inherit;">
+              <option value="math">➗ חשבון</option><option value="english">🔤 אנגלית</option><option value="science">🔬 מדעים</option>
+            </select>
+          </div>
+          <div class="field"><label>השאלה</label><input id="newLqQ" placeholder="לדוגמה: איך אומרים 'חתול' באנגלית?"></div>
+          <div class="inline-row" style="margin-bottom:12px;">
+            <div class="field"><label>תשובה נכונה</label><input id="newLqAnswer" placeholder="Cat"></div>
+            <div class="field"><label>תשובה שגויה 1</label><input id="newLqWrong1" placeholder="Dog"></div>
+            <div class="field"><label>תשובה שגויה 2</label><input id="newLqWrong2" placeholder="Cow"></div>
+          </div>
+          <button class="btn primary" onclick="addCustomQuestion()">הוסף שאלה</button>
+          <div id="customQuestionsAdmin" style="margin-top:12px;"></div>
         </div>
       </div>
       <div class="admin-pane" id="pane-rewards" style="display:none;">

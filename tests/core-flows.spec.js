@@ -488,3 +488,59 @@ test.describe('learning quiz ("מכרה הידע")', () => {
     expect(after.balance).toBe(outcome.balBefore + 5);
   });
 });
+
+test.describe('pre-game learning gate (L6)', () => {
+  test('gate is non-blocking: even 3 wrong answers still starts the game session afterward', async ({ page }) => {
+    await enterLocalOnly(page);
+    await selectChild(page, 'נועה');
+    const result = await page.evaluate(async () => {
+      state.learning.gateEnabled = true;
+      state.learning.enabled = true;
+      const k = cur(); k.gtime = 600;
+      const g = state.games.find(x => !x.native);
+      beginGameLaunch(g);
+      const gateShown1 = modalBg.classList.contains('show');
+      for (let i = 0; i < 3 && _gateSession; i++) {
+        answerGateQuestion('__definitely_wrong__');
+        await new Promise(r => setTimeout(r, 1000));
+      }
+      return { gateShown1, gateSessionDone: _gateSession === null };
+    });
+    expect(result.gateShown1).toBe(true);
+    expect(result.gateSessionDone).toBe(true);
+    await expect(page.locator('#gameOverlay')).toBeVisible();
+  });
+
+  test('gate disabled (default): launching a game skips straight to the session with no modal', async ({ page }) => {
+    await enterLocalOnly(page);
+    await selectChild(page, 'נועה');
+    await page.evaluate(() => {
+      const k = cur(); k.gtime = 600;
+      const g = state.games.find(x => !x.native);
+      beginGameLaunch(g);
+    });
+    await expect(page.locator('#gameOverlay')).toBeVisible();
+    await expect(page.locator('#modalBg')).not.toHaveClass(/show/);
+  });
+});
+
+test.describe('custom parent-authored questions (L8)', () => {
+  test('a custom question is added to its subject pool and can be deleted with undo', async ({ page }) => {
+    await enterLocalOnly(page);
+    await selectChild(page, 'נועה');
+    const added = await page.evaluate(() => {
+      state.learning.customQuestions = [];
+      state.learning.customQuestions.push({ id: 'lqtest1', subject: 'english', level: 1, type: 'choice',
+        q: 'test question?', choices: ['A', 'B', 'C'], answer: 'A' });
+      return subjectQuestionPool('english').some(q => q.id === 'lqtest1');
+    });
+    expect(added).toBe(true);
+
+    const afterDelete = await page.evaluate(() => {
+      delWithUndo(state.learning.customQuestions, 0, 'cs_learning', () => {}, 'השאלה',
+        async () => { await DB.set('cs_learning', state.learning); });
+      return state.learning.customQuestions.length;
+    });
+    expect(afterDelete).toBe(0);
+  });
+});

@@ -888,8 +888,13 @@ function submitTypedLearningAnswer(){
 // The ONLY place that checks correctness and credits coins — always against
 // QUESTION_BANK/customQuestions, never trusting anything about which DOM
 // button was clicked, same anti-cheat pattern as markChore/redeemToken.
+// Works with OR without an active learnSession: the pre-game "learning gate"
+// (beginGameLaunch/answerGateQuestion) calls this directly with no session
+// running, so crediting/progress/adaptive-level bookkeeping must not depend
+// on learnSession existing — only the session-specific bits (correctCount,
+// auto-advance to the next question) are skipped when there's no session.
 function answerLearningQuestion(q,given,btnEl){
-  const s=learnSession; if(!s) return;
+  const s=learnSession; // may be null (gate-mode call) — guarded below
   const k=cur();
   const correct=String(given).trim()===String(q.answer).trim();
   const p=k.learn.progress[q.id]||{box:0,lastSeen:'',correct:0,wrong:0};
@@ -908,7 +913,7 @@ function answerLearningQuestion(q,given,btnEl){
   if(k.learn.recent[q.subject].length>10) k.learn.recent[q.subject].shift();
   bumpLearningLevel(q.subject);
   if(correct){
-    s.correctCount++;
+    if(s) s.correctCount++;
     if(btnEl){ btnEl.classList.add('correct'); }
     if(k.learn.earnedToday.coins<state.learning.dailyMaxCoins){
       const n=Math.min(state.learning.coinsPerCorrect, state.learning.dailyMaxCoins-k.learn.earnedToday.coins);
@@ -922,6 +927,7 @@ function answerLearningQuestion(q,given,btnEl){
     toast('כמעט! התשובה הנכונה: '+q.answer);
   }
   DB.set('cs_learn_'+state.current,k.learn);
+  if(!s) return; // gate-mode: caller (answerGateQuestion) drives its own advance/finish
   if(document.getElementById('learnTypedInput')) document.getElementById('learnTypedInput').disabled=true;
   document.querySelectorAll('#learnChoices .learn-choice-btn').forEach(b=>b.disabled=true);
   setTimeout(()=>{
@@ -1260,7 +1266,7 @@ function renderGamesView(){
     row.onclick=()=>{
       if(nativeUnavailable){ modalMsg('📱','זמין רק באפליקציה','המשחק הזה עובד רק כשפותחים את כספת המטבעות מתוך אפליקציית האנדרואיד, לא בדפדפן.'); return; }
       if(!has){ toast('אין זמן משחק — המר מטבעות בפרסים 🎁'); return; }
-      g.native ? startNativeGameSession(g) : startGameSession(g.id);
+      beginGameLaunch(g);
     };
     list.appendChild(row);
   });
@@ -1275,6 +1281,48 @@ function renderGamesView(){
    app mid-game can't mint time back. */
 let _gt=null; // {gameId, baseMono, baseWallet, warned:{}, interval, paused}
 const GT_WARN_STEPS=[300,60,10]; // seconds-left marks that trigger a warning
+// ---- optional pre-game "learning gate" (L6) ----
+// A non-blocking 3-question warm-up before a game session: always lets the
+// child continue after answering (even if all 3 are wrong — this is a brain
+// warm-up, not a test), so there's no cheating vector here worth guarding.
+// coinsPerCorrect still applies via the normal answerLearningQuestion path.
+let _gateSession=null; // {questions, idx, onDone}
+function beginGameLaunch(g){
+  const launch=()=> g.native ? startNativeGameSession(g) : startGameSession(g.id);
+  if(!state.learning.gateEnabled || !state.learning.enabled){ launch(); return; }
+  const qs=pickSessionQuestions().slice(0,3);
+  if(!qs.length){ launch(); return; }
+  _gateSession={questions:qs, idx:0, onDone:launch};
+  renderGateQuestion();
+}
+function renderGateQuestion(){
+  const s=_gateSession; if(!s) return;
+  const q=s.questions[s.idx];
+  const isTyped=q.type==='typed-number';
+  const choicesHtml=isTyped
+    ? `<input type="number" id="gateTypedInput" style="width:100%;text-align:center;font-size:1.3rem;border:2px solid var(--line);border-radius:13px;padding:10px;margin-bottom:10px;" placeholder="?">
+       <button class="btn primary" onclick="answerGateQuestion(document.getElementById('gateTypedInput').value)">✓ בדוק</button>`
+    : shuffleArr([...q.choices]).map(c=>`<button class="learn-choice-btn" onclick="answerGateQuestion(${JSON.stringify(c)})">${esc(c)}</button>`).join('');
+  modalContent.innerHTML=`<div style="text-align:center;">
+    <div style="font-size:.8rem;color:var(--ink2);margin-bottom:6px;">⛏️ חימום מוח (${s.idx+1}/${s.questions.length})</div>
+    <h3 style="margin-top:0;">${esc(q.q)}</h3>
+    <div style="display:flex;flex-direction:column;gap:8px;">${choicesHtml}</div>
+  </div>`;
+  modalBg.classList.add('show');
+}
+function answerGateQuestion(given){
+  const s=_gateSession; if(!s) return;
+  const q=s.questions[s.idx];
+  answerLearningQuestion(q,given,null); // credits coins/progress exactly like a normal session
+  s.idx++;
+  if(s.idx>=s.questions.length){
+    closeModal();
+    const onDone=s.onDone; _gateSession=null;
+    onDone();
+  }else{
+    setTimeout(renderGateQuestion, 900);
+  }
+}
 async function startGameSession(gameId){
   const k=cur(), g=state.games.find(x=>x.id===gameId);
   if(!k||!g||(k.gtime||0)<=0) return;
@@ -1834,6 +1882,14 @@ async function renderReportAdmin(){
     const tasks=week.filter(h=>h.type==='chore'||h.type==='scan').length;
     const math=week.filter(h=>h.type==='math').length;
     const rewards=week.filter(h=>h.type==='spend').length;
+    const learnCorrect=week.filter(h=>h.type==='learn').length;
+    // Weak spots: questions this child got wrong more than right, still in a
+    // low spaced-repetition box (i.e. not yet mastered) — worth practicing
+    // together. Computed straight from k.learn.progress, no extra storage.
+    const weakSpots=Object.entries(k.learn?.progress||{})
+      .filter(([,p])=>(p.wrong||0)>(p.correct||0) && (p.box||0)<3)
+      .map(([qid])=>QUESTION_BANK.find(q=>q.id===qid)||(state.learning.customQuestions||[]).find(q=>q.id===qid))
+      .filter(Boolean).slice(0,3);
     // most-repeated earn labels this week (which routines actually happen)
     const byLabel={};
     week.filter(h=>h.points>0).forEach(h=>{ byLabel[h.label]=(byLabel[h.label]||0)+1; });
@@ -1848,9 +1904,12 @@ async function renderReportAdmin(){
         <div style="flex:1;min-width:70px;background:#E7F8F0;border-radius:14px;padding:10px 6px;"><div style="font-size:1.3rem;font-weight:900;color:var(--mint-d);">${tasks}</div><div style="font-size:.7rem;color:var(--ink2);">מטלות הושלמו</div></div>
         <div style="flex:1;min-width:70px;background:#EDF3FF;border-radius:14px;padding:10px 6px;"><div style="font-size:1.3rem;font-weight:900;color:#4DABF7;">${math}</div><div style="font-size:.7rem;color:var(--ink2);">תרגילי חשבון</div></div>
         <div style="flex:1;min-width:70px;background:#F5F0FF;border-radius:14px;padding:10px 6px;"><div style="font-size:1.3rem;font-weight:900;color:var(--purple,#7C5CFC);">${rewards}</div><div style="font-size:.7rem;color:var(--ink2);">פרסים נקנו</div></div>
+        <div style="flex:1;min-width:70px;background:#EFE7DC;border-radius:14px;padding:10px 6px;"><div style="font-size:1.3rem;font-weight:900;color:#8B5A3C;">${learnCorrect}</div><div style="font-size:.7rem;color:var(--ink2);">תשובות נכונות במכרה הידע</div></div>
       </div>
       ${top.length?'<div style="font-size:.82rem;font-weight:700;margin-bottom:4px;">מה חוזר הכי הרבה השבוע:</div>'+top.map(([l,n])=>`<div style="font-size:.82rem;color:var(--ink2);">· ${esc(l)} — ${n} פעמים</div>`).join(''):'<div class="card-sub">אין פעילות השבוע עדיין</div>'}
       ${streakRows?'<div style="margin-top:8px;">'+streakRows+'</div>':''}
+      ${k.learnLevel?`<div style="margin-top:8px;font-size:.82rem;">⛏️ רמות למידה: חשבון ${k.learnLevel.math||1}/3 · אנגלית ${k.learnLevel.english||1}/3 · מדעים ${k.learnLevel.science||1}/3</div>`:''}
+      ${weakSpots.length?'<div style="margin-top:8px;font-size:.82rem;font-weight:700;">💡 כדאי לתרגל ביחד:</div>'+weakSpots.map(q=>`<div style="font-size:.8rem;color:var(--ink2);">· ${esc(q.q)}</div>`).join(''):''}
     </div>`;
   }
   // calm-tools usage (family-wide, same source as the settings card)
@@ -2140,9 +2199,12 @@ function fillLearningConfig(){
   document.getElementById('learnDailyMaxCoins').value=state.learning.dailyMaxCoins;
   document.getElementById('learnMinutesPerSession').value=state.learning.minutesPerSession;
   document.getElementById('learnDailyMaxMinutes').value=state.learning.dailyMaxMinutes;
+  document.getElementById('learnGateToggle').textContent=state.learning.gateEnabled?'פעיל ✓':'כבוי';
+  renderCustomQuestionsAdmin();
 }
 function toggleLearningEnabled(){ state.learning.enabled=!state.learning.enabled; fillLearningConfig(); }
 function toggleLearningSubject(subj){ state.learning.subjects[subj]=!state.learning.subjects[subj]; fillLearningConfig(); }
+function toggleLearningGate(){ state.learning.gateEnabled=!state.learning.gateEnabled; fillLearningConfig(); }
 async function saveLearningConfig(){
   state.learning.coinsPerCorrect=Math.max(1,parseInt(document.getElementById('learnCoinsPerCorrect').value)||1);
   state.learning.sessionBonus=Math.max(0,parseInt(document.getElementById('learnSessionBonus').value)||0);
@@ -2151,6 +2213,38 @@ async function saveLearningConfig(){
   state.learning.dailyMaxMinutes=Math.max(0,parseInt(document.getElementById('learnDailyMaxMinutes').value)||0);
   if(!Object.values(state.learning.subjects).some(Boolean)){ toast('בחר לפחות מקצוע אחד'); return; }
   await DB.set('cs_learning',state.learning); scheduleSync(); toast('הגדרות נשמרו ✓');
+}
+// ---- custom parent-authored questions (L8) ----
+function renderCustomQuestionsAdmin(){
+  const el=document.getElementById('customQuestionsAdmin'); if(!el) return;
+  const list=state.learning.customQuestions||[];
+  if(!list.length){ el.innerHTML='<div class="card-sub">אין עדיין שאלות מותאמות אישית.</div>'; return; }
+  el.innerHTML=list.map((q,i)=>`<div class="admin-row">
+    <span class="t">${esc(q.q)}<br><span style="font-size:.72rem;color:var(--mint-d);font-weight:700;">${subjLabel(q.subject)} · תשובה: ${esc(q.answer)}</span></span>
+    <button class="icon-btn" onclick="delCustomQuestion(${i})">🗑️</button>
+  </div>`).join('');
+}
+async function addCustomQuestion(){
+  const subject=document.getElementById('newLqSubject').value;
+  const q=document.getElementById('newLqQ').value.trim();
+  const answer=document.getElementById('newLqAnswer').value.trim();
+  const w1=document.getElementById('newLqWrong1').value.trim();
+  const w2=document.getElementById('newLqWrong2').value.trim();
+  if(!q||!answer||!w1||!w2){ toast('מלא את כל השדות'); return; }
+  const item={id:'lq'+Date.now().toString(36),subject,level:1,type:'choice',q,choices:[answer,w1,w2],answer};
+  state.learning.customQuestions=state.learning.customQuestions||[];
+  state.learning.customQuestions.push(item);
+  await DB.set('cs_learning',state.learning); scheduleSync();
+  document.getElementById('newLqQ').value=''; document.getElementById('newLqAnswer').value='';
+  document.getElementById('newLqWrong1').value=''; document.getElementById('newLqWrong2').value='';
+  renderCustomQuestionsAdmin(); toast('השאלה נוספה ✓');
+}
+async function delCustomQuestion(i){
+  // customQuestions is nested inside cs_learning (not its own storage key),
+  // same shape as anchored[period] — needs the persist override so undo
+  // saves the whole state.learning object, not the bare array.
+  await delWithUndo(state.learning.customQuestions,i,'cs_learning',renderCustomQuestionsAdmin,'השאלה',
+    async()=>{ await DB.set('cs_learning',state.learning); });
 }
 function toggleMathEnabled(){ state.math.enabled=!state.math.enabled; fillMathConfig(); }
 function toggleOp(op){ const i=state.math.ops.indexOf(op); if(i>=0) state.math.ops.splice(i,1); else state.math.ops.push(op); fillMathConfig(); }
