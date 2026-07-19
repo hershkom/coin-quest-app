@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Flavor-specific manifest overlay for the Google Play build (S6/S7).
+     Merged on top of src/main/AndroidManifest.xml: removes the permissions
+     and services that exist only for the native game-time enforcement
+     feature (AccessibilityService + a drawn-over-other-apps overlay), since
+     that combination is a near-certain policy rejection on Play when the
+     accessibility use isn't actual accessibility. See the productFlavors
+     comment in app/build.gradle for how the app degrades gracefully at
+     runtime with zero Kotlin changes. -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    package="com.coinquest.app">
+
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" tools:node="remove" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" tools:node="remove" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" tools:node="remove" />
+
+    <application>
+        <service android:name=".GameTimeAccessibilityService" tools:node="remove" />
+        <service android:name=".GameTimeOverlayService" tools:node="remove" />
+    </application>
+
+</manifest>

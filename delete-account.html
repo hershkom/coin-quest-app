@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>מחיקת חשבון — כספת המטבעות (Coin Quest)</title>
+<style>
+  body{font-family:-apple-system,Segoe UI,Arial,sans-serif;max-width:520px;margin:0 auto;padding:28px 20px 60px;line-height:1.7;color:#2A2440;background:#FBFAFF;}
+  h1{font-size:1.4rem;}
+  p{font-size:.95rem;}
+  .card{background:#fff;border:1px solid #ECE9F5;border-radius:16px;padding:18px;margin:18px 0;}
+  button{font-family:inherit;font-size:1rem;font-weight:700;border:none;border-radius:13px;padding:12px 16px;cursor:pointer;width:100%;margin-top:8px;}
+  .primary{background:#7C5CFC;color:#fff;}
+  .coral{background:#FF6B6B;color:#fff;}
+  input{width:100%;box-sizing:border-box;border:2px solid #FF6B6B;border-radius:13px;padding:11px;font-family:inherit;text-align:center;margin-top:10px;}
+  #status{font-size:.85rem;color:#6B6585;min-height:20px;margin-top:8px;white-space:pre-line;}
+  a{color:#7c5cfc;}
+  .hidden{display:none;}
+</style>
+</head>
+<body>
+<h1>🗑️ מחיקת חשבון ונתוני המשפחה</h1>
+<p>עמוד זה מיועד למי שרוצה למחוק את חשבון "כספת המטבעות" שלו/ה גם בלי להתקין את האפליקציה מחדש. אפשר גם למחוק ישירות בתוך האפליקציה, בהגדרות ההורה (⚙️ ← החשבון שלי).</p>
+
+<div class="card">
+  <p>מה נמחק: כל הילדים, המטלות, ההיסטוריה, יתרות המטבעות, האתגרים והתגים של המשפחה המשויכת לחשבון ה-Google שלך — לצמיתות, כולל עבור הורה שני אם יש. הפעולה <b>אינה הפיכה</b>.</p>
+  <div id="signedOutBox">
+    <button class="primary" id="signInBtn">התחבר עם Google כדי להמשיך</button>
+  </div>
+  <div id="signedInBox" class="hidden">
+    <p id="whoami" style="font-weight:700;"></p>
+    <p style="font-size:.85rem;">כדי לאשר מחיקה, הקלד/י כאן את המילה: מחק</p>
+    <input id="confirmText" placeholder="מחק">
+    <button class="coral" id="deleteBtn">מחק לצמיתות</button>
+  </div>
+  <div id="status"></div>
+</div>
+
+<p style="font-size:.85rem;">אפשר גם לפנות אלינו במייל ונמחק ידנית: <a href="mailto:mike.hersh@gmail.com">mike.hersh@gmail.com</a>.<br>
+<a href="privacy.html">מדיניות פרטיות</a> · <a href="index.html">חזרה לאפליקציה</a></p>
+
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
+<script>
+// Same public Firebase web config as the main app (index.html/app.js) --
+// this config is meant to be public; access control lives in
+// database.rules.json, not in hiding this object. Kept as its own standalone
+// page (not sharing app.js) since it needs none of the app's UI/state and
+// must keep working even for someone who deleted the app already.
+const firebaseConfig={
+  apiKey:"AIzaSyAc2Wqz_WHR_AisyUzUm-6-U9EvBFhjrPo",
+  authDomain:"coin-quest-app.firebaseapp.com",
+  databaseURL:"https://coin-quest-app-default-rtdb.europe-west1.firebasedatabase.app",
+  projectId:"coin-quest-app",
+  storageBucket:"coin-quest-app.firebasestorage.app",
+  messagingSenderId:"370682774257",
+  appId:"1:370682774257:web:cdb665285cc7b14e1f9f50",
+};
+firebase.initializeApp(firebaseConfig);
+const fbAuth=firebase.auth(), fbDb=firebase.database();
+const statusEl=document.getElementById('status');
+const signedOutBox=document.getElementById('signedOutBox');
+const signedInBox=document.getElementById('signedInBox');
+
+document.getElementById('signInBtn').onclick=async()=>{
+  statusEl.textContent='⏳ מתחבר...';
+  try{
+    await fbAuth.signInWithPopup(new firebase.auth.GoogleAuthProvider());
+  }catch(e){
+    statusEl.textContent='שגיאת התחברות: '+(e&&e.message||'נסה שוב, או פנה במייל למטה.');
+  }
+};
+
+fbAuth.onAuthStateChanged(user=>{
+  if(!user){ signedOutBox.classList.remove('hidden'); signedInBox.classList.add('hidden'); return; }
+  signedOutBox.classList.add('hidden'); signedInBox.classList.remove('hidden');
+  document.getElementById('whoami').textContent='מחובר/ת כ-'+(user.email||user.displayName||'');
+});
+
+document.getElementById('deleteBtn').onclick=async()=>{
+  const user=fbAuth.currentUser;
+  if(!user) return;
+  if(document.getElementById('confirmText').value.trim()!=='מחק'){
+    statusEl.textContent='הקלד/י בדיוק "מחק" כדי לאשר.';
+    return;
+  }
+  statusEl.textContent='⏳ מוחק...';
+  try{
+    const rec=(await fbDb.ref('users/'+user.uid).once('value')).val();
+    const familyId=rec&&rec.familyId;
+    if(familyId){
+      // Same order as the in-app deletion (app.js deleteAccountAndFamily):
+      // families/$familyId's write rule needs users/{uid}.familyId to still
+      // resolve, so it must be removed before users/{uid}.
+      try{
+        const code=(await fbDb.ref('families/'+familyId+'/inviteCode').once('value')).val();
+        if(code) await fbDb.ref('inviteCodes/'+code).remove();
+      }catch(e){}
+      await fbDb.ref('families/'+familyId).remove();
+    }
+    await fbDb.ref('users/'+user.uid).remove();
+    try{
+      await user.delete();
+    }catch(e){
+      if(e&&e.code==='auth/requires-recent-login'){
+        statusEl.textContent='הנתונים נמחקו. כדי למחוק גם את רשומת ההתחברות עצמה, התחבר/י שוב ולחץ/י על מחק פעם נוספת.';
+        return;
+      }
+    }
+    await fbAuth.signOut();
+    statusEl.textContent='✅ הנתונים נמחקו לצמיתות.';
+  }catch(e){
+    statusEl.textContent='⚠️ שגיאה: '+(e&&e.message||'נסה שוב, או פנה במייל למטה.');
+  }
+};
+</script>
+</body>
+</html>

@@ -20,7 +20,7 @@
     "inviteCodes": {
       "$code": {
         ".read": "auth != null",
-        ".write": "auth != null && newData.val() === root.child('users/'+auth.uid+'/familyId').val() && (!data.exists() || data.val() === root.child('users/'+auth.uid+'/familyId').val())"
+        ".write": "auth != null && (data.exists() ? (data.val() === root.child('users/'+auth.uid+'/familyId').val() && (newData.val() === null || newData.val() === data.val())) : newData.val() === root.child('users/'+auth.uid+'/familyId').val())"
       }
     }
   }

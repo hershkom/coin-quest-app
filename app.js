@@ -2715,7 +2715,17 @@ async function importBackup(ev){
     setTimeout(()=>location.reload(),800);
   });
 }
-async function saveGroqKey(){ const v=document.getElementById('setGroqKey').value.trim(); if(!v){ toast('הכנס מפתח'); return; } GROQ_API_KEY=v; localStorage.setItem('cs_groq_key',v); document.getElementById('setGroqKey').value=''; document.getElementById('groqKeyStatus').textContent='✅ מפתח שמור'; toast('מפתח Groq נשמר ✓'); }
+async function saveGroqKey(){ const v=document.getElementById('setGroqKey').value.trim(); if(!v){ toast('הכנס מפתח'); return; } GROQ_API_KEY=v; localStorage.setItem('cs_groq_key',v); document.getElementById('setGroqKey').value=''; document.getElementById('groqKeyStatus').textContent='✅ מפתח שמור'; toast('מפתח Groq נשמר ✓'); updateChatNavVisibility(); }
+// S8a (store-release prep): this is a genuinely unmoderated third-party AI
+// chat -- keep the nav tab itself hidden from the child's bottom nav until a
+// parent has actually configured a key in Admin Settings, instead of showing
+// an inviting chat tab that (with no key set) can only ever reply "ask your
+// parent". Purely a visibility toggle -- sendChatMessage's own `!GROQ_API_KEY`
+// guard above still exists as defense in depth.
+function updateChatNavVisibility(){
+  const btn=document.querySelector('[data-nav="chat"]');
+  if(btn) btn.style.display=GROQ_API_KEY?'':'none';
+}
 
 /* ===== MODALS ===== */
 const modalBg=document.getElementById('modalBg'), modalContent=document.getElementById('modalContent');
@@ -3828,6 +3838,71 @@ async function signOutOfAccount(){
   });
 }
 
+/* ===== ACCOUNT DELETION (S5, store-release requirement) =====
+   Google Play requires (a) an in-app path to delete the account and its
+   data, and (b) a way to request the same without opening the app --
+   see delete-account.html, linked from privacy.html, for (b). This app has
+   no backend, so both paths ultimately do the same client-side removal;
+   the web page exists for someone who uninstalled the app but still wants
+   their data gone. Offered from Admin Settings (already PIN-gated), with an
+   extra type-to-confirm step since there is no undo -- this deletes the
+   WHOLE family's data, not just the signed-in parent's own login, since
+   that's what "delete my account" means for a shared family app with no
+   solo-user concept below the family level. */
+function confirmDeleteAccount(){
+  if(!authUser){ toast('אין חשבון מחובר במכשיר הזה'); return; }
+  modalContent.innerHTML=`<div class="m-emoji">⚠️</div><h3>למחוק את המשפחה וכל הנתונים?</h3>
+    <p style="font-size:.9rem;">פעולה זו מוחקת לצמיתות מהענן את כל הילדים, המטלות, ההיסטוריה, המטבעות והתגים של המשפחה הזו — גם עבור הורה שני, אם יש. אי אפשר לבטל את זה.</p>
+    <p style="font-size:.85rem;font-weight:700;margin-bottom:4px;">כדי לאשר, הקלד/י כאן את המילה: מחק</p>
+    <input id="delConfirmText" style="width:100%;border:2px solid var(--coral);border-radius:13px;padding:11px;font-family:inherit;text-align:center;">
+    <div style="display:flex;gap:8px;margin-top:10px;"><button class="btn ghost" onclick="closeModal()">ביטול</button><button class="btn coral" id="delConfirmBtn">מחק לצמיתות</button></div>`;
+  modalBg.classList.add('show');
+  document.getElementById('delConfirmBtn').onclick=()=>{
+    if(document.getElementById('delConfirmText').value.trim()!=='מחק'){ toast('הקלד/י בדיוק "מחק" כדי לאשר'); return; }
+    closeModal();
+    deleteAccountAndFamily();
+  };
+  setTimeout(()=>{ const el=document.getElementById('delConfirmText'); if(el) el.focus(); },100);
+}
+async function deleteAccountAndFamily(){
+  toast('⏳ מוחק...');
+  const user=authUser;
+  try{
+    detachLiveSync();
+    const familyId=state.familyId;
+    if(familyId){
+      // Order matters for the security rules: families/$familyId requires
+      // users/{uid}.familyId to still resolve to it, so the family node
+      // must be removed BEFORE users/{uid} — deleting users/{uid} first
+      // would make this device unable to prove membership for the next call.
+      try{
+        const code=(await fbDb.ref('families/'+familyId+'/inviteCode').once('value')).val();
+        if(code) await fbDb.ref('inviteCodes/'+code).remove();
+      }catch(e){ /* best-effort -- an orphaned invite code just fails to resolve later, no data leak */ }
+      await fbDb.ref('families/'+familyId).remove();
+    }
+    await fbDb.ref('users/'+user.uid).remove();
+    await clearLocalFamilyData();
+    try{
+      await user.delete();
+    }catch(e){
+      // All family/account DATA is already gone at this point regardless --
+      // only the Google-linked auth record itself needs a very recent
+      // sign-in to delete. Rather than lose the cleanup already done, just
+      // tell the parent it needs one more fresh sign-in + retry.
+      if(e&&e.code==='auth/requires-recent-login'){
+        toast('הנתונים נמחקו. כדי למחוק גם את רשומת ההתחברות עצמה, התחבר/י שוב ונסה/י שוב מהגדרות.');
+      }
+    }
+    await fbAuth.signOut().catch(()=>{});
+    toast('המשפחה נמחקה ✓');
+    location.reload();
+  }catch(e){
+    console.error('deleteAccountAndFamily failed',e);
+    toast('⚠️ שגיאה במחיקה: '+authErrorText(e));
+  }
+}
+
 // Race any promise against a timeout so a Realtime Database call that never
 // resolves AND never rejects (e.g. the socket can't reach the DB, or an auth
 // token isn't accepted) can't silently stall the whole sign-in forever.
@@ -4030,6 +4105,7 @@ async function fillAccountSettings(){
     document.getElementById('settingsAuthStatus').textContent='';
     document.getElementById('forceSyncBtn').style.display='none';
     document.getElementById('signOutBtn').style.display='none';
+    document.getElementById('deleteAccountBtn').style.display='none';
     inviteBox.style.display='none';
     return;
   }
@@ -4038,6 +4114,7 @@ async function fillAccountSettings(){
   document.getElementById('signInBox').style.display='none';
   document.getElementById('forceSyncBtn').style.display='block';
   document.getElementById('signOutBtn').style.display='block';
+  document.getElementById('deleteAccountBtn').style.display='block';
   const rec=(await fbDb.ref('users/'+authUser.uid).once('value')).val();
   if(rec&&rec.role==='owner'&&state.familyId){
     let code=(await fbDb.ref('families/'+state.familyId+'/inviteCode').once('value')).val();
@@ -4254,6 +4331,7 @@ window.addEventListener('unhandledrejection', (ev)=>{
 (async function(){
   try{
     GROQ_API_KEY=localStorage.getItem('cs_groq_key')||'';
+    updateChatNavVisibility();
     await detectBackend();
     await loadState();
     applyCalmModeClass();

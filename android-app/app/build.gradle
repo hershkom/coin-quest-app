@@ -25,6 +25,34 @@ android {
         versionName "1.0"
     }
 
+    // Two distribution channels with different policy exposure (S6/S7):
+    // - family: full native game-time enforcement (AccessibilityService +
+    //   SYSTEM_ALERT_WINDOW overlay), sideloaded directly onto Mike's own
+    //   family devices, same applicationId as every APK already installed
+    //   there so updates keep replacing in place.
+    // - play: for Google Play, where AccessibilityService used for anything
+    //   other than actual accessibility is a near-certain policy rejection.
+    //   Gets its own applicationId (a brand-new Play listing has no upgrade-
+    //   continuity constraint) and, via src/play/AndroidManifest.xml, has the
+    //   accessibility service, overlay service, and their permissions removed
+    //   entirely at manifest-merge time. No Kotlin code changes needed:
+    //   NativeGameBridge.startNativeSession() already refuses to start a
+    //   session it can't enforce (hasOverlayPermission()/
+    //   hasAccessibilityPermission() simply return false when the manifest
+    //   never declared them), so the native-launch feature just quietly
+    //   stays unavailable and the app falls back to the web app's own JS
+    //   countdown for web-embedded games.
+    flavorDimensions "distribution"
+    productFlavors {
+        family {
+            dimension "distribution"
+        }
+        play {
+            dimension "distribution"
+            applicationIdSuffix ".play"
+        }
+    }
+
     signingConfigs {
         release {
             if (keystorePropsFile.exists()) {

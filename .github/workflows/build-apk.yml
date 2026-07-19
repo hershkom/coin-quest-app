@@ -29,12 +29,23 @@ jobs:
       - name: Make gradlew executable
         run: chmod +x ./gradlew
 
-      - name: Build debug APK
+      - name: Build debug APKs (both flavors)
         run: ./gradlew assembleDebug --no-daemon --stacktrace
 
-      - name: Upload APK
+      # Two flavors now (S6): 'family' keeps the native AccessibilityService
+      # game-time enforcement for sideloading onto Mike's own devices; 'play'
+      # has it stripped out for eventual Google Play submission. Uploaded as
+      # separate artifacts since they're different distribution channels.
+      - name: Upload family-flavor APK
         uses: actions/upload-artifact@v4
         with:
-          name: coin-quest-debug-apk
-          path: android-app/app/build/outputs/apk/debug/app-debug.apk
+          name: coin-quest-debug-apk-family
+          path: android-app/app/build/outputs/apk/family/debug/app-family-debug.apk
+          if-no-files-found: error
+
+      - name: Upload play-flavor APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: coin-quest-debug-apk-play
+          path: android-app/app/build/outputs/apk/play/debug/app-play-debug.apk
           if-no-files-found: error

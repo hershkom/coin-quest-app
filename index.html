@@ -61,6 +61,7 @@
         <div class="picker-logo">🪙</div>
         <h2 class="picker-title">כספת המטבעות</h2>
         <div class="picker-sub">התחבר כדי לשמור ולסנכרן את המשפחה שלך בין מכשירים</div>
+        <div style="font-size:.78rem;color:var(--ink2);margin-top:6px;">👪 למסך זה: הורה/אפוטרופוס בלבד. אחרי ההתחברות, הילד/ה בוחר/ת את עצמו/ה במסך הבא.</div>
         <button class="btn primary" style="margin-top:26px;font-size:1.02rem;padding:16px;" onclick="signInWithGoogle()">
           <span style="display:inline-flex;align-items:center;gap:10px;justify-content:center;">
             <svg width="20" height="20" viewBox="0 0 48 48" style="flex-shrink:0;">
@@ -611,8 +612,8 @@
           <button class="btn primary" onclick="savePin()">שמור קוד</button>
         </div>
         <div class="card">
-          <div class="card-h">🤖 מפתח Groq (צ'אט עם איזי)</div>
-          <div class="card-sub" style="margin-bottom:10px;">הכנס מפתח מ-console.groq.com</div>
+          <div class="card-h">🤖 הגדרה מתקדמת: צ'אט עם איזי (AI חיצוני, כבוי כברירת מחדל)</div>
+          <div class="card-sub" style="margin-bottom:10px;">אופציונלי להורה בלבד. אחרי הזנת מפתח מ-console.groq.com תופיע לילד/ה לשונית צ'אט חדשה. הודעות הצ'אט נשלחות ישירות לשירות AI חיצוני (Groq) שאינו בשליטתנו ואינו מיועד/מסונן במיוחד לילדים — כדאי לשקול לפני הפעלה.</div>
           <div id="groqKeyStatus" style="font-size:.8rem;color:var(--mint);margin-bottom:8px;font-weight:700;"></div>
           <div class="field"><input id="setGroqKey" type="password" placeholder="gsk_..."></div>
           <button class="btn primary" onclick="saveGroqKey()">שמור מפתח</button>
@@ -644,6 +645,7 @@
           </div>
           <button class="btn mint sm" id="forceSyncBtn" style="margin-bottom:8px;display:none;" onclick="forceSyncNow().then(()=>toast('סונכרן ✓'))">🔄 סנכרן עכשיו</button>
           <button class="btn coral sm" id="signOutBtn" onclick="signOutOfAccount()" style="display:none;">🚪 התנתקות</button>
+          <button class="btn coral sm" id="deleteAccountBtn" onclick="confirmDeleteAccount()" style="display:none;margin-top:6px;">🗑️ מחיקת החשבון וכל הנתונים</button>
         </div>
         <div class="card" style="text-align:center;">
           <a href="privacy.html" target="_blank" style="color:var(--ink2);font-size:.82rem;margin-inline-end:14px;">מדיניות פרטיות</a>
@@ -660,7 +662,7 @@
     <button class="navbtn" data-nav="math" onclick="go('math')"><span class="ic">➗</span>חשבון</button>
     <button class="navbtn" data-nav="rewards" onclick="go('rewards')"><span class="ic">🎁</span>פרסים</button>
     <button class="navbtn" data-nav="history" onclick="go('history')"><span class="ic">📜</span>יומן</button>
-    <button class="navbtn" data-nav="chat" onclick="go('chat')"><span class="ic">💬</span>צ'אט</button>
+    <button class="navbtn" data-nav="chat" onclick="go('chat')" style="display:none;"><span class="ic">💬</span>צ'אט</button>
   </div>
 
   <!-- Chat View -->
