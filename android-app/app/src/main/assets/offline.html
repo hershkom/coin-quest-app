@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>אין אינטרנט</title>
+<style>
+  html,body{height:100%;margin:0;}
+  body{
+    font-family:-apple-system,Segoe UI,Arial,sans-serif;
+    background:linear-gradient(180deg,#EEF0FF 0%,#FBEEFF 100%);
+    color:#2A2440;
+    display:flex;flex-direction:column;align-items:center;justify-content:center;
+    text-align:center;padding:24px;box-sizing:border-box;
+  }
+  .emoji{font-size:4.5rem;margin-bottom:10px;}
+  h1{font-size:1.3rem;margin:0 0 10px;}
+  p{font-size:1rem;color:#6B6585;margin:0 0 28px;line-height:1.6;}
+  button{
+    font-family:inherit;font-size:1.1rem;font-weight:800;
+    background:#7C5CFC;color:#fff;border:none;border-radius:16px;
+    padding:16px 36px;cursor:pointer;box-shadow:0 4px 14px rgba(124,92,252,.3);
+  }
+  button:active{transform:scale(.96);}
+</style>
+</head>
+<body>
+  <div class="emoji">📡</div>
+  <h1>אין אינטרנט כרגע</h1>
+  <p>נראה שאין חיבור לרשת. אפשר לנסות שוב עוד רגע 🙂</p>
+  <button onclick="location.href='https://coin-quest-app.firebaseapp.com/'">נסה שוב</button>
+</body>
+</html>

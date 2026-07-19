@@ -14,20 +14,34 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- AN5: re-arm the daily chore-reminder alarm after a reboot clears it. -->
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <queries>
         <package android:name="com.mojang.minecraftpe" />
     </queries>
 
     <uses-feature android:name="android.hardware.camera" android:required="false" />
 
+    <!-- AN7 (ANDROID-APP-PLAN.md, signing/hardening review):
+         allowBackup=false, because the parent PIN and any local-only family
+         cache live in the WebView's storage; Android's automatic cloud/adb
+         backup would otherwise silently carry them onto a NEW device on
+         restore, which is exactly the kind of surprise a PIN gate exists to
+         prevent. networkSecurityConfig was authored (see
+         network_security_config.xml) but never actually referenced here, so
+         it had zero effect; wired in now, though usesCleartextTraffic=false
+         already blocks plaintext HTTP app-wide on its own, so this mainly
+         makes the per-domain intent explicit rather than leaving unused
+         config in the tree. -->
     <application
-        android:allowBackup="true"
+        android:allowBackup="false"
         android:icon="@drawable/ic_launcher"
         android:label="@string/app_name"
         android:roundIcon="@drawable/ic_launcher"
         android:supportsRtl="true"
         android:theme="@style/Theme.CoinQuest"
         android:usesCleartextTraffic="false"
+        android:networkSecurityConfig="@xml/network_security_config"
         android:hardwareAccelerated="true">
 
         <activity
@@ -35,6 +49,7 @@
             android:exported="true"
             android:configChanges="orientation|screenSize|keyboardHidden"
             android:screenOrientation="portrait"
+            android:theme="@style/Theme.CoinQuest.Splash"
             android:windowSoftInputMode="adjustResize">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
@@ -62,6 +77,14 @@
                 android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
                 android:value="game-time-enforcement-overlay" />
         </service>
+
+        <!-- AN5: daily chore-reminder alarm (ACTION_FIRE, targeted directly by
+             ChoreReminderScheduler's PendingIntent) + BOOT_COMPLETED re-arm. -->
+        <receiver android:name=".ReminderReceiver" android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+            </intent-filter>
+        </receiver>
 
     </application>
 

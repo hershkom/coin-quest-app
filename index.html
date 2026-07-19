@@ -611,12 +611,29 @@
           <div class="field"><label>שנה קוד הורים (PIN)</label><input id="setPin" type="number" placeholder="קוד חדש"></div>
           <button class="btn primary" onclick="savePin()">שמור קוד</button>
         </div>
+        <!-- AN5 (ANDROID-APP-PLAN.md): native-only (OS notification), hidden
+             in a plain browser via updateChoreReminderCardVisibility(). -->
+        <div class="card" id="choreReminderCard" style="display:none;">
+          <div class="card-h">🔔 תזכורת מטלות יומית</div>
+          <div class="card-sub" style="margin-bottom:10px;">התראה פעם ביום, בשעה שתבחר/י, שמזכירה לבדוק את המטלות.</div>
+          <div class="field"><input id="choreReminderTime" type="time" value="08:00"></div>
+          <div style="display:flex;gap:8px;">
+            <button class="btn primary sm" onclick="saveChoreReminderTime()">שמור שעה</button>
+            <button class="btn ghost sm" id="choreReminderToggle" onclick="toggleChoreReminder()">כבוי (לחץ להפעלה)</button>
+          </div>
+        </div>
         <div class="card">
           <div class="card-h">🤖 הגדרה מתקדמת: צ'אט עם איזי (AI חיצוני, כבוי כברירת מחדל)</div>
           <div class="card-sub" style="margin-bottom:10px;">אופציונלי להורה בלבד. אחרי הזנת מפתח מ-console.groq.com תופיע לילד/ה לשונית צ'אט חדשה. הודעות הצ'אט נשלחות ישירות לשירות AI חיצוני (Groq) שאינו בשליטתנו ואינו מיועד/מסונן במיוחד לילדים — כדאי לשקול לפני הפעלה.</div>
           <div id="groqKeyStatus" style="font-size:.8rem;color:var(--mint);margin-bottom:8px;font-weight:700;"></div>
           <div class="field"><input id="setGroqKey" type="password" placeholder="gsk_..."></div>
           <button class="btn primary" onclick="saveGroqKey()">שמור מפתח</button>
+        </div>
+        <!-- AN8: native-only, hidden unless checkForAppUpdate() finds a
+             newer versionCode than this install. -->
+        <div class="card" id="appUpdateBanner" style="display:none;background:#FFF8E6;border:2px solid var(--gold);">
+          <div class="au-text" style="font-weight:800;margin-bottom:8px;"></div>
+          <a class="btn primary sm" href="https://github.com/hershkom/coin-quest-app" target="_blank" style="text-decoration:none;display:inline-block;">לפרטים</a>
         </div>
         <div class="card">
           <div class="card-h">☁️ החשבון שלי</div>
@@ -644,6 +661,11 @@
             </div>
           </div>
           <button class="btn mint sm" id="forceSyncBtn" style="margin-bottom:8px;display:none;" onclick="forceSyncNow().then(()=>toast('סונכרן ✓'))">🔄 סנכרן עכשיו</button>
+          <!-- AN4 (ANDROID-APP-PLAN.md): the app's pull-to-refresh gesture is
+               disabled inside the Android wrapper (a stray downward swipe
+               used to silently wipe whatever question/game was on screen) --
+               this is the replacement manual escape hatch, parent-only. -->
+          <button class="btn ghost sm" style="margin-bottom:8px;" onclick="location.reload()">🔄 רענון האפליקציה</button>
           <button class="btn coral sm" id="signOutBtn" onclick="signOutOfAccount()" style="display:none;">🚪 התנתקות</button>
           <button class="btn coral sm" id="deleteAccountBtn" onclick="confirmDeleteAccount()" style="display:none;margin-top:6px;">🗑️ מחיקת החשבון וכל הנתונים</button>
         </div>

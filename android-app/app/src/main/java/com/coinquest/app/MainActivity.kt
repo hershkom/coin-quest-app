@@ -13,6 +13,7 @@ import android.widget.ProgressBar
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
+import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.swiperefreshlayout.widget.SwipeRefreshLayout
 
 class MainActivity : AppCompatActivity() {
@@ -20,6 +21,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var webView: WebView
     private lateinit var progressBar: ProgressBar
     private lateinit var swipeRefresh: SwipeRefreshLayout
+    private lateinit var nativeBridge: NativeGameBridge
     private var fileUploadCallback: ValueCallback<Array<Uri>>? = null
     private val FILE_CHOOSER_REQUEST = 100
     private val PERMISSION_REQUEST = 101
@@ -30,6 +32,7 @@ class MainActivity : AppCompatActivity() {
 
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
+        installSplashScreen()
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
@@ -43,12 +46,17 @@ class MainActivity : AppCompatActivity() {
         // GameTimeOverlayService/GameTimeAccessibilityService) -- exposed as
         // window.CoinQuestNative to app.js. Harmless no-op if the web app
         // never calls it (e.g. running in a plain browser during dev).
-        webView.addJavascriptInterface(NativeGameBridge(this, webView), "CoinQuestNative")
+        nativeBridge = NativeGameBridge(this, webView)
+        webView.addJavascriptInterface(nativeBridge, "CoinQuestNative")
         webView.loadUrl(APP_URL)
 
-        swipeRefresh.setOnRefreshListener {
-            webView.reload()
-        }
+        // AN4 (ANDROID-APP-PLAN.md): a pull-to-refresh gesture used to reload
+        // the page (and silently wipe whatever question/game state was on
+        // screen) from ANY accidental downward swipe -- a real risk for a
+        // 7-year-old's touch habits. Disabled entirely; a manual refresh
+        // button lives in Admin Settings (parent-only, behind the PIN) for
+        // the rare case something needs a full reload.
+        swipeRefresh.isEnabled = false
         swipeRefresh.setColorSchemeResources(R.color.purple)
     }
 
@@ -86,9 +94,9 @@ class MainActivity : AppCompatActivity() {
         webView.webViewClient = object : WebViewClient() {
             override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
                 // Subframe navigations (e.g. the in-app game portal's iframe
-                // loading classic.minecraft.net) must stay inside the WebView —
-                // kicking them to an external browser would both break the game
-                // and escape the app's screen-time enforcement.
+                // loading a web-embedded game like ClassiCube) must stay inside
+                // the WebView — kicking them to an external browser would both
+                // break the game and escape the app's screen-time enforcement.
                 if (!request.isForMainFrame) return false
                 val url = request.url.toString()
                 // Stay in-app only for the coin-quest domain
@@ -112,6 +120,24 @@ class MainActivity : AppCompatActivity() {
             override fun onPageFinished(view: WebView, url: String) {
                 progressBar.visibility = View.GONE
                 swipeRefresh.isRefreshing = false
+            }
+
+            // AN3 (ANDROID-APP-PLAN.md): the web app's own service worker
+            // (sw.js) already covers offline use for anything visited before
+            // -- this only fires for the genuinely uncovered gap: a cold
+            // first launch with zero connectivity ever, before the SW has
+            // cached anything, where WebView would otherwise show Chromium's
+            // own English "no internet" error page. Loads a local, Hebrew,
+            // on-brand fallback instead. Sub-frame errors (e.g. an
+            // embedded game's iframe failing) are left alone.
+            override fun onReceivedError(
+                view: WebView,
+                request: WebResourceRequest,
+                error: android.webkit.WebResourceError
+            ) {
+                if (request.isForMainFrame) {
+                    view.loadUrl("file:///android_asset/offline.html")
+                }
             }
         }
 
@@ -156,9 +182,18 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    // AN4 (ANDROID-APP-PLAN.md): with no WebView history left, the OLD
+    // behavior exited the app on a single back-press -- one accidental tap
+    // (or a curious kid mashing buttons) silently closed everything mid-task.
+    // Now it asks first, in the app's own Hebrew tone, via a plain native
+    // AlertDialog (works even if the WebView itself is what's unresponsive).
     override fun onBackPressed() {
-        if (webView.canGoBack()) webView.goBack()
-        else super.onBackPressed()
+        if (webView.canGoBack()) { webView.goBack(); return }
+        androidx.appcompat.app.AlertDialog.Builder(this)
+            .setTitle("לצאת מהאפליקציה?")
+            .setPositiveButton("כן") { _, _ -> super.onBackPressed() }
+            .setNegativeButton("לא", null)
+            .show()
     }
 
     override fun onResume() {
@@ -169,5 +204,10 @@ class MainActivity : AppCompatActivity() {
     override fun onPause() {
         super.onPause()
         webView.onPause()
+    }
+
+    override fun onDestroy() {
+        nativeBridge.shutdownTts()
+        super.onDestroy()
     }
 }

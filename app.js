@@ -323,6 +323,10 @@ async function loadState(){
   state.learning=(await DB.get('cs_learning'))??DEFAULT_LEARNING;
   state.pin     =(await DB.get('cs_pin'))     ??'1234';
   state.calmMode=(await DB.get('cs_calm'))    ??false;
+  // AN5: device-local like the parent PIN (not synced) -- each Android
+  // device with the wrapper installed independently schedules its own OS
+  // notification, so there's no shared "family" value to sync.
+  state.choreReminder=(await DB.get('cs_chore_reminder'))??{enabled:false,hour:8,minute:0};
   state.badgeDefs=(await DB.get('cs_badgedefs'))??DEFAULT_BADGE_DEFS;
   state.events=(await DB.get('cs_events'))??[];
   state.auditLog=(await DB.get('cs_auditlog'))??[];
@@ -500,6 +504,15 @@ function hideSplash(){
   s.style.opacity='0';
   setTimeout(()=>s.remove(),300);
 }
+// AN6 (ANDROID-APP-PLAN.md): keeps the screen from timing out mid-question
+// or mid-game -- a child who reads slower than the OS's default screen
+// timeout assumes shouldn't lose their place because the phone went dark.
+// No-op in a plain browser (window.CoinQuestNative doesn't exist there).
+function updateKeepScreenOn(){
+  if(window.CoinQuestNative&&typeof window.CoinQuestNative.keepScreenOn==='function'){
+    try{ window.CoinQuestNative.keepScreenOn(currentView==='learn'||!!_gt); }catch(e){}
+  }
+}
 function go(v){
   hideSplash();
   stopSpeaking();
@@ -551,6 +564,7 @@ function go(v){
   if(v==='badges') renderBadgesView();
   if(v==='games') renderGamesView();
   if(v==='learn') initLearningView();
+  updateKeepScreenOn();
 }
 // Self-heal: if something upstream (a thrown error mid-render, a race
 // between two go() calls, etc.) ever leaves zero .view elements with
@@ -964,8 +978,17 @@ function shuffleArr(a){ for(let i=a.length-1;i>0;i--){ const j=Math.floor(Math.r
    each answer choice in turn (whole-button highlight, English words spoken
    with an English voice so they're pronounced correctly instead of read as
    Hebrew). Purely an accessibility aid: never touches scoring/crediting. */
-const TTS_SUPPORTED=typeof window!=='undefined'&&'speechSynthesis' in window;
-function ttsEnabled(){ return TTS_SUPPORTED && state.learning.readAloud!==false; }
+const WEB_TTS_SUPPORTED=typeof window!=='undefined'&&'speechSynthesis' in window;
+// AN1 (ANDROID-APP-PLAN.md): inside the Android WebView, a Hebrew voice for
+// speechSynthesis depends on whatever voice pack happens to be installed and
+// is often simply missing -- android/NativeGameBridge.kt exposes Android's
+// own TextToSpeech engine instead, which is far more reliably available.
+// Checked fresh each call (not cached) since the native engine's init is
+// async and may not have finished yet the very first time this is checked.
+function nativeTtsAvailable(){
+  return !!(window.CoinQuestNative && typeof window.CoinQuestNative.ttsAvailable==='function' && window.CoinQuestNative.ttsAvailable());
+}
+function ttsEnabled(){ return (WEB_TTS_SUPPORTED||nativeTtsAvailable()) && state.learning.readAloud!==false; }
 // Bumped by stopSpeaking() and by every new speakWithHighlight() call. A
 // cancelled/interrupted utterance's `error` event still fires and would
 // otherwise call finish()->onEnd, which for the question->choices chain
@@ -976,15 +999,30 @@ function ttsEnabled(){ return TTS_SUPPORTED && state.learning.readAloud!==false;
 // call captures the generation at its own start; finish() only invokes onEnd
 // if nothing newer (another stopSpeaking() or speak) has superseded it.
 let _ttsGen=0;
-function stopSpeaking(){ _ttsGen++; if(TTS_SUPPORTED){ try{ speechSynthesis.cancel(); }catch(e){} } }
+function stopSpeaking(){
+  _ttsGen++;
+  if(window.CoinQuestNative&&typeof window.CoinQuestNative.ttsStop==='function'){ try{ window.CoinQuestNative.ttsStop(); }catch(e){} }
+  if(WEB_TTS_SUPPORTED){ try{ speechSynthesis.cancel(); }catch(e){} }
+}
 function isLatinText(s){ return /^[A-Za-z]/.test((s||'').trim()); }
+// Shared by both the native and Web Speech paths below: finds and highlights
+// the .tts-word span containing charIndex (or the last word started so far,
+// if charIndex lands inside a gap between words).
+function highlightWordAt(el,words,charIndex){
+  if(!el) return;
+  let idx=words.findIndex(w=>charIndex>=w.start&&charIndex<w.end);
+  if(idx<0) idx=words.reduce((best,w,i)=>w.start<=charIndex?i:best,-1);
+  const spans=el.querySelectorAll('.tts-word');
+  spans.forEach(s=>s.classList.remove('reading'));
+  if(idx>=0&&spans[idx]) spans[idx].classList.add('reading');
+}
 // Speaks `text` while highlighting the word currently being said inside
 // `el` (replaces el's content with one <span> per word). Calls onEnd exactly
 // once, always -- including when TTS isn't supported/enabled, when the
-// browser has no installed voice for the language (utterance fires `error`
-// instead of ever completing), or when `boundary`/`end` events simply never
-// arrive (a real cross-browser gap, not hypothetical) -- via a duration-based
-// safety-net timeout, same belt-and-suspenders pattern as coinFly()/coinBurst().
+// engine has no installed voice for the language, or when boundary/end
+// events simply never arrive (a real cross-browser/cross-OEM gap, not
+// hypothetical) -- via a duration-based safety-net timeout, same
+// belt-and-suspenders pattern as coinFly()/coinBurst().
 function speakWithHighlight(text,el,lang,onEnd){
   const myGen=++_ttsGen;
   const words=[]; const re=/\S+/g; let m;
@@ -998,24 +1036,33 @@ function speakWithHighlight(text,el,lang,onEnd){
     onEnd&&onEnd();
   };
   if(!ttsEnabled()){ finish(); return; }
+  // ~110ms/word at rate 0.9 is a generous overestimate; +1.5s margin covers
+  // startup latency. If the real speech finishes first, finish() already
+  // ran and this is a no-op (the `done` guard) -- applies to both paths below.
+  setTimeout(finish,Math.max(1500,words.length*650));
+  if(nativeTtsAvailable()){
+    // Relayed back from Kotlin's UtteranceProgressListener (see
+    // NativeGameBridge.kt). onRangeStart (per-word position) only exists on
+    // API 26+; older devices still get onDone/onError via _nativeTtsEnd, so
+    // speech plays but without a live word highlight -- graceful, not fatal.
+    const uid='tts'+myGen;
+    window._nativeTtsBoundary=(id,charIndex)=>{ if(id===uid&&!done&&myGen===_ttsGen) highlightWordAt(el,words,charIndex); };
+    window._nativeTtsEnd=(id)=>{ if(id===uid) finish(); };
+    try{
+      if(!window.CoinQuestNative.ttsSpeak(text,lang||'he-IL',uid)) finish();
+    }catch(e){ finish(); }
+    return;
+  }
   try{
     const utter=new SpeechSynthesisUtterance(text);
     utter.lang=lang||'he-IL'; utter.rate=0.9;
     utter.onboundary=(ev)=>{
       if(done||!el||myGen!==_ttsGen) return;
       if(ev.name&&ev.name!=='word') return;
-      let idx=words.findIndex(w=>ev.charIndex>=w.start&&ev.charIndex<w.end);
-      if(idx<0) idx=words.reduce((best,w,i)=>w.start<=ev.charIndex?i:best,-1);
-      const spans=el.querySelectorAll('.tts-word');
-      spans.forEach(s=>s.classList.remove('reading'));
-      if(idx>=0&&spans[idx]) spans[idx].classList.add('reading');
+      highlightWordAt(el,words,ev.charIndex);
     };
     utter.onend=finish; utter.onerror=finish;
     speechSynthesis.speak(utter);
-    // ~110ms/word at rate 0.9 is a generous overestimate; +1.5s margin covers
-    // startup latency. If the real speech finishes first, finish() already
-    // ran and this is a no-op (the `done` guard).
-    setTimeout(finish,Math.max(1500,words.length*650));
   }catch(e){ finish(); }
 }
 // Reads the question (word-highlighted in `qEl`), then each answer button in
@@ -1580,6 +1627,7 @@ async function startGameSession(gameId){
   document.getElementById('gameTimerChip').classList.remove('warning');
   _gt={gameId, baseMono:performance.now(), baseWallet:k.gtime, warned:{}, paused:false,
        lastPersist:performance.now(), interval:setInterval(gtTick,1000)};
+  updateKeepScreenOn();
   gtTick();
   // Some sites refuse to be embedded (X-Frame-Options / frame-ancestors) —
   // the iframe then silently stays an empty same-origin document. Detect that
@@ -1633,6 +1681,7 @@ async function endGameSession(expired){
   clearInterval(_gt.interval);
   await gtPersist();
   _gt=null;
+  updateKeepScreenOn();
   document.getElementById('gameFrame').src='about:blank'; // actually stop the game
   document.getElementById('gameOverlay').style.display='none';
   renderGamesView(); renderGameTimeBanner();
@@ -1651,6 +1700,45 @@ async function endGameSession(expired){
    usage; the wallet is only ever debited by what the native side reports,
    never by anything computed here. */
 function isNativeGameAvailable(){ return typeof window.CoinQuestNative!=='undefined'; }
+
+/* ---- daily chore-reminder notification (AN5, native-only) ---- */
+function updateChoreReminderCardVisibility(){
+  const card=document.getElementById('choreReminderCard');
+  if(card) card.style.display=isNativeGameAvailable()?'':'none';
+}
+function fillChoreReminderSettings(){
+  const t=document.getElementById('choreReminderTime'); if(!t) return;
+  const r=state.choreReminder||{enabled:false,hour:8,minute:0};
+  t.value=String(r.hour).padStart(2,'0')+':'+String(r.minute).padStart(2,'0');
+  const btn=document.getElementById('choreReminderToggle');
+  if(btn) btn.textContent=r.enabled?'פעיל ✓ (לחץ לכיבוי)':'כבוי (לחץ להפעלה)';
+}
+// Pushes the current state.choreReminder to the native alarm, or cancels it
+// if disabled. Called after any change AND once at startup so a reminder
+// set on a previous install/session survives (AlarmManager registrations
+// don't persist app updates the same way SharedPreferences-backed state does).
+function applyChoreReminder(){
+  if(!isNativeGameAvailable()) return;
+  const r=state.choreReminder;
+  if(r&&r.enabled) window.CoinQuestNative.scheduleChoreReminder(r.hour,r.minute);
+  else if(typeof window.CoinQuestNative.cancelChoreReminder==='function') window.CoinQuestNative.cancelChoreReminder();
+}
+async function toggleChoreReminder(){
+  const r=state.choreReminder||{enabled:false,hour:8,minute:0};
+  r.enabled=!r.enabled; state.choreReminder=r;
+  await DB.set('cs_chore_reminder',r);
+  applyChoreReminder(); fillChoreReminderSettings();
+  toast(r.enabled?'התזכורת הופעלה ✓':'התזכורת כבויה');
+}
+async function saveChoreReminderTime(){
+  const t=document.getElementById('choreReminderTime'); if(!t||!t.value) return;
+  const [h,m]=t.value.split(':').map(Number);
+  const r=state.choreReminder||{enabled:false,hour:8,minute:0};
+  r.hour=h; r.minute=m; state.choreReminder=r;
+  await DB.set('cs_chore_reminder',r);
+  applyChoreReminder();
+  toast('שעת התזכורת נשמרה ✓');
+}
 async function startNativeGameSession(g){
   const k=cur(); if(!k) return;
   if(!isNativeGameAvailable()){
@@ -1778,7 +1866,7 @@ function adminTab(t){
   if(t==='events') renderEventsAdmin();
   if(t==='badges') renderBadgesAdmin();
   if(t==='report') renderReportAdmin();
-  if(t==='settings'){ fillAccountSettings(); fillCalmToggle(); }
+  if(t==='settings'){ fillAccountSettings(); fillCalmToggle(); fillChoreReminderSettings(); }
 }
 async function renderCalmLogStats(){
   const el=document.getElementById('calmLogStats'); if(!el) return;
@@ -4096,7 +4184,41 @@ async function finishWizard(){
   go('picker');
 }
 
+/* ---- AN8: parent-facing "a newer version exists" check (sideloaded family
+   flavor only -- Play installs auto-update through the Store itself) ---- */
+const APP_UPDATE_CHECK_URL='https://github.com/hershkom/coin-quest-app/releases/download/latest-family/version.json';
+let _appUpdateInfo=null;
+async function checkForAppUpdate(){
+  if(!isNativeGameAvailable()||typeof window.CoinQuestNative.getVersionCode!=='function') return;
+  // At most once/day -- a background check on every cold start would be
+  // wasteful and, on a flaky connection, a pointless repeated failure.
+  const last=Number(localStorage.getItem('cs_update_check_ts')||0);
+  if(Date.now()-last<24*3600*1000) return;
+  localStorage.setItem('cs_update_check_ts',String(Date.now()));
+  try{
+    const res=await fetch(APP_UPDATE_CHECK_URL,{cache:'no-store'});
+    if(!res.ok) return;
+    const info=await res.json();
+    const local=window.CoinQuestNative.getVersionCode();
+    if(local>=0&&Number(info.versionCode)>local){ _appUpdateInfo=info; updateAppUpdateBanner(); }
+  }catch(e){ /* offline or unreachable -- silently skip, not worth bothering a parent about */ }
+}
+// Shown regardless of Google-account sign-in state (it's about the APK
+// itself, not the cloud family) -- kept separate from fillAccountSettings()
+// so a background update check doesn't also re-trigger that function's
+// Firebase reads every time it resolves.
+function updateAppUpdateBanner(){
+  const banner=document.getElementById('appUpdateBanner');
+  if(!banner) return;
+  if(_appUpdateInfo){
+    banner.style.display='block';
+    banner.querySelector('.au-text').textContent='📦 גרסה חדשה זמינה ('+(_appUpdateInfo.versionName||'')+')';
+  }else{
+    banner.style.display='none';
+  }
+}
 async function fillAccountSettings(){
+  updateAppUpdateBanner();
   const el=document.getElementById('accountStatus'); if(!el) return;
   const inviteBox=document.getElementById('accountInviteBox');
   if(!authUser){
@@ -4332,9 +4454,12 @@ window.addEventListener('unhandledrejection', (ev)=>{
   try{
     GROQ_API_KEY=localStorage.getItem('cs_groq_key')||'';
     updateChatNavVisibility();
+    updateChoreReminderCardVisibility();
+    checkForAppUpdate(); // fire-and-forget: never blocks startup on a network round-trip
     await detectBackend();
     await loadState();
     applyCalmModeClass();
+    applyChoreReminder();
     setInterval(checkEventReminders, 60000);
     checkEventReminders();
 

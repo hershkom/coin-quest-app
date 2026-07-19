@@ -7,6 +7,9 @@ on:
       - '.github/workflows/build-apk.yml'
   workflow_dispatch:
 
+permissions:
+  contents: write # AN8: needed to publish the version-check GitHub Release below
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -49,3 +52,29 @@ jobs:
           name: coin-quest-debug-apk-play
           path: android-app/app/build/outputs/apk/play/debug/app-play-debug.apk
           if-no-files-found: error
+
+      # AN8 (ANDROID-APP-PLAN.md): lets app.js tell a parent "a newer version
+      # exists" for the sideloaded family flavor, which has no Play Store to
+      # auto-update it. Reads the version numbers straight from build.gradle
+      # (the source of truth) -- NOT tied to this specific debug build being
+      # installable as an update: it's debug-signed, while real devices run a
+      # release build signed with the local keystore (see
+      # PLAY-STORE-CHECKLIST.md), and Android refuses to install an update
+      # signed with a different certificate. This is a notification only; the
+      # banner just points the parent at the repo to get the real build.
+      - name: Write version.json
+        run: |
+          VERSION_CODE=$(grep -oP 'versionCode\s+\K[0-9]+' app/build.gradle)
+          VERSION_NAME=$(grep -oP 'versionName\s+"\K[^"]+' app/build.gradle)
+          echo "{\"versionCode\": $VERSION_CODE, \"versionName\": \"$VERSION_NAME\", \"releasesUrl\": \"https://github.com/${{ github.repository }}\"}" > version.json
+          cat version.json
+
+      - name: Publish version-check release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: latest-family
+          name: "Latest version info (not an install artifact)"
+          body: "Machine-readable version.json read by the app's in-app update banner. To actually install an update, build+sign locally per PLAY-STORE-CHECKLIST.md -- this release is not a distributable APK."
+          files: android-app/version.json
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

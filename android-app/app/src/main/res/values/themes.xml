@@ -8,4 +8,16 @@
         <item name="android:statusBarColor">@color/purple</item>
         <item name="android:navigationBarColor">@color/white</item>
     </style>
+
+    <!-- AN2 (ANDROID-APP-PLAN.md): shown by the OS via the splash screen API
+         (installSplashScreen() in MainActivity) while the WebView loads,
+         hiding the couple of seconds of blank/loading time that used to be
+         the first thing a child saw. Reuses the same coin launcher icon
+         (already circular, fits the masked splash-icon shape as-is) so the
+         brand is consistent from the very first frame. -->
+    <style name="Theme.CoinQuest.Splash" parent="Theme.SplashScreen">
+        <item name="windowSplashScreenBackground">@color/bg</item>
+        <item name="windowSplashScreenAnimatedIcon">@drawable/ic_launcher_foreground</item>
+        <item name="postSplashScreenTheme">@style/Theme.CoinQuest</item>
+    </style>
 </resources>
