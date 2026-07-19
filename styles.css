@@ -8,17 +8,17 @@
     --ink:#2A2440; --ink2:#6B6585; --muted:#807A99; /* darkened from #9B96B0 -- was below 4.5:1 on white for small text */
     --card:#FFFFFF; --line:#ECE9F5;
     --bg1:#EEF0FF; --bg2:#FBEEFF; --bg3:#E8FBFF;
-    /* Minecraft colors for Ariel */
+    /* Blocky-theme colors for Ariel */
     --mc-dirt:#8B7355; --mc-grass:#52C64B; --mc-wood:#6B4423;
     --mc-stone:#808080; --mc-dirt-light:#A0826D;
   }
   @import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap');
 
   /* Unicorn theme for Noa (V6) -- deliberately lighter-touch than
-     minecraft-mode: a pastel background + the living #theme-deco layer only,
+     blocks-mode: a pastel background + the living #theme-deco layer only,
      no font swap, no bevel/blocky overrides. Ariel having a whole world and
      Noa having none was the actual gap this closes; it doesn't need to
-     mirror every minecraft-mode rule to do that. */
+     mirror every blocks-mode rule to do that. */
   .app.unicorn-mode {
     background:linear-gradient(180deg,#FFE3F3 0%,#F3E9FF 55%,#E9F3FF 100%) !important;
     background-attachment:fixed !important;
@@ -27,8 +27,8 @@
     background:linear-gradient(140deg,var(--pink),var(--purple)) !important;
   }
 
-  /* Minecraft theme - blocky backgrounds + original colors */
-  .app.minecraft-mode {
+  /* Blocks theme - blocky backgrounds + original colors */
+  .app.blocks-mode {
     background:
       /* grass line */ linear-gradient(90deg,#52C64B 0%,#52C64B 100%),
       /* sky */ linear-gradient(180deg,#87CEEB 0%,#E0F6FF 100%) !important;
@@ -37,7 +37,7 @@
     background-repeat:repeat,no-repeat !important;
     background-attachment:fixed !important;
   }
-  .app.minecraft-mode .hero {
+  .app.blocks-mode .hero {
     background:linear-gradient(140deg,#7C5CFC,#4DABF7),repeating-linear-gradient(90deg,rgba(255,255,255,.05) 0,rgba(255,255,255,.05) 8px,transparent 8px,transparent 16px) !important;
     /* grass-over-dirt stripe along the top edge, in inset shadows so it
        doesn't fight the border-radius override below */
@@ -45,156 +45,156 @@
   }
   /* Blocky silhouette: square-ish corners (a soft 4px, not a hard 0 --
      legible as "blocky" without being harsh) + a bevel border that mimics a
-     Minecraft button (light top/left, dark bottom/right edge, flipped on
+     chunky game button (light top/left, dark bottom/right edge, flipped on
      press) on every card/button surface. */
-  .app.minecraft-mode .card,
-  .app.minecraft-mode .btn,
-  .app.minecraft-mode .bigbtn,
-  .app.minecraft-mode .chore-row,
-  .app.minecraft-mode .modal,
-  .app.minecraft-mode .kid-card,
-  .app.minecraft-mode .game-row,
-  .app.minecraft-mode .admin-row,
-  .app.minecraft-mode .row{
+  .app.blocks-mode .card,
+  .app.blocks-mode .btn,
+  .app.blocks-mode .bigbtn,
+  .app.blocks-mode .chore-row,
+  .app.blocks-mode .modal,
+  .app.blocks-mode .kid-card,
+  .app.blocks-mode .game-row,
+  .app.blocks-mode .admin-row,
+  .app.blocks-mode .row{
     border-radius:4px !important;
   }
-  .app.minecraft-mode .btn,
-  .app.minecraft-mode .bigbtn{
+  .app.blocks-mode .btn,
+  .app.blocks-mode .bigbtn{
     border:3px solid !important;
     border-color:rgba(255,255,255,.5) rgba(0,0,0,.4) rgba(0,0,0,.4) rgba(255,255,255,.5) !important;
   }
-  .app.minecraft-mode .btn:active,
-  .app.minecraft-mode .bigbtn:active{
+  .app.blocks-mode .btn:active,
+  .app.blocks-mode .bigbtn:active{
     border-color:rgba(0,0,0,.4) rgba(255,255,255,.5) rgba(255,255,255,.5) rgba(0,0,0,.4) !important;
   }
-  .app.minecraft-mode .hero .big-coin {
+  .app.blocks-mode .hero .big-coin {
     width:74px !important;
     height:74px !important;
     box-shadow:0 8px 0 #D99409,0 14px 24px rgba(217,148,9,.35),inset 0 -2px 3px rgba(0,0,0,.15) !important;
   }
-  .app.minecraft-mode .hero .amount {
+  .app.blocks-mode .hero .amount {
     font-family:'Press Start 2P',monospace !important;
     font-size:2.8rem !important;
     text-shadow:3px 3px 0 rgba(0,0,0,.3) !important;
   }
-  .app.minecraft-mode .hero .amount-label {
+  .app.blocks-mode .hero .amount-label {
     font-family:'Press Start 2P',monospace !important;
     font-size:.9rem !important;
   }
-  .app.minecraft-mode .ps-name {
+  .app.blocks-mode .ps-name {
     font-family:'Press Start 2P',monospace !important;
     font-size:.85rem !important;
   }
-  .app.minecraft-mode .ps-av {
+  .app.blocks-mode .ps-av {
     width:38px !important;
     height:38px !important;
     box-shadow:0 0 0 2px rgba(0,0,0,.3),inset 0 -2px 0 rgba(0,0,0,.3) !important;
   }
-  .app.minecraft-mode .card {
+  .app.blocks-mode .card {
     background:linear-gradient(135deg,rgba(255,255,255,.95),rgba(255,255,255,.85)),repeating-linear-gradient(90deg,rgba(124,92,252,.02) 0,rgba(124,92,252,.02) 8px,transparent 8px,transparent 16px) !important;
     box-shadow:0 8px 22px rgba(124,92,252,.12),inset 0 1px 0 rgba(255,255,255,.8) !important;
   }
-  .app.minecraft-mode .btn {
+  .app.blocks-mode .btn {
     font-family:'Press Start 2P',monospace !important;
     font-size:.65rem !important;
     box-shadow:0 6px 0 rgba(0,0,0,.15),0 10px 20px rgba(0,0,0,.1) !important;
   }
-  .app.minecraft-mode .btn.primary {
+  .app.blocks-mode .btn.primary {
     background:linear-gradient(135deg,#7C5CFC,#5E3FD6) !important;
   }
-  .app.minecraft-mode .btn.mint {
+  .app.blocks-mode .btn.mint {
     background:linear-gradient(135deg,#27C99A,#1BA37C) !important;
   }
-  .app.minecraft-mode .btn.gold {
+  .app.blocks-mode .btn.gold {
     background:linear-gradient(135deg,#F5B82E,#D99409) !important;
   }
-  .app.minecraft-mode .btn:active {
+  .app.blocks-mode .btn:active {
     transform:translateY(4px) !important;
     box-shadow:0 2px 0 rgba(0,0,0,.15),0 5px 10px rgba(0,0,0,.1) !important;
   }
-  .app.minecraft-mode .section-title {
+  .app.blocks-mode .section-title {
     font-family:'Press Start 2P',monospace !important;
     font-size:.85rem !important;
     color:#6B6585 !important;
   }
-  .app.minecraft-mode .chore-row {
+  .app.blocks-mode .chore-row {
     background:linear-gradient(135deg,#fff,#FAFBFF),repeating-linear-gradient(90deg,rgba(124,92,252,.03) 0,rgba(124,92,252,.03) 8px,transparent 8px,transparent 16px) !important;
     box-shadow:0 4px 14px rgba(124,92,252,.08) !important;
   }
-  .app.minecraft-mode .chore-check {
+  .app.blocks-mode .chore-check {
     font-family:'Press Start 2P',monospace !important;
   }
-  .app.minecraft-mode .bottomnav {
+  .app.blocks-mode .bottomnav {
     background:rgba(255,255,255,.92),repeating-linear-gradient(90deg,rgba(124,92,252,.02) 0,rgba(124,92,252,.02) 8px,transparent 8px,transparent 16px) !important;
   }
-  .app.minecraft-mode .navbtn {
+  .app.blocks-mode .navbtn {
     font-family:'Press Start 2P',monospace !important;
     font-size:.6rem !important;
   }
-  .app.minecraft-mode .navbtn.active {
+  .app.blocks-mode .navbtn.active {
     color:#7C5CFC !important;
   }
-  .app.minecraft-mode .cal-cell {
+  .app.blocks-mode .cal-cell {
     border-radius:6px !important;
     font-weight:700 !important;
     box-shadow:0 2px 4px rgba(0,0,0,.08) !important;
   }
-  .app.minecraft-mode .cal-cell.clean {
+  .app.blocks-mode .cal-cell.clean {
     background:linear-gradient(135deg,#27C99A,#1BA37C) !important;
     color:#fff !important;
   }
-  .app.minecraft-mode .cal-cell.accident {
+  .app.blocks-mode .cal-cell.accident {
     background:linear-gradient(135deg,#FF6B6B,#E84A4A) !important;
     color:#fff !important;
   }
-  .app.minecraft-mode .streak-banner {
+  .app.blocks-mode .streak-banner {
     background:linear-gradient(135deg,#FFE9B0,#FFC55C) !important;
     box-shadow:0 8px 22px rgba(217,148,9,.25) !important;
   }
-  .app.minecraft-mode .streak-banner .sb-title {
+  .app.blocks-mode .streak-banner .sb-title {
     font-family:'Press Start 2P',monospace !important;
     font-size:.85rem !important;
   }
-  .app.minecraft-mode .streak-hero {
+  .app.blocks-mode .streak-hero {
     background:linear-gradient(135deg,#FFE9B0,#FFC55C) !important;
     box-shadow:0 12px 28px rgba(217,148,9,.3) !important;
   }
-  .app.minecraft-mode .streak-hero .sh-num {
+  .app.blocks-mode .streak-hero .sh-num {
     font-family:'Press Start 2P',monospace !important;
     font-size:3rem !important;
   }
-  .app.minecraft-mode .row {
+  .app.blocks-mode .row {
     background:#FAF9FF,repeating-linear-gradient(90deg,rgba(124,92,252,.02) 0,rgba(124,92,252,.02) 8px,transparent 8px,transparent 16px) !important;
     box-shadow:0 4px 14px rgba(124,92,252,.08) !important;
   }
-  .app.minecraft-mode .math-problem {
+  .app.blocks-mode .math-problem {
     background:linear-gradient(140deg,#FF6B6B,#E84A4A),repeating-linear-gradient(45deg,rgba(255,255,255,.05) 0,rgba(255,255,255,.05) 10px,transparent 10px,transparent 20px) !important;
   }
-  .app.minecraft-mode .math-problem .q {
+  .app.blocks-mode .math-problem .q {
     font-family:'Press Start 2P',monospace !important;
     font-size:2.4rem !important;
   }
-  .app.minecraft-mode .math-input {
+  .app.blocks-mode .math-input {
     font-family:'Press Start 2P',monospace !important;
     font-size:1.5rem !important;
   }
-  .app.minecraft-mode .key {
+  .app.blocks-mode .key {
     font-family:'Press Start 2P',monospace !important;
     font-size:.7rem !important;
   }
-  .app.minecraft-mode .modal {
+  .app.blocks-mode .modal {
     background:#fff,repeating-linear-gradient(90deg,rgba(124,92,252,.01) 0,rgba(124,92,252,.01) 8px,transparent 8px,transparent 16px) !important;
   }
-  .app.minecraft-mode .modal h3 {
+  .app.blocks-mode .modal h3 {
     font-family:'Press Start 2P',monospace !important;
     font-size:.9rem !important;
   }
-  .app.minecraft-mode .kid-card {
+  .app.blocks-mode .kid-card {
     background:linear-gradient(135deg,#fff,#FAFBFF) !important;
     box-shadow:0 10px 26px rgba(124,92,252,.14) !important;
   }
-  /* Minecraft character sprite */
-  .minecraft-player {
+  /* Blocky character sprite */
+  .blocks-player {
     display:inline-block;
     width:100%;
     height:100%;
@@ -212,7 +212,7 @@
     background-repeat:no-repeat;
   }
   /* ---- #theme-deco: living per-child theme background (clouds/ground/night
-     for minecraft-mode, floating stars/sparkles for unicorn-mode) ---- */
+     for blocks-mode, floating stars/sparkles for unicorn-mode) ---- */
   .mc-cloud{position:absolute;left:-140px;width:22%;aspect-ratio:5/2;background:#fff;opacity:.75;
     box-shadow:40px 8px 0 0 #fff,80px 0 0 -6px #fff,-30px 10px 0 -4px #fff;
     border-radius:2px;animation-name:mc-drift;animation-timing-function:linear;animation-iteration-count:infinite;}
@@ -227,7 +227,7 @@
   /* Unicorn theme (V6): pastel pink/purple sky, slow-drifting soft clouds,
      twinkling fixed stars -- same living-background idea as V3, no motion
      that isn't ambient/slow, and no font/shape changes elsewhere (unlike
-     minecraft-mode, this theme is purely a background + accent, per the
+     blocks-mode, this theme is purely a background + accent, per the
      plan's "no special font" decision). */
   .uni-cloud{position:absolute;left:-120px;width:20%;aspect-ratio:5/2;background:rgba(255,255,255,.8);opacity:.8;
     box-shadow:36px 6px 0 0 rgba(255,255,255,.8),72px 0 0 -6px rgba(255,255,255,.8);

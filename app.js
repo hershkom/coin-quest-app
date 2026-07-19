@@ -89,9 +89,11 @@ const DEFAULT_CHILDREN=[
 function childUsesSchedule(ch){ return ch?.useSchedule??(ch?.id==='ariel'); }
 // Same "field may not exist on old saved data" fallback pattern as
 // childUsesSchedule() above -- children saved before themes existed get the
-// original hardcoded look (minecraft for ariel, unicorn for noa, none for
+// original hardcoded look (blocks for ariel, unicorn for noa, none for
 // anyone else/a newly added child) so nobody's screen silently changes.
-function childTheme(ch){ return ch?.theme??(ch?.id==='ariel'?'minecraft':ch?.id==='noa'?'unicorn':'none'); }
+// 'blocks' was called 'minecraft' before the store-release rename (S3) --
+// childThemeRaw below still accepts the old stored value for back-compat.
+function childTheme(ch){ const t=ch?.theme??(ch?.id==='ariel'?'blocks':ch?.id==='noa'?'unicorn':'none'); return t==='minecraft'?'blocks':t; }
 const DEFAULT_CHORES=[
   {id:'chore_teeth', label:'צחצוח שיניים', emoji:'🦷', points:5, max:2},
   {id:'chore_toilet', label:'לשבת בשירותים', emoji:'🚽', points:3, max:6},
@@ -108,7 +110,7 @@ const DEFAULT_REWARDS=[
   {id:'movie', label:'ערב סרט', emoji:'🍿', cost:80},
 ];
 const DEFAULT_MATH={enabled:true, ops:['+','-'], maxNum:20, pts:2, daily:10};
-// "מכרה הידע" (Knowledge Mine) — Minecraft-themed learning quiz (math/english/
+// "מכרה הידע" (Knowledge Mine) — block-world-themed learning quiz (math/english/
 // science) that earns coins and, optionally, game-time minutes. Family-wide
 // settings live in state.learning (this section); per-kid progress/level/
 // earned-today live in loadKid() like the rest of the per-kid state.
@@ -126,16 +128,24 @@ const DEFAULT_LEARNING={enabled:true,
 // strangers, and local /client cheat commands (fly/speed etc.) for the
 // creative-mode play the kid actually loves. bloxd.io was removed for
 // exactly those reasons (open multiplayer lobby + public chat).
-// classic.minecraft.net is kept for desktop but demands a physical keyboard.
+// The old classic.minecraft.net iframe entry was removed (S3, store-release
+// prep): embedding Mojang's own live web property inside our app's chrome
+// carries real trademark/affiliation risk for a publicly-marketed app --
+// ClassiCube (self-hosted, open-source, unaffiliated with Mojang) covers the
+// same "build with blocks" play pattern without that exposure. See
+// ANDROID-APP-PLAN.md S3 and the cs_games_v5 migration below.
 const DEFAULT_GAMES=[
   {id:'classicube', label:'קלאסיקיוב (בנייה חופשית, משחק יחיד)', emoji:'🧱', url:'games/classicube/'},
-  {id:'mcclassic',  label:'מיינקראפט קלאסי (למחשב עם מקלדת)', emoji:'⛏️', url:'https://classic.minecraft.net/'},
-  // Native game (backlog: the REAL purchased Minecraft, not a web-embedded
-  // one) — `native:true` + `androidPackage` instead of `url`. Only playable
-  // inside the Android wrapper app, where window.CoinQuestNative exists; the
-  // enforced countdown runs natively (AccessibilityService + overlay, see
-  // android-app/.../GameTimeOverlayService.kt), not in this web page, since
-  // the WebView itself is backgrounded the whole time the game is open.
+  // Native game launcher for a REAL app the family already owns/installed
+  // separately (e.g. the actual purchased Minecraft) -- `native:true` +
+  // `androidPackage` instead of `url`. This is nominative use (naming a real
+  // installed product by its own package id, like any app launcher/shortcut),
+  // not embedding or redistributing anything, so it carries none of the
+  // iframe risk above. Only playable inside the Android wrapper app, where
+  // window.CoinQuestNative exists; the enforced countdown runs natively
+  // (AccessibilityService + overlay, see android-app/.../GameTimeOverlayService.kt),
+  // not in this web page, since the WebView itself is backgrounded the whole
+  // time the game is open.
   {id:'minecraft_real', label:'מיינקראפט (הגרסה שקנית)', emoji:'⛏️', native:true, androidPackage:'com.mojang.minecraftpe'},
 ];
 const DEFAULT_STREAKS=[
@@ -289,6 +299,15 @@ async function loadState(){
       await DB.set('cs_games',state.games);
     }
     await DB.set('cs_games_v4',true);
+  }
+  // One-time migration v5 (S3, store-release prep): drop the classic.minecraft.net
+  // iframe entry -- see the comment above DEFAULT_GAMES for why. Devices that
+  // synced an older games list (including the '(למחשב עם מקלדת)' label added
+  // by v3 above) get it removed too.
+  if(!(await DB.get('cs_games_v5'))){
+    state.games=state.games.filter(g=>!/classic\.minecraft\.net/.test(g.url||''));
+    await DB.set('cs_games',state.games);
+    await DB.set('cs_games_v5',true);
   }
   // One-time seed: make sure at least one coins→minutes package exists in the
   // rewards shop, so the whole buy-time flow works out of the box with zero
@@ -520,7 +539,7 @@ function go(v){
         renderChores(); renderDayStrip(); renderFirstThen();
         // Catch the day->night decoration switch across the sleep-time
         // boundary, same cadence as the schedule refresh above.
-        if(document.querySelector('.app').classList.contains('minecraft-mode')) addThemeDecorations('minecraft');
+        if(document.querySelector('.app').classList.contains('blocks-mode')) addThemeDecorations('blocks');
       },45000);
     }
   }
@@ -594,7 +613,7 @@ async function selectChild(id){
 }
 // Generalized per-child visual theme (V6): each child can have their own
 // world instead of only Ariel getting one. `theme` is looked up via
-// childTheme() (falls back to the original hardcoded ariel=minecraft/
+// childTheme() (falls back to the original hardcoded ariel=blocks/
 // noa=unicorn/other=none for children saved before this field existed).
 // Kept as one dispatcher so every call site (selectChild, child deletion,
 // sign-in restore, cold-start restore) goes through the same logic instead
@@ -603,12 +622,12 @@ function applyChildTheme(id){
   const app=document.querySelector('.app');
   const ch=state.children.find(c=>c.id===id);
   const theme=childTheme(ch);
-  app.classList.toggle('minecraft-mode',theme==='minecraft');
+  app.classList.toggle('blocks-mode',theme==='blocks');
   app.classList.toggle('unicorn-mode',theme==='unicorn');
   if(theme==='none'){ removeThemeDecorations(); return; }
   addThemeDecorations(theme);
 }
-// Living background instead of a static image/nothing: for minecraft-mode,
+// Living background instead of a static image/nothing: for blocks-mode,
 // slow pixel clouds drifting across a sky, a grass/dirt strip along the
 // bottom, and a night palette (dark sky + moon + fixed stars, no drifting)
 // once the child's own configured sleep time hits -- reusing
@@ -621,7 +640,7 @@ function applyChildTheme(id){
 // reduced-motion media query already covers this element via its universal
 // selector).
 function addThemeDecorations(theme){
-  const isNight=theme==='minecraft'&&currentPeriodKey()==='sleep';
+  const isNight=theme==='blocks'&&currentPeriodKey()==='sleep';
   let deco=document.getElementById('theme-deco');
   if(deco && deco.dataset.theme===theme && deco.dataset.night===String(isNight)) return; // already correct, don't restart animations
   if(deco) deco.remove();
@@ -636,7 +655,7 @@ function addThemeDecorations(theme){
   // siblings (topbar/main/bottomnav, none of which set z-index) paint over it
   // purely by source order -- no z-index juggling needed.
   deco.style.cssText='position:absolute;inset:0;pointer-events:none;overflow:hidden;transition:background 1.5s;background:'+themeBgFor(theme,isNight)+';';
-  if(theme==='minecraft'){
+  if(theme==='blocks'){
     const cloud=(top,scale,dur,delay)=>`<div class="mc-cloud" style="top:${top}%;animation-duration:${dur}s;animation-delay:${delay}s;transform:scale(${scale});"></div>`;
     const star=(l,t)=>`<div class="mc-star" style="left:${l}%;top:${t}%;"></div>`;
     deco.innerHTML = isNight
@@ -652,7 +671,7 @@ function addThemeDecorations(theme){
   app.insertBefore(deco,app.firstChild);
 }
 function themeBgFor(theme,isNight){
-  if(theme==='minecraft') return isNight?'linear-gradient(180deg,#0B1130,#1B2550)':'linear-gradient(180deg,#87CEEB,#E0F6FF)';
+  if(theme==='blocks') return isNight?'linear-gradient(180deg,#0B1130,#1B2550)':'linear-gradient(180deg,#87CEEB,#E0F6FF)';
   if(theme==='unicorn') return 'linear-gradient(180deg,#FFE3F3,#F3E9FF)';
   return 'transparent';
 }
@@ -1982,7 +2001,7 @@ function editChild(id){
     <div class="field" style="text-align:right;"><label>אימוג'י</label><input id="ecEmoji" value="${ch.emoji}" maxlength="2" style="width:100%;border:2px solid var(--line);border-radius:13px;padding:11px;font-family:inherit;"></div>
     <div class="field" style="text-align:right;"><label>🎨 העולם שלו/ה באפליקציה</label>
       <select id="ecTheme" style="width:100%;border:2px solid var(--line);border-radius:13px;padding:11px;font-family:inherit;">
-        ${themeOpt('none','ללא (ברירת מחדל)')}${themeOpt('minecraft','⛏️ מיינקראפט')}${themeOpt('unicorn','🦄 חד-קרן')}
+        ${themeOpt('none','ללא (ברירת מחדל)')}${themeOpt('blocks','⛏️ עולם הבלוקים')}${themeOpt('unicorn','🦄 חד-קרן')}
       </select>
     </div>
     <div class="field" style="display:flex;align-items:center;justify-content:space-between;">
@@ -2042,7 +2061,7 @@ async function adminDelChild(id){
     // child profile bypassed that entirely and left the theme visually stuck
     // on for whoever's picked next.
     if(state.current===null){
-      document.querySelector('.app').classList.remove('minecraft-mode','unicorn-mode');
+      document.querySelector('.app').classList.remove('blocks-mode','unicorn-mode');
       removeThemeDecorations();
     }
     // Each streak challenge is assigned to one child via childId. Deleting
@@ -2625,7 +2644,21 @@ async function addBadgeDef(){
   renderBadgesAdmin(); toast('נוסף! ✓');
 }
 
-async function savePin(){ const v=document.getElementById('setPin').value.trim(); if(v.length<3){ toast('קוד קצר מדי'); return; } state.pin=v; await DB.set('cs_pin',v); scheduleSync(); document.getElementById('setPin').value=''; toast('הקוד עודכן ✓'); }
+// S2 (store-release prep): reject codes a child could guess in one or two
+// tries (all-same-digit, or a run like 1234/4321/2345) — the PIN-lockout
+// above only slows down brute force, it doesn't stop a lucky first guess.
+function isWeakPin(pin){
+  if(/^(\d)\1+$/.test(pin)) return true;
+  const asc='0123456789', desc='9876543210';
+  if(pin.length>=3 && (asc.includes(pin) || desc.includes(pin))) return true;
+  return false;
+}
+async function savePin(){
+  const v=document.getElementById('setPin').value.trim();
+  if(v.length<3){ toast('קוד קצר מדי'); return; }
+  if(isWeakPin(v)){ toast('קוד קל מדי לניחוש — נסה קוד אחר 🙂'); return; }
+  state.pin=v; await DB.set('cs_pin',v); scheduleSync(); document.getElementById('setPin').value=''; toast('הקוד עודכן ✓');
+}
 
 /* ===== BACKUP / RESTORE ===== */
 function backupKeyList(){
@@ -3428,7 +3461,14 @@ async function applyRemoteSnapshot(data){
       await DB.set('cs_anchored',state.anchored);
     }
     if(data.events){ state.events=data.events; await DB.set('cs_events',data.events); }
-    if(data.games){ state.games=data.games; await DB.set('cs_games',data.games); }
+    if(data.games){
+      // Defense in depth alongside the cs_games_v5 migration above: a device
+      // that hasn't picked up this code yet could still push the old
+      // classic.minecraft.net iframe entry back into a family that already
+      // migrated it away.
+      state.games=data.games.filter(g=>!/classic\.minecraft\.net/.test(g.url||''));
+      await DB.set('cs_games',state.games);
+    }
     if(data.auditLog){ state.auditLog=data.auditLog; await DB.set('cs_auditlog',data.auditLog); }
     // Use !==undefined (not truthiness) so an explicit false — calm mode
     // turned OFF on another device — still overwrites a local true.
@@ -3444,10 +3484,12 @@ async function applyRemoteSnapshot(data){
       if(_hwmDate==null||remote>dateToNum(_hwmDate)){ _hwmDate=data.hwmDate; await DB.set('cs_hwm_date',_hwmDate); }
     }
     if(data.kids){
-      // Sanity-bound whatever comes back: the DB is in open test-mode, so this
-      // is defense in depth against a corrupted or maliciously-written balance
-      // (e.g. NaN, Infinity, or a huge/negative number), not a full guarantee —
-      // real protection requires Firebase auth + server-side validation rules.
+      // Sanity-bound whatever comes back: security rules (database.rules.json)
+      // already require auth + matching familyId before any read/write is
+      // even accepted, but this is still defense in depth against a
+      // corrupted or buggy-client-written balance (e.g. NaN, Infinity, or a
+      // huge/negative number) — the rules don't validate the VALUES written,
+      // only WHO can write them.
       for(const [id,kid] of Object.entries(data.kids)){
         if(!kid||typeof kid!=='object') continue;
         // If THIS device has a local edit for this kid that hasn't been
@@ -3937,7 +3979,7 @@ function showSetupWizard(){ wizKids=[]; wizPinVal=''; renderWizard(); modalBg.cl
 function renderWizard(){
   modalContent.innerHTML=`<div class="m-emoji">🎉</div><h3>הקמת המשפחה שלך</h3>
     <div class="field" style="text-align:right;"><label>קוד הורים (PIN) — רק אתה תדע אותו</label>
-      <input id="wizPin" type="number" value="${esc(wizPinVal)}" placeholder="לדוגמה: 1234" style="width:100%;border:2px solid var(--line);border-radius:13px;padding:11px;font-family:inherit;text-align:center;font-size:1.2rem;font-weight:800;">
+      <input id="wizPin" type="number" value="${esc(wizPinVal)}" placeholder="קוד לא מובן מאליו (לא 1234)" style="width:100%;border:2px solid var(--line);border-radius:13px;padding:11px;font-family:inherit;text-align:center;font-size:1.2rem;font-weight:800;">
     </div>
     <div class="field" style="text-align:right;margin-top:10px;margin-bottom:4px;"><label>הילדים שלך</label></div>
     <div id="wizKidsList" style="margin-bottom:10px;">${
@@ -3965,6 +4007,7 @@ function removeWizKid(i){ wizKids.splice(i,1); renderWizard(); }
 async function finishWizard(){
   const pin=wizPinVal.trim();
   if(pin.length<3){ toast('בחר קוד הורים עם לפחות 3 ספרות'); return; }
+  if(isWeakPin(pin)){ toast('קוד קל מדי לניחוש — נסה קוד אחר 🙂'); return; }
   if(wizKids.length===0){ toast('הוסף לפחות ילד אחד'); return; }
   const palette=['#7C5CFC','#FF6B6B','#27C99A','#4DABF7','#F5B82E','#FF8FCB'];
   state.children=wizKids.map((k,i)=>({id:'k'+Date.now().toString(36)+i,name:k.name,emoji:k.emoji,color:palette[i%palette.length]}));

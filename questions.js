@@ -1,5 +1,7 @@
 /* ===== LEARNING QUESTION BANK =====
-   Minecraft-themed quiz content for the "מכרה הידע" (Knowledge Mine) feature.
+   Block-world-themed quiz content for the "מכרה הידע" (Knowledge Mine) feature.
+   Word problems/vocabulary use generic block-building flavor (not Mojang's
+   characters/creatures) — see ANDROID-APP-PLAN.md S3.
    Math questions (level 1-3) are procedurally generated so the pool is
    effectively infinite; English and science are hand-written since they need
    real vocabulary/facts, not templated numbers. Every question needs a
@@ -14,16 +16,16 @@ function generateMathQuestions(){
   const out=[];
   let seed=1;
   function rnd(lo,hi){ seed=(seed*9301+49297)%233280; return lo+Math.floor((seed/233280)*(hi-lo+1)); }
-  // Level 1: sums/differences to 10, Minecraft-flavored word problems.
+  // Level 1: sums/differences to 10, block-building-flavored word problems.
   const itemsL1=['יהלומים 💎','בלוקים 🧱','חיצים 🏹','תפוחים 🍎','אזמלים ⛏️'];
   for(let i=0;i<40;i++){
     const item=itemsL1[i%itemsL1.length];
     const a=rnd(1,7), b=rnd(1,10-a);
     if(i%2===0){
-      out.push(_mkMathQ('m1g_'+i,1,`לסטיב יש ${a} ${item} והוא מצא עוד ${b}. כמה יש לו עכשיו?`,a+b));
+      out.push(_mkMathQ('m1g_'+i,1,`לדני יש ${a} ${item} והוא מצא עוד ${b}. כמה יש לו עכשיו?`,a+b));
     }else{
       const total=a+b;
-      out.push(_mkMathQ('m1g_'+i,1,`לאלכס יש ${total} ${item} והיא נתנה ${b} לחבר. כמה נשארו לה?`,total-b));
+      out.push(_mkMathQ('m1g_'+i,1,`למאיה יש ${total} ${item} והיא נתנה ${b} לחבר. כמה נשארו לה?`,total-b));
     }
   }
   // Level 2: sums/differences to 20, simple multiplication by 2.
@@ -57,7 +59,7 @@ function generateMathQuestions(){
 }
 
 const ENGLISH_QUESTIONS=[
-  // Level 1: single Minecraft-flavored vocabulary words.
+  // Level 1: single block-world-flavored vocabulary words.
   {id:'e1_001',subject:'english',level:1,type:'choice',q:'איך אומרים "חרב" באנגלית? ⚔️',choices:['Sword','Shield','Stone'],answer:'Sword'},
   {id:'e1_002',subject:'english',level:1,type:'choice',q:'איך אומרים "עץ" באנגלית? 🌳',choices:['Tree','Water','Rock'],answer:'Tree'},
   {id:'e1_003',subject:'english',level:1,type:'choice',q:'איך אומרים "מים" באנגלית? 💧',choices:['Fire','Water','Sand'],answer:'Water'},
@@ -73,8 +75,8 @@ const ENGLISH_QUESTIONS=[
   {id:'e1_013',subject:'english',level:1,type:'choice',q:'איך אומרים "כחול" באנגלית? 🔵',choices:['Blue','Yellow','Red'],answer:'Blue'},
   {id:'e1_014',subject:'english',level:1,type:'choice',q:'איך אומרים "דלת" באנגלית? 🚪',choices:['Door','Window','Roof'],answer:'Door'},
   {id:'e1_015',subject:'english',level:1,type:'choice',q:'איך אומרים "ירוק" באנגלית? 🟢',choices:['Green','Purple','Black'],answer:'Green'},
-  // Level 2: short phrases / Minecraft mobs.
-  {id:'e2_001',subject:'english',level:2,type:'choice',q:'איך אומרים "קרימר" (מפלצת ירוקה) באנגלית? 💚',choices:['Zombie','Creeper','Skeleton'],answer:'Creeper'},
+  // Level 2: short phrases / generic block-world creatures.
+  {id:'e2_001',subject:'english',level:2,type:'choice',q:'איך אומרים "זומבי" באנגלית? 🧟',choices:['Zombie','Ghost','Skeleton'],answer:'Zombie'},
   {id:'e2_002',subject:'english',level:2,type:'choice',q:'איך אומרים "פרה" באנגלית? 🐄',choices:['Cow','Sheep','Chicken'],answer:'Cow'},
   {id:'e2_003',subject:'english',level:2,type:'choice',q:'מה זה "Iron" בעברית? ⚙️',choices:['ברזל','זהב','נחושת'],answer:'ברזל'},
   {id:'e2_004',subject:'english',level:2,type:'choice',q:'מה זה "Village" בעברית? 🏘️',choices:['כפר','הר','נהר'],answer:'כפר'},
@@ -92,7 +94,7 @@ const ENGLISH_QUESTIONS=[
   // Level 3: short sentences / plurals.
   {id:'e3_001',subject:'english',level:3,type:'choice',q:'איזו מילה מתאימה: "I ___ a house yesterday." (בניתי בית אתמול)',choices:['built','build','building'],answer:'built'},
   {id:'e3_002',subject:'english',level:3,type:'choice',q:'הרבים של "sheep" (כבשה) הוא:',choices:['sheeps','sheep','sheepes'],answer:'sheep'},
-  {id:'e3_003',subject:'english',level:3,type:'choice',q:'"The creeper is ___ me." (רודף אחריי) — איזו מילה חסרה?',choices:['chasing','chased','chase'],answer:'chasing'},
+  {id:'e3_003',subject:'english',level:3,type:'choice',q:'"The zombie is ___ me." (רודף אחריי) — איזו מילה חסרה?',choices:['chasing','chased','chase'],answer:'chasing'},
   {id:'e3_004',subject:'english',level:3,type:'choice',q:'"There are three ___ in my inventory." (תרמילים) — מה השם הנכון ליהלומים ברבים?',choices:['diamond','diamonds','diamonds\'s'],answer:'diamonds'},
   {id:'e3_005',subject:'english',level:3,type:'choice',q:'איזו מילה היא שם תואר (מתארת)? ',choices:['dangerous','danger','endanger'],answer:'dangerous'},
   {id:'e3_006',subject:'english',level:3,type:'choice',q:'"We ___ to the village tomorrow." (נלך מחר)',choices:['went','will go','goes'],answer:'will go'},
