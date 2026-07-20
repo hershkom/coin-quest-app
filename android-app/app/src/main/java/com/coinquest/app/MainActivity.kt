@@ -54,7 +54,7 @@ class MainActivity : AppCompatActivity() {
     //   Web SDK configuration -> Web client ID (ends in .apps.googleusercontent.com)
     // or Google Cloud Console -> APIs & Services -> Credentials -> OAuth 2.0
     // Client IDs -> "Web client (auto created by Google Service)".
-    private val WEB_CLIENT_ID = "REPLACE_WITH_FIREBASE_WEB_CLIENT_ID"
+    private val WEB_CLIENT_ID = "370682774257-744p9umlov9j2428fqj5uluviu1hvedc.apps.googleusercontent.com"
     private lateinit var googleSignInClient: GoogleSignInClient
     private val googleSignInLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
         val task = GoogleSignIn.getSignedInAccountFromIntent(result.data)
