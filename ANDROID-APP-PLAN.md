@@ -1,3 +1,40 @@
+**עדכון 2026-07-20 (5) — נמצא ותוקן באג אמיתי במכשיר: Google Sign-In לא עבד ב-APK:**
+בבדיקה הראשונה על מכשיר אמיתי (build ה-family), לחיצה על "התחברות עם Google" נכשלה עם
+`Error 403: disallowed_useragent`. **הסיבה:** גוגל חוסמת לצמיתות (מדיניות אנטי-פישינג
+מ-2016, לא ניתן לעקוף עם spoofing של user agent) כל זרימת OAuth שמתבצעת בתוך WebView
+כלשהו — וכל האפליקציה רצה בתוך WebView. הפתרון הנכון: התחברות **נייטיבית** ב-Kotlin
+(Google Play Services), ואז העברת ה-ID token שמתקבל ל-Firebase JS SDK דרך
+`signInWithCredential` (במקום `signInWithPopup`/`signInWithRedirect` שדורשים OAuth
+בתוך ה-WebView עצמו).
+
+**מה נבנה:**
+- `build.gradle`: תלות חדשה `com.google.android.gms:play-services-auth`.
+- `MainActivity.kt`: `GoogleSignInClient` + `ActivityResultLauncher` שמריץ את בורר
+  החשבונות האמיתי של Play Services (לא עמוד web), מחלץ `idToken`, ומעביר אותו ל-JS
+  דרך `webView.evaluateJavascript(...window.onNativeGoogleSignIn(idToken)...)`. ביטול
+  התחברות/שגיאה מדווחים דרך `window.onNativeGoogleSignInError`. מנקה session קיים
+  (`signOut()`) לפני כל ניסיון כדי שמכשיר משפחתי משותף לא ינחש איזה הורה מחובר.
+- `NativeGameBridge.kt`: מתודת גשר חדשה `nativeGoogleSignIn()`.
+- `app.js`: `signInWithGoogle()` בודקת אם קיים גשר נייטיבי ומעדיפה אותו; שתי פונקציות
+  callback חדשות (`onNativeGoogleSignIn`/`onNativeGoogleSignInError`) שמשלימות את
+  ההתחברות דרך `firebase.auth.GoogleAuthProvider.credential(idToken)` +
+  `signInWithCredential` — משם ואילך זה בדיוק אותו נתיב (`onAuthStateChanged` →
+  `handleSignedInUser`) שכבר קיים ועובד לזרימות הדפדפן.
+
+**פעולה נדרשת מהמשתמש — חובה לפני שזה יעבוד בפועל:** ב-`MainActivity.kt` יש קבוע
+`WEB_CLIENT_ID = "REPLACE_WITH_FIREBASE_WEB_CLIENT_ID"` — placeholder בלבד. חייבים
+להחליף אותו ב-Web Client ID האמיתי (מחרוזת שמסתיימת ב-`.apps.googleusercontent.com`),
+נמצא ב-Firebase Console → Authentication → Sign-in method → Google → Web SDK
+configuration → Web client ID (או ב-Google Cloud Console → APIs & Services →
+Credentials → "Web client (auto created by Google Service)"). זה **לא** אחד השדות
+הקיימים ב-`firebaseConfig` בתוך `app.js` — מזהה OAuth נפרד לגמרי.
+
+*אימות:* קומפילציה מלאה של flavor ה-family; חיווט ה-JS אומת בדפדפן עם גשר מדומה
+(הקריאה לגשר, הודעות סטטוס בעת פתיחה/ביטול/שגיאה) — **לא ניתן לאמת את חלק ה-Kotlin
+בפועל בלי מכשיר אמיתי + ה-Web Client ID הנכון**, וזה עדיין לא נבדק על מכשיר לאחר
+התיקון. 29/29 בדיקות Playwright עוברות (הנתיב הנייטיבי לא נכנס לפעולה בבדיקות
+מקומיות, בלי גשר).
+
 **עדכון 2026-07-20 (4) — בוצעו G3, G4, G5, G7, G8 + ביקורות A7/A8 (סיום חלקים ב'+ג'):**
 
 *G3 (מד חיסכון):* היה קיים כבר פס התקדמות לינארי דק (8px) עם "X / Y מטבעות" בטקסט —

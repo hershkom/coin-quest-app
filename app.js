@@ -4043,11 +4043,29 @@ function randomInviteCode(){
 function isMobileBrowser(){
   return /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
 }
+// Set right before calling the native sign-in bridge so the callbacks below
+// (invoked by Kotlin via evaluateJavascript, with no argument of their own
+// carrying it) know which status line to update.
+let _nativeSignInStatusElId=null;
 async function signInWithGoogle(statusElId){
   // statusElId lets this be called both from the welcome screen (#welcomeStatus)
   // and from Admin Settings (#settingsAuthStatus) for a parent upgrading from
   // local-only mode without ever seeing the welcome screen again.
   const statusEl=()=>document.getElementById(statusElId||'welcomeStatus');
+  // Inside the Android wrapper, Google's OAuth endpoint flatly rejects the
+  // web sign-in flow with "Error 403: disallowed_useragent" -- it detects
+  // the request came from a WebView and blocks it, by policy, regardless of
+  // user-agent spoofing. The real fix is doing the sign-in natively (Play
+  // Services account picker) and handing the resulting ID token to Firebase
+  // here via signInWithCredential -- see onNativeGoogleSignIn below and
+  // MainActivity.startNativeGoogleSignIn/NativeGameBridge.nativeGoogleSignIn.
+  if(isNativeGameAvailable()&&typeof window.CoinQuestNative.nativeGoogleSignIn==='function'){
+    _nativeSignInStatusElId=statusElId;
+    if(statusEl()) statusEl().textContent='⏳ נפתח חלון ההתחברות של גוגל...';
+    try{ window.CoinQuestNative.nativeGoogleSignIn(); }
+    catch(e){ if(statusEl()) statusEl().textContent='שגיאת התחברות: '+(e&&e.message||'נסה שוב'); }
+    return;
+  }
   const provider=new firebase.auth.GoogleAuthProvider();
   // MOBILE: full-page redirect. Real-device testing showed the popup flow
   // strands the user on a white firebaseapp.com tab — on mobile the "popup"
@@ -4117,6 +4135,27 @@ async function signInWithGoogle(statusElId){
     // unconditionally — it only acts if literally zero views are active.
     ensureActiveView();
   }
+}
+// Called by MainActivity.googleSignInLauncher (via evaluateJavascript) once
+// the native account picker returns a real Google ID token. signInCredential
+// triggers the SAME onAuthStateChanged -> handleSignedInUser() path as the
+// browser-based signInWithPopup/signInWithRedirect above, so nothing about
+// family-loading/onboarding needs to be duplicated here.
+async function onNativeGoogleSignIn(idToken){
+  const statusEl=document.getElementById(_nativeSignInStatusElId||'welcomeStatus');
+  try{
+    const credential=firebase.auth.GoogleAuthProvider.credential(idToken);
+    await fbAuth.signInWithCredential(credential);
+    if(statusEl) statusEl.textContent='';
+  }catch(e){
+    if(statusEl) statusEl.textContent='שגיאת התחברות: '+(e&&e.message||'נסה שוב');
+  }
+}
+// Called the same way when the native picker fails or the parent cancels it
+// (message is '' for a plain cancel -- not an error worth showing).
+function onNativeGoogleSignInError(message){
+  const statusEl=document.getElementById(_nativeSignInStatusElId||'welcomeStatus');
+  if(statusEl) statusEl.textContent=message||'';
 }
 function continueLocalOnly(){
   localStorage.setItem('cs_local_only','1');

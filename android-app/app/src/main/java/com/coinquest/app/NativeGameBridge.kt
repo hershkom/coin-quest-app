@@ -110,6 +110,18 @@ class NativeGameBridge(private val activity: Activity, private val webView: WebV
         try { tts?.stop() } catch (e: Exception) { /* nothing to clean up */ }
     }
 
+    /** Fixes Google Sign-In's "Error 403: disallowed_useragent" inside this
+     *  WebView -- see the long comment on MainActivity.WEB_CLIENT_ID for
+     *  why. Delegates to the Activity since launching the sign-in picker
+     *  needs one; the cast is safe, this bridge is only ever constructed
+     *  with a MainActivity instance (see MainActivity.onCreate). */
+    @JavascriptInterface
+    fun nativeGoogleSignIn() {
+        activity.runOnUiThread {
+            (activity as MainActivity).startNativeGoogleSignIn()
+        }
+    }
+
     /** AN5 (ANDROID-APP-PLAN.md): hour/minute are local 24h wall-clock
      *  values (e.g. 8, 0), chosen by the parent in Admin Settings. Persists
      *  across app restarts AND device reboots (see ChoreReminderScheduler/

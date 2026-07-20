@@ -7,14 +7,20 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Bundle
+import android.util.Log
 import android.view.View
 import android.webkit.*
 import android.widget.ProgressBar
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.swiperefreshlayout.widget.SwipeRefreshLayout
+import com.google.android.gms.auth.api.signin.GoogleSignIn
+import com.google.android.gms.auth.api.signin.GoogleSignInClient
+import com.google.android.gms.auth.api.signin.GoogleSignInOptions
+import com.google.android.gms.common.api.ApiException
 
 class MainActivity : AppCompatActivity() {
 
@@ -30,6 +36,69 @@ class MainActivity : AppCompatActivity() {
     // firebaseapp.com, not web.app: only it is pre-authorized on the OAuth client.
     private val APP_URL = "https://coin-quest-app.firebaseapp.com/"
 
+    // ===== Native Google Sign-In =====
+    // Fixes "Error 403: disallowed_useragent": Google's OAuth endpoint
+    // rejects the web sign-in flow outright when it detects the request
+    // came from a WebView (a deliberate anti-phishing policy since ~2016,
+    // not something fixable by spoofing the user agent). The fix is to do
+    // the sign-in natively here in Kotlin via Play Services, then hand the
+    // resulting Google ID token to the WebView's Firebase JS SDK, which
+    // completes the SAME sign-in via signInWithCredential() instead of a
+    // WebView-hosted OAuth redirect/popup.
+    //
+    // WEB_CLIENT_ID is the OAuth 2.0 "Web client" ID Firebase auto-created
+    // for this project when Google sign-in was enabled -- NOT any value
+    // already in app.js's firebaseConfig (apiKey/appId are different IDs
+    // entirely). Find it at:
+    //   Firebase Console -> Authentication -> Sign-in method -> Google ->
+    //   Web SDK configuration -> Web client ID (ends in .apps.googleusercontent.com)
+    // or Google Cloud Console -> APIs & Services -> Credentials -> OAuth 2.0
+    // Client IDs -> "Web client (auto created by Google Service)".
+    private val WEB_CLIENT_ID = "REPLACE_WITH_FIREBASE_WEB_CLIENT_ID"
+    private lateinit var googleSignInClient: GoogleSignInClient
+    private val googleSignInLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+        val task = GoogleSignIn.getSignedInAccountFromIntent(result.data)
+        try {
+            val account = task.getResult(ApiException::class.java)
+            val idToken = account?.idToken
+            if (idToken == null) {
+                notifyJsSignInError("לא התקבל אישור מגוגל")
+                return@registerForActivityResult
+            }
+            webView.evaluateJavascript(
+                "window.onNativeGoogleSignIn && window.onNativeGoogleSignIn(${org.json.JSONObject.quote(idToken)});",
+                null
+            )
+        } catch (e: ApiException) {
+            // Status code 12501 = user cancelled -- not a real error, don't
+            // show a scary message for someone just closing the picker.
+            if (e.statusCode == 12501) {
+                notifyJsSignInError("")
+            } else {
+                Log.e("CoinQuestAuth", "Google sign-in failed: ${e.statusCode}", e)
+                notifyJsSignInError("שגיאת התחברות (קוד ${e.statusCode})")
+            }
+        }
+    }
+
+    private fun notifyJsSignInError(message: String) {
+        webView.evaluateJavascript(
+            "window.onNativeGoogleSignInError && window.onNativeGoogleSignInError(${org.json.JSONObject.quote(message)});",
+            null
+        )
+    }
+
+    /** Called from NativeGameBridge.nativeGoogleSignIn() -- launches the
+     *  real native account picker (Play Services UI, not a WebView page). */
+    fun startNativeGoogleSignIn() {
+        // Force account picker every time (signOut first) rather than silently
+        // reusing a cached session -- a shared family device may have more
+        // than one parent's Google account and shouldn't guess which one.
+        googleSignInClient.signOut().addOnCompleteListener {
+            googleSignInLauncher.launch(googleSignInClient.signInIntent)
+        }
+    }
+
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
         installSplashScreen()
@@ -39,6 +108,12 @@ class MainActivity : AppCompatActivity() {
         webView = findViewById(R.id.webView)
         progressBar = findViewById(R.id.progressBar)
         swipeRefresh = findViewById(R.id.swipeRefresh)
+
+        val gso = GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
+            .requestIdToken(WEB_CLIENT_ID)
+            .requestEmail()
+            .build()
+        googleSignInClient = GoogleSignIn.getClient(this, gso)
 
         requestPermissions()
         setupWebView()

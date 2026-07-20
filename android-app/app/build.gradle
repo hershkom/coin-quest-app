@@ -93,4 +93,8 @@ dependencies {
     implementation 'com.google.android.material:material:1.11.0'
     implementation 'androidx.swiperefreshlayout:swiperefreshlayout:1.1.0'
     implementation 'androidx.core:core-splashscreen:1.0.1'
+    // Native Google Sign-In (fixes "Error 403: disallowed_useragent" -- Google
+    // rejects the web OAuth flow when it detects it's running inside a
+    // WebView, by design, since ~2016). See MainActivity's googleSignInClient.
+    implementation 'com.google.android.gms:play-services-auth:21.2.0'
 }
