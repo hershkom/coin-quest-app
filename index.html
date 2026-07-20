@@ -103,7 +103,10 @@
     <div class="view" id="view-home">
       <div class="hero" id="hero">
         <div class="hi"><span class="av" id="heroAv">🦊</span>שלום, <span id="childName">—</span>! 👋</div>
-        <div class="big-coin">🪙</div>
+        <!-- G4 (ANDROID-APP-PLAN.md): the glyph inside changes with balance
+             (coinPileEmoji() in app.js) -- the gold circle/bob animation
+             stays the same, only what's "inside the safe" grows. -->
+        <div class="big-coin" id="bigCoinIcon">🪙</div>
         <div class="amount" id="balHero">0</div>
         <div class="amount-label">מטבעות שהרווחת</div>
       </div>

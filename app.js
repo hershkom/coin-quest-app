@@ -466,8 +466,31 @@ function renderBalance(){
     document.getElementById('balTop').textContent=k.balance;
     const bh=document.getElementById('balHero'); if(bh) bh.textContent=k.balance;
     const br=document.getElementById('balRewards'); if(br) br.textContent=k.balance;
+    const bigCoin=document.getElementById('bigCoinIcon');
+    if(bigCoin){
+      bigCoin.textContent=coinPileEmoji(k.balance);
+      bigCoin.classList.toggle('glowing',k.balance>=COIN_PILE_STAGES[COIN_PILE_STAGES.length-1].min);
+    }
   }
   renderMascot();
+}
+// G4 (ANDROID-APP-PLAN.md): the balance grows through concrete visual
+// stages instead of staying a flat number the whole time -- "your coins
+// turned into a money bag!" means more to a 7-year-old than "62". Same
+// gold circle/bob animation throughout (see .big-coin); only the glyph
+// inside changes, plus a gentle glow once the top stage (the app's own
+// namesake "safe") is reached.
+const COIN_PILE_STAGES=[
+  {min:0,   icon:'🪙'}, // a couple of loose coins
+  {min:10,  icon:'👛'}, // coin purse
+  {min:30,  icon:'💰'}, // money bag
+  {min:80,  icon:'📦'}, // a chest
+  {min:200, icon:'🏦'}, // the safe/vault itself
+];
+function coinPileEmoji(balance){
+  let icon=COIN_PILE_STAGES[0].icon;
+  for(const stage of COIN_PILE_STAGES){ if(balance>=stage.min) icon=stage.icon; }
+  return icon;
 }
 /* ===== G1 (ANDROID-APP-PLAN.md): companion mascot =====
    A small, always-present character in the corner of every kid-facing
@@ -486,6 +509,24 @@ function renderMascot(){
   if(theme==='blocks') wrap.innerHTML=blockyAvatarSvg(c.color);
   else if(theme==='unicorn') wrap.textContent='🦄';
   else wrap.textContent=c.emoji||'🦊';
+}
+// G7 (ANDROID-APP-PLAN.md): a subtle background shift by time of day for
+// temporal orientation -- separate from the blocks/unicorn theme's own
+// day/night decorations (addThemeDecorations/themeBgFor), which are
+// deliberately binary (day/night only) and win via !important when a theme
+// IS chosen. This fills the gap for a child with no theme selected, who
+// otherwise never gets any time-of-day visual cue at all. Reuses
+// currentPeriodKey() (already the source of truth for the day-strip and
+// anchored-task scheduling) rather than recomputing the hour boundaries.
+function applyPeriodBackground(){
+  const app=document.querySelector('.app'); if(!app) return;
+  app.classList.remove('period-morning','period-afternoon','period-evening','period-sleep');
+  // Same view gate as renderFirstThen/renderMascot -- NOT "!cur()", since
+  // cur() keeps returning the previously-active kid while just VIEWING the
+  // picker (switching profiles doesn't clear state.current until a new kid
+  // is actually picked), which would otherwise leave the tint on there too.
+  if(!cur()||FIRSTTHEN_HIDDEN_VIEWS.includes(currentView)) return;
+  app.classList.add('period-'+currentPeriodKey());
 }
 // Called on anything earned (see addPoints) -- a brief, tasteful acknowledgment,
 // not a full celebration (that's queueBadgeCelebration's job for milestones).
@@ -525,7 +566,15 @@ async function addPoints(n,label,type,srcEl){
   renderBalance();
   if(srcRect && n>0) coinFly(srcRect); else coinBurst();
   chime(type==='spend');
-  if(n>0) mascotReact(); // G1: the companion reacts to something earned, not to a purchase
+  if(n>0){
+    mascotReact(); // G1: the companion reacts to something earned, not to a purchase
+    // G8 (ANDROID-APP-PLAN.md): one short, gentle pulse on anything earned
+    // (chore marked, correct answer -- both route through here). Skipped in
+    // calm mode, same as every other sensory-intensity dial in the app; not
+    // given its own separate settings toggle since the OS already lets a
+    // parent disable vibration device-wide if calm mode isn't enough.
+    if(!state.calmMode&&navigator.vibrate){ try{ navigator.vibrate(20); }catch(e){} }
+  }
   scheduleSync();
   checkBadges();
 }
@@ -594,6 +643,7 @@ function go(v){
   renderFirstThen(); // A1: now runs for every view renderFirstThen() itself allows, not just home
   renderMascot(); // G1: same "which views" rule as the strip above (reuses FIRSTTHEN_HIDDEN_VIEWS)
   renderJourneyMap(); // G2: home-only (renderChores() also calls this, but only runs FOR home -- this call is what actually clears it when navigating AWAY from home)
+  applyPeriodBackground(); // G7: same "kid-facing screens only" scope as the strip/mascot above
   // A1: the schedule-refresh interval used to only run on the home view --
   // now it follows the child to any screen (still only ever re-renders
   // home-specific elements like the chore list if home is what's actually
@@ -606,6 +656,7 @@ function go(v){
       // Catch the day->night decoration switch across the sleep-time
       // boundary, same cadence as the schedule refresh above.
       if(document.querySelector('.app').classList.contains('blocks-mode')) addThemeDecorations('blocks');
+      applyPeriodBackground(); // G7: same period-boundary catch, for the non-themed background
     },45000);
   }
   if(v==='scan') startCamera();
@@ -1299,7 +1350,12 @@ function finishLearningSession(){
   document.getElementById('learnActive').style.display='none';
   const summary=document.getElementById('learnSummary'); summary.style.display='';
   const perfect=s.correctCount===s.questions.length;
-  if(perfect && !state.calmMode){ try{ chime('celebrate'); }catch(e){} }
+  // G5 (ANDROID-APP-PLAN.md): a perfect session is the "medium" celebration
+  // tier -- bigger than an ordinary correct-answer coinFly, smaller than a
+  // badge-unlock modal. Was sound-only (chime('celebrate') with no visual
+  // match); coinBurst() gives it the confetti-burst the plan calls for
+  // without needing a whole new effect.
+  if(perfect && !state.calmMode){ try{ coinBurst(); chime('celebrate'); }catch(e){} }
   _lastLearnSessionSize=s.questions.length; _lastLearnCorrectCount=s.correctCount;
   const canMinutes=perfect && state.learning.minutesPerSession>0 && k.learn.earnedToday.minutes<state.learning.dailyMaxMinutes;
   if(perfect && canMinutes){
@@ -1954,7 +2010,11 @@ function renderRewards(){
     const can=bal>=rw.cost;
     const pct=Math.min(100,Math.round((bal/rw.cost)*100));
     const row=document.createElement('div'); row.className='row';
-    row.innerHTML=`<div class="emoji">${rw.emoji}</div><div class="info"><div class="t">${esc(rw.label)}</div><div class="d">${bal} / ${rw.cost} מטבעות</div>${can?'':`<div class="rw-progress"><div class="fill" style="width:${pct}%"></div></div>`}</div>`;
+    // G3 (ANDROID-APP-PLAN.md): a savings meter needs to read as "how close
+    // am I" at a glance for a 7-year-old, not just a thin decorative bar --
+    // the percentage number and a gold glow once it's genuinely close (70%+)
+    // make the concrete "almost there" moment obvious without reading text.
+    row.innerHTML=`<div class="emoji">${rw.emoji}</div><div class="info"><div class="t">${esc(rw.label)}</div><div class="d">${bal} / ${rw.cost} מטבעות</div>${can?'':`<div class="rw-progress${pct>=70?' near':''}"><div class="fill" style="width:${pct}%"></div></div><div class="rw-pct">${pct}%</div>`}</div>`;
     const btn=document.createElement('button');
     btn.className='btn '+(can?'gold':'ghost')+' sm'; btn.textContent=can?'החלף':'אין מספיק'; btn.disabled=!can; btn.onclick=()=>redeemReward(rw);
     row.appendChild(btn); c.appendChild(row);

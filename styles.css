@@ -239,6 +239,18 @@
   html,body{height:100%;}
   body{font-family:'Varela Round','Heebo',sans-serif;background:linear-gradient(160deg,var(--bg1) 0%,var(--bg2) 50%,var(--bg3) 100%);background-attachment:fixed;color:var(--ink);min-height:100%;overflow-x:hidden;}
   .app{max-width:520px;margin:0 auto;min-height:100vh;display:flex;flex-direction:column;position:relative;}
+  /* G7: subtle time-of-day background for children with no blocks/unicorn
+     theme selected (those themes have their own binary day/night look, set
+     with !important, which naturally wins over this when both apply). */
+  .app.period-morning{background:linear-gradient(160deg,#FFF6E0 0%,#FFEEDB 45%,#FFE4EE 100%);background-attachment:fixed;}
+  .app.period-afternoon{background:linear-gradient(160deg,#E0F6FF 0%,#EEF0FF 50%,#FBEEFF 100%);background-attachment:fixed;}
+  .app.period-evening{background:linear-gradient(160deg,#FFDCC2 0%,#FFB8B0 45%,#DCC3E8 100%);background-attachment:fixed;}
+  /* Deliberately light, not true dark navy: the app's dark ink text
+     (.section-title, day-strip labels, etc.) has no light-text override for
+     this background, and a truly dark gradient here would make them
+     unreadable. A cooler, dusky lavender still reads as "different from
+     daytime" without breaking contrast on unrelated text. */
+  .app.period-sleep{background:linear-gradient(160deg,#D6DCF2 0%,#C7CCE8 45%,#C2B8DC 100%);background-attachment:fixed;}
   body.demo-active .app{padding-top:34px;}
   .topbar{display:flex;align-items:center;justify-content:space-between;padding:14px 16px 10px;position:sticky;top:0;z-index:50;gap:8px;}
   .profile-switch{display:flex;align-items:center;gap:9px;background:var(--card);border:none;border-radius:30px;padding:6px 14px 6px 8px;cursor:pointer;box-shadow:0 4px 14px rgba(124,92,252,.16);font-family:inherit;transition:transform .12s;}
@@ -277,6 +289,9 @@
   .hero .hi{font-size:.95rem;opacity:.95;font-weight:500;display:flex;align-items:center;justify-content:center;gap:7px;}
   .hero .hi .av{width:30px;height:30px;border-radius:50%;background:rgba(255,255,255,.25);display:flex;align-items:center;justify-content:center;font-size:1rem;}
   .hero .big-coin{width:74px;height:74px;border-radius:50%;margin:12px auto 6px;background:radial-gradient(circle at 35% 28%,var(--gold-l),var(--gold-d));display:flex;align-items:center;justify-content:center;font-size:2.2rem;box-shadow:0 8px 0 var(--gold-d),0 14px 24px rgba(0,0,0,.25);animation:bob 2.4s ease-in-out infinite;}
+  /* G4: reached the top coin-pile stage -- a static glow (no extra motion,
+     calm-mode-safe on its own) marking the app's own namesake "safe". */
+  .hero .big-coin.glowing{box-shadow:0 8px 0 var(--gold-d),0 14px 24px rgba(0,0,0,.25),0 0 26px 6px rgba(245,184,46,.65);}
   @keyframes bob{0%,100%{transform:translateY(0) rotate(-4deg);}50%{transform:translateY(-7px) rotate(4deg);}}
   .hero .amount{font-size:3.8rem;font-weight:900;line-height:1;letter-spacing:-1px;text-shadow:0 3px 0 rgba(0,0,0,.15);}
   .hero .amount-label{font-size:1.05rem;opacity:1;margin-top:4px;font-weight:700;text-shadow:0 1px 3px rgba(0,0,0,.15);}
@@ -614,5 +629,7 @@
   .badge-cell .bc-lbl{font-size:.72rem;font-weight:800;margin-top:6px;color:var(--ink);}
 
   /* ---- Reward savings progress ---- */
-  .rw-progress{background:#F2F0FB;border-radius:20px;height:8px;overflow:hidden;margin-top:6px;}
-  .rw-progress .fill{height:100%;border-radius:20px;background:linear-gradient(90deg,var(--gold),var(--gold-d));}
+  .rw-progress{background:#F2F0FB;border-radius:20px;height:14px;overflow:hidden;margin-top:6px;}
+  .rw-progress.near{box-shadow:0 0 10px rgba(245,184,46,.55);}
+  .rw-progress .fill{height:100%;border-radius:20px;background:linear-gradient(90deg,var(--gold),var(--gold-d));transition:width .3s ease-out;}
+  .rw-pct{font-size:.72rem;font-weight:800;color:var(--gold-d);margin-top:3px;}
