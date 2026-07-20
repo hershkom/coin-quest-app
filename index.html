@@ -61,6 +61,11 @@
        knowing what's next. renderFirstThen() itself decides when to hide. -->
   <div id="firstThenWrap"></div>
 
+  <!-- G1 (ANDROID-APP-PLAN.md): companion mascot, floating above the bottom
+       nav on every kid-facing screen. renderMascot()/mascotReact() in app.js
+       drive its content and reactions. -->
+  <div id="mascotWrap" class="mascot-wrap" style="display:none;"></div>
+
   <div class="main">
 
     <div class="view" id="view-welcome">
@@ -103,6 +108,10 @@
         <div class="amount-label">מטבעות שהרווחת</div>
       </div>
       <div id="dayStripWrap"></div>
+      <!-- G2 (ANDROID-APP-PLAN.md): task-completion journey map -- distinct
+           from dayStripWrap above (that's TIME-OF-DAY orientation; this is
+           "how many of today's tasks are done"). renderJourneyMap() in app.js. -->
+      <div id="journeyMapWrap"></div>
 
       <div class="section-title">⚡ מה עושים?</div>
       <div class="grid2">
@@ -336,6 +345,12 @@
             <div class="field"><label>מטבעות</label><input id="newChorePoints" type="number" value="5" min="1"></div>
             <div class="field"><label>פעמים ביום</label><input id="newChoreMax" type="number" value="1" min="1"></div>
           </div>
+          <!-- G6 (ANDROID-APP-PLAN.md): curated set so a parent doesn't need
+               to know how to open an emoji keyboard, and a non-reading child
+               gets a clear, recognizable picture for the task. Picking one
+               fills newChoreEmoji; the field stays free-text too for a
+               parent who wants something else. -->
+          <div class="emoji-picker" id="newChoreEmojiPicker" style="margin-bottom:12px;"></div>
           <button class="btn primary" onclick="addChore()">הוסף מטלה</button>
         </div>
       </div>
@@ -387,6 +402,7 @@
             <div class="field"><label>מטבעות</label><input id="newActPoints" type="number" value="5" min="1"></div>
             <div class="field"><label>פעמים ביום</label><input id="newActMax" type="number" value="1" min="1"></div>
           </div>
+          <div class="emoji-picker" id="newActEmojiPicker" style="margin-bottom:12px;"></div>
           <button class="btn primary" onclick="addAction()">הוסף פעולה</button>
         </div>
       </div>

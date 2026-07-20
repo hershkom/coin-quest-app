@@ -385,6 +385,10 @@
   #qrBox img,#qrBox canvas{display:block;border-radius:6px;}
   .qr-token{font-family:monospace;font-size:.72rem;color:var(--muted);word-break:break-all;margin-top:8px;direction:ltr;background:#F7F6FC;padding:6px 8px;border-radius:8px;}
   .bottomnav{position:fixed;bottom:0;left:0;right:0;max-width:520px;margin:0 auto;background:rgba(255,255,255,.92);backdrop-filter:blur(12px);display:flex;justify-content:space-around;padding:8px 6px calc(8px + env(safe-area-inset-bottom));box-shadow:0 -4px 20px rgba(124,92,252,.12);z-index:40;border-radius:24px 24px 0 0;}
+  /* G1: floating companion mascot, sits above the bottom nav. */
+  .mascot-wrap{position:fixed;bottom:calc(78px + env(safe-area-inset-bottom));left:16px;width:56px;height:56px;border-radius:50%;background:var(--card);box-shadow:0 6px 18px rgba(124,92,252,.22);z-index:41;align-items:center;justify-content:center;font-size:1.9rem;padding:5px;box-sizing:border-box;}
+  @keyframes mascotBounce{0%{transform:translateY(0) scale(1);}30%{transform:translateY(-14px) scale(1.08);}55%{transform:translateY(0) scale(.96);}75%{transform:translateY(-5px) scale(1.02);}100%{transform:translateY(0) scale(1);}}
+  .mascot-wrap.mascot-bounce{animation:mascotBounce .7s cubic-bezier(.3,.6,.4,1) both;}
   .navbtn{background:none;border:none;font-family:inherit;display:flex;flex-direction:column;align-items:center;gap:2px;color:var(--muted);cursor:pointer;padding:5px 8px;border-radius:14px;font-size:.68rem;font-weight:700;flex:1;transition:color .15s;}
   .navbtn .ic{font-size:1.35rem;}
   .navbtn.active{color:var(--purple);}
@@ -406,10 +410,16 @@
   /* ---- chores (checkbox tasks) ---- */
   .chore-row{display:flex;align-items:center;gap:12px;background:var(--card);border-radius:18px;padding:13px 14px;margin-bottom:10px;box-shadow:0 4px 14px rgba(124,92,252,.08);transition:transform .12s;}
   .chore-row.done{background:linear-gradient(135deg,#EAFBF3,#F3FBFF);}
-  .chore-check{width:46px;height:46px;border-radius:14px;border:none;flex-shrink:0;font-size:1.5rem;cursor:pointer;background:#F2F0FB;color:var(--muted);transition:transform .15s,background .2s,color .2s;}
+  /* G6: 52px + a bigger glyph -- a child who can't read the label yet still
+     needs to recognize the task by its picture alone. */
+  .chore-check{width:52px;height:52px;border-radius:15px;border:none;flex-shrink:0;font-size:1.8rem;cursor:pointer;background:#F2F0FB;color:var(--muted);transition:transform .15s,background .2s,color .2s;}
   .chore-check.checked{background:linear-gradient(135deg,var(--mint),var(--mint-d));color:#fff;}
   .chore-check.full{background:linear-gradient(135deg,var(--mint),var(--mint-d));color:#fff;opacity:.55;cursor:not-allowed;}
   .chore-check:active{transform:scale(.88);}
+  /* G6: curated emoji picker in the "add chore/action" admin forms. */
+  .emoji-picker{display:flex;flex-wrap:wrap;gap:6px;}
+  .emoji-pick-btn{width:38px;height:38px;border-radius:11px;border:2px solid var(--line);background:#fff;font-size:1.2rem;cursor:pointer;flex-shrink:0;}
+  .emoji-pick-btn:active{transform:scale(.9);background:#F2F0FB;}
   .chore-info{flex:1;min-width:0;}
   .chore-info .ci-t{font-weight:800;font-size:1.05rem;}
   .chore-info .ci-d{font-size:.82rem;color:var(--muted);margin-top:2px;}
@@ -504,6 +514,20 @@
   .day-step .ds-ic{font-size:1.3rem;display:block;}
   .day-step .ds-lbl{font-size:.62rem;font-weight:800;margin-top:2px;}
 
+  /* ---- G2: journey map (task-completion progress, distinct from the
+     time-of-day day-strip above) ---- */
+  .jm-wrap{display:flex;align-items:center;gap:10px;margin-top:14px;}
+  .jm-track{flex:1;display:flex;align-items:center;background:var(--card);border-radius:20px;padding:12px 14px;box-shadow:0 6px 18px rgba(124,92,252,.1);overflow-x:auto;}
+  .jm-station{width:34px;height:34px;border-radius:50%;background:#F2F0FB;display:flex;align-items:center;justify-content:center;font-size:1.05rem;flex-shrink:0;border:3px solid var(--card);box-shadow:0 2px 6px rgba(0,0,0,.06);}
+  .jm-station.done{background:linear-gradient(135deg,var(--mint),var(--mint-d));color:#fff;}
+  .jm-line{flex:0 0 14px;height:4px;background:#F2F0FB;border-radius:2px;}
+  .jm-line.done{background:var(--mint);}
+  .jm-avatar{font-size:1.5rem;flex-shrink:0;margin:0 2px;animation:jmAvatarBob 1.8s ease-in-out infinite;}
+  @keyframes jmAvatarBob{0%,100%{transform:translateY(0);}50%{transform:translateY(-3px);}}
+  .jm-chest{font-size:1.9rem;flex-shrink:0;transition:transform .3s;}
+  .jm-chest.open{animation:jmChestPop .6s ease-out both;}
+  @keyframes jmChestPop{0%{transform:scale(.7) rotate(0);}50%{transform:scale(1.25) rotate(-8deg);}100%{transform:scale(1) rotate(0);}}
+
   /* ---- First -> Then card ---- */
   .ft-card{display:flex;align-items:center;gap:10px;background:var(--card);border-radius:22px;padding:16px;margin-top:14px;box-shadow:0 8px 22px rgba(124,92,252,.1);}
   .ft-box{flex:1;text-align:center;border-radius:18px;padding:14px 8px;}
@@ -557,7 +581,9 @@
   .app.calm-mode .chat-mic-btn.recording,
   .app.calm-mode .chat-speak-btn.playing,
   .app.calm-mode .event-card.imminent,
-  .app.calm-mode .learn-dot.active{animation:none!important;transform:none!important;}
+  .app.calm-mode .learn-dot.active,
+  .app.calm-mode .jm-avatar,
+  .app.calm-mode .jm-chest.open{animation:none!important;transform:none!important;}
 
   /* ---- prefers-reduced-motion: OS-level opt-out, independent of calm mode ----
      Purely decorative motion is killed outright. A few animations stay

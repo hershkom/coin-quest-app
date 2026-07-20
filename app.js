@@ -407,48 +407,53 @@ function findTaskById(id){
   return null;
 }
 
+// G1 (ANDROID-APP-PLAN.md) / retroactive S3 fix: the avatar this replaces
+// was a blocky pixel character hardcoded to Ariel's id, using Steve's own
+// color palette almost exactly -- tan/skin-toned head, small blue square
+// eyes, a flat cyan torso, blue-purple legs. That's a real Minecraft
+// character-likeness risk the earlier branding cleanup (S3) missed, since it
+// only searched for the literal word "Minecraft" and never looked at what
+// this SVG actually drew. Replaced with a generic blocky silhouette (the
+// blocky ART STYLE itself isn't anyone's IP) rendered in the CHILD'S OWN
+// palette color instead of a fixed skin/cyan combination, with big round
+// friendly eyes and a curved smile instead of Steve's small flat features --
+// different on every axis that made the original recognizable. Also fixes a
+// second bug: it was hardcoded to id==='ariel' even though themes were
+// generalized to any child in V6 (see childTheme()) -- now driven by the
+// actual theme like everything else.
+function blockyAvatarSvg(color,opts){
+  opts=opts||{};
+  const mouth=opts.mouth==='open'
+    ? '<ellipse cx="32" cy="23" rx="7" ry="5" fill="#3A2E1F"/>'
+    : '<path d="M24,23 Q32,30 40,23" stroke="#3A2E1F" stroke-width="3" fill="none" stroke-linecap="round"/>';
+  return '<svg viewBox="0 0 64 128" style="width:100%;height:100%;filter:drop-shadow(0 2px 4px rgba(0,0,0,.2));">'
+    +'<rect x="14" y="2" width="36" height="32" rx="9" fill="'+color+'"/>'
+    +'<circle cx="25" cy="17" r="5.5" fill="#fff"/><circle cx="39" cy="17" r="5.5" fill="#fff"/>'
+    +'<circle cx="26" cy="18" r="2.6" fill="#2A2440"/><circle cx="40" cy="18" r="2.6" fill="#2A2440"/>'
+    +mouth
+    +'<rect x="10" y="34" width="44" height="34" rx="12" fill="#6B6585"/>'
+    +'<rect x="0" y="36" width="12" height="28" rx="5" fill="#8B85A3"/>'
+    +'<rect x="52" y="36" width="12" height="28" rx="5" fill="#8B85A3"/>'
+    +'<rect x="16" y="68" width="14" height="30" rx="6" fill="#4A4560"/>'
+    +'<rect x="34" y="68" width="14" height="30" rx="6" fill="#4A4560"/>'
+    +'</svg>';
+}
 /* ===== BALANCE / EARN ===== */
 function renderBalance(){
   const c=curChild(), k=cur();
   if(c){
     document.getElementById('psName').textContent=c.name;
     const psAv=document.getElementById('psAvatar');
-    if(c.id==='ariel'){
-      psAv.innerHTML='<svg viewBox="0 0 64 128" style="width:100%;height:100%;filter:drop-shadow(0 2px 4px rgba(0,0,0,.2));">'
-        +'<rect x="16" y="0" width="32" height="32" fill="#8B5A3C"/>'
-        +'<rect x="20" y="8" width="6" height="8" fill="#4444FF"/>'
-        +'<rect x="38" y="8" width="6" height="8" fill="#4444FF"/>'
-        +'<rect x="24" y="20" width="16" height="2" fill="#000"/>'
-        +'<rect x="12" y="32" width="40" height="32" fill="#00CCCC"/>'
-        +'<rect x="0" y="32" width="12" height="32" fill="#D4A373"/>'
-        +'<rect x="52" y="32" width="12" height="32" fill="#D4A373"/>'
-        +'<rect x="16" y="64" width="14" height="32" fill="#4A3FA5"/>'
-        +'<rect x="34" y="64" width="14" height="32" fill="#4A3FA5"/>'
-        +'<rect x="16" y="96" width="14" height="8" fill="#222"/>'
-        +'<rect x="34" y="96" width="14" height="8" fill="#222"/>'
-        +'</svg>';
+    if(childTheme(c)==='blocks'){
+      psAv.innerHTML=blockyAvatarSvg(c.color);
     }else{
       psAv.textContent=c.emoji;
     }
     psAv.style.background=c.color;
     document.getElementById('childName').textContent=c.name;
     const heroAv=document.getElementById('heroAv');
-    if(c.id==='ariel'){
-      heroAv.innerHTML='<svg viewBox="0 0 64 128" style="width:74px;height:100%;filter:drop-shadow(0 2px 4px rgba(0,0,0,.2));">'
-        +'<rect x="16" y="0" width="32" height="32" fill="#8B5A3C"/>'
-        +'<rect x="20" y="8" width="6" height="8" fill="#4444FF"/>'
-        +'<rect x="38" y="8" width="6" height="8" fill="#4444FF"/>'
-        +'<rect x="24" y="20" width="16" height="2" fill="#000"/>'
-        +'<rect x="12" y="32" width="40" height="32" fill="#00CCCC"/>'
-        +'<rect x="0" y="32" width="12" height="32" fill="#D4A373"/>'
-        +'<rect x="52" y="32" width="12" height="32" fill="#D4A373"/>'
-        +'<rect x="16" y="64" width="14" height="32" fill="#4A3FA5"/>'
-        +'<rect x="34" y="64" width="14" height="32" fill="#4A3FA5"/>'
-        +'<rect x="16" y="96" width="14" height="8" fill="#222"/>'
-        +'<rect x="34" y="96" width="14" height="8" fill="#222"/>'
-        +'<rect x="50" y="35" width="4" height="20" fill="#1a7d1a"/>'
-        +'<rect x="48" y="32" width="8" height="4" fill="#888"/>'
-        +'</svg>';
+    if(childTheme(c)==='blocks'){
+      heroAv.innerHTML=blockyAvatarSvg(c.color);
     }else{
       heroAv.textContent=c.emoji;
     }
@@ -461,6 +466,43 @@ function renderBalance(){
     document.getElementById('balTop').textContent=k.balance;
     const bh=document.getElementById('balHero'); if(bh) bh.textContent=k.balance;
     const br=document.getElementById('balRewards'); if(br) br.textContent=k.balance;
+  }
+  renderMascot();
+}
+/* ===== G1 (ANDROID-APP-PLAN.md): companion mascot =====
+   A small, always-present character in the corner of every kid-facing
+   screen (predictability -- same friendly face everywhere, not a one-off
+   animation) that reacts when something is earned. Reuses blockyAvatarSvg
+   for the 'blocks' theme so the mascot IS the child's own avatar, just
+   animated; unicorn/none themes fall back to a simple emoji since there's
+   no dedicated sprite for them (matches how renderBalance already treats
+   those themes). */
+function renderMascot(){
+  const wrap=document.getElementById('mascotWrap'); if(!wrap) return;
+  const c=curChild();
+  if(!c||FIRSTTHEN_HIDDEN_VIEWS.includes(currentView)){ wrap.style.display='none'; return; }
+  wrap.style.display='flex';
+  const theme=childTheme(c);
+  if(theme==='blocks') wrap.innerHTML=blockyAvatarSvg(c.color);
+  else if(theme==='unicorn') wrap.textContent='🦄';
+  else wrap.textContent=c.emoji||'🦊';
+}
+// Called on anything earned (see addPoints) -- a brief, tasteful acknowledgment,
+// not a full celebration (that's queueBadgeCelebration's job for milestones).
+// The expression swap (blocks theme) happens regardless of motion settings
+// since it's a static image change, not an animation; the bounce itself is
+// skipped under calm mode / OS reduced-motion, same guard coinBurst() uses.
+function mascotReact(){
+  const wrap=document.getElementById('mascotWrap'); if(!wrap||wrap.style.display==='none') return;
+  const c=curChild(); if(!c) return;
+  if(childTheme(c)==='blocks'){
+    wrap.innerHTML=blockyAvatarSvg(c.color,{mouth:'open'});
+    setTimeout(()=>{ if(document.getElementById('mascotWrap')) renderMascot(); },900);
+  }
+  const reduceMotion=window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  if(!reduceMotion && !state.calmMode){
+    wrap.classList.remove('mascot-bounce'); void wrap.offsetWidth; wrap.classList.add('mascot-bounce');
+    setTimeout(()=>wrap.classList.remove('mascot-bounce'),700);
   }
 }
 // srcEl (optional): the button/element the child actually tapped to earn
@@ -483,6 +525,7 @@ async function addPoints(n,label,type,srcEl){
   renderBalance();
   if(srcRect && n>0) coinFly(srcRect); else coinBurst();
   chime(type==='spend');
+  if(n>0) mascotReact(); // G1: the companion reacts to something earned, not to a purchase
   scheduleSync();
   checkBadges();
 }
@@ -549,6 +592,8 @@ function go(v){
     renderChores(); renderStreakBanner(); renderGameTimeBanner(); renderEventsHome(); renderDayStrip(); renderBadgesBanner();
   }
   renderFirstThen(); // A1: now runs for every view renderFirstThen() itself allows, not just home
+  renderMascot(); // G1: same "which views" rule as the strip above (reuses FIRSTTHEN_HIDDEN_VIEWS)
+  renderJourneyMap(); // G2: home-only (renderChores() also calls this, but only runs FOR home -- this call is what actually clears it when navigating AWAY from home)
   // A1: the schedule-refresh interval used to only run on the home view --
   // now it follows the child to any screen (still only ever re-renders
   // home-specific elements like the chore list if home is what's actually
@@ -843,13 +888,15 @@ function effectiveMaxNum(){
   // level 5 == full parent cap; lower levels use a fraction, min 5
   return Math.max(5,Math.round(N*lvl/5));
 }
+// A5 (ANDROID-APP-PLAN.md): silent in both directions, same reasoning as
+// bumpLearningLevel above -- an announced level change turns an invisible
+// difficulty knob into something the child can fixate on.
 async function bumpMathLevel(dir){
   const k=cur(); if(!k) return;
   const next=Math.max(1,Math.min(5,(k.mathLevel||1)+dir));
   if(next!==k.mathLevel){
     k.mathLevel=next;
     await DB.set('cs_mathlvl_'+state.current,next);
-    if(dir>0) toast('כל הכבוד! התרגילים נהיים קצת יותר מאתגרים 📈');
   }
 }
 function newProblem(){
@@ -1222,13 +1269,19 @@ function subjLabel(subj){ return {math:'חשבון',english:'אנגלית',scien
 // Adaptive difficulty per subject, same 4-correct-up/2-wrong-down pattern as
 // bumpMathLevel — kept separate (own state, own levels 1-3) since a child can
 // be at different levels in math vs english vs science.
+// A5 (ANDROID-APP-PLAN.md): silent in BOTH directions -- a declared level
+// change ("you leveled up!"/"you dropped a level") turns an invisible
+// difficulty knob into a scoreboard the child can fixate on or feel bad
+// about, which is exactly what this adaptive system exists to avoid. The
+// parent can always see the actual level in Admin Settings; the child never
+// sees the number move.
 function bumpLearningLevel(subj){
   const k=cur(); if(!k) return;
   const recent=k.learn.recent[subj]||[];
   const lastN=recent.slice(-4);
   if(lastN.length>=4 && lastN.every(v=>v===1)){
     const next=Math.min(3,(k.learnLevel[subj]||1)+1);
-    if(next!==k.learnLevel[subj]){ k.learnLevel[subj]=next; DB.set('cs_learnlvl_'+state.current,k.learnLevel); toast('עלית לרמה '+next+' ב'+subjLabel(subj)+'! ⛏️📈'); }
+    if(next!==k.learnLevel[subj]){ k.learnLevel[subj]=next; DB.set('cs_learnlvl_'+state.current,k.learnLevel); }
     k.learn.recent[subj]=[];
   }
   const last2=recent.slice(-2);
@@ -1347,6 +1400,44 @@ function renderChores(){
       <div class="chore-pts">+${ch.points} 🪙</div>`;
     wrap.appendChild(row);
   });
+  renderJourneyMap();
+}
+// All of TODAY's tasks (every period, not just the current one -- unlike
+// getTasksForTimeOfDay()) so the journey map below shows whole-day progress,
+// not just what's due right now.
+function todaysTaskList(){
+  if(childUsesSchedule(curChild())) return [...periodTaskList('morning'),...periodTaskList('afternoon'),...periodTaskList('evening')];
+  return state.chores.filter(t=>taskForChild(t,state.current));
+}
+// G2 (ANDROID-APP-PLAN.md): a station per today's task, filled in as they're
+// completed, with the child's own avatar sitting at "how far along" (by
+// count, not tied to which specific tasks happen to be done -- a child can
+// complete them in any order and the path still reads as steady progress)
+// and a treasure chest at the end that opens once everything's done.
+function renderJourneyMap(){
+  const wrap=document.getElementById('journeyMapWrap'); if(!wrap) return;
+  const k=cur();
+  if(!k||currentView!=='home'){ wrap.innerHTML=''; return; }
+  ensureTodayKid(state.current);
+  const tasks=todaysTaskList();
+  if(tasks.length===0){ wrap.innerHTML=''; return; }
+  const c=curChild();
+  const avatarIcon=esc((c&&c.emoji)||'🦊');
+  const avatarHtml=`<div class="jm-avatar">${avatarIcon}</div>`;
+  const doneFlags=tasks.map(t=>(k.daily.counts[t.id]||0)>=t.max);
+  const doneCount=doneFlags.filter(Boolean).length;
+  const allDone=doneCount===tasks.length;
+  const pieces=[];
+  tasks.forEach((t,i)=>{
+    const done=doneFlags[i];
+    const icon=t.photo?`<img src="${t.photo}" style="width:100%;height:100%;border-radius:50%;object-fit:cover;">`:esc(t.emoji||'⭐');
+    pieces.push(`<div class="jm-station ${done?'done':''}" title="${esc(t.label)}">${done?'✓':icon}</div>`);
+    if(i+1===doneCount) pieces.push(avatarHtml);
+    if(i<tasks.length-1) pieces.push(`<div class="jm-line ${done&&doneFlags[i+1]?'done':''}"></div>`);
+  });
+  if(doneCount===0) pieces.unshift(avatarHtml);
+  wrap.innerHTML=`<div class="jm-wrap"><div class="jm-track">${pieces.join('')}</div>
+    <div class="jm-chest ${allDone?'open':''}">${allDone?'🎉':'🎁'}</div></div>`;
 }
 
 /* ===== VISUAL DAY SCHEDULE + FIRST->THEN (for Ariel) ===== */
@@ -2251,14 +2342,70 @@ async function toggleTaskKid(listName,i,kidId){
   listName==='chores'?renderChoresAdmin():renderActionsAdmin();
   toast('עודכן ✓');
 }
+/* ---- Generic drag-to-reorder for plain admin lists (A3, ANDROID-APP-PLAN.md:
+   a parent-controlled fixed order, not automatic sorting, matters for a
+   child who relies on routine predictability). Same Pointer Events pattern
+   as the anchored-tasks drag above, generalized to take the target array and
+   a save callback instead of being anchored-specific -- added separately
+   rather than refactoring the anchored version in place, so the
+   already-working anchored drag stays untouched. ---- */
+let _listDrag=null;
+function startListDrag(ev,containerEl,array,index,onSaved){
+  ev.preventDefault();
+  const rows=[...containerEl.querySelectorAll('.admin-row')];
+  const dragged=rows[index]; if(!dragged) return;
+  const startRect=dragged.getBoundingClientRect();
+  const others=rows.map((r,i)=>({i,midY:r.getBoundingClientRect().top+r.getBoundingClientRect().height/2})).filter(o=>o.i!==index);
+  _listDrag={array,index,targetIndex:index,dragged,startY:ev.clientY,startTop:startRect.top,height:startRect.height,others,onSaved};
+  dragged.classList.add('dragging');
+  try{ dragged.setPointerCapture(ev.pointerId); }catch(e){}
+  document.addEventListener('pointermove',onListDragMove);
+  document.addEventListener('pointerup',onListDragEnd,{once:true});
+  document.addEventListener('pointercancel',onListDragEnd,{once:true});
+}
+function onListDragMove(ev){
+  const d=_listDrag; if(!d) return;
+  const dy=ev.clientY-d.startY;
+  d.dragged.style.transform='translateY('+dy+'px)';
+  const draggedMidY=d.startTop+d.height/2+dy;
+  let count=0;
+  for(const o of d.others){ if(draggedMidY>o.midY) count++; }
+  d.targetIndex=count;
+}
+async function onListDragEnd(){
+  const d=_listDrag; if(!d) return;
+  document.removeEventListener('pointermove',onListDragMove);
+  d.dragged.classList.remove('dragging'); d.dragged.style.transform='';
+  _listDrag=null; // clear before the await so a stray second pointerup can't double-apply
+  if(d.targetIndex!==d.index){
+    const [item]=d.array.splice(d.index,1);
+    d.array.splice(d.targetIndex,0,item);
+    await d.onSaved();
+    toast('הסדר עודכן ✓');
+  }
+}
+// G6 (ANDROID-APP-PLAN.md): curated icon set for the "add chore/action"
+// forms, so a parent doesn't need to know how to open an emoji keyboard and
+// a non-reading child gets a consistent, recognizable picture. Picking one
+// just fills the existing free-text field -- a parent who wants a different
+// emoji can still type one in directly.
+const CURATED_TASK_EMOJIS=['🦷','🛏️','🎒','📚','🍽️','🧸','🚿','🚽','💊','🧦','👕','🐠','🌱','🧹','🗑️','⏰','📖','🎨','⚽','🚲'];
+function renderEmojiPicker(pickerId,inputId){
+  const wrap=document.getElementById(pickerId); if(!wrap||wrap.dataset.built) return;
+  wrap.dataset.built='1';
+  wrap.innerHTML=CURATED_TASK_EMOJIS.map(e=>`<button type="button" class="emoji-pick-btn" onclick="document.getElementById('${inputId}').value='${e}'">${e}</button>`).join('');
+}
 function renderChoresAdmin(){
+  renderEmojiPicker('newChoreEmojiPicker','newChoreEmoji');
   const c=document.getElementById('choresAdmin'); c.innerHTML='';
   state.chores.forEach((ch,i)=>{
     const row=document.createElement('div'); row.className='admin-row';
-    row.innerHTML=`<span class="emoji">${ch.emoji}</span><span class="t">${esc(ch.label)}<br><span style="font-size:.72rem;color:var(--muted);font-weight:400;">עד ${ch.max} פעמים ביום · </span>${kidChipsHtml('chores',i,ch)}</span>
+    row.innerHTML=`<span class="drag-handle" title="גרור לשינוי הסדר">⠿</span><span class="emoji">${ch.emoji}</span><span class="t">${esc(ch.label)}<br><span style="font-size:.72rem;color:var(--muted);font-weight:400;">עד ${ch.max} פעמים ביום · </span>${kidChipsHtml('chores',i,ch)}</span>
       <input type="number" value="${ch.points}" min="1" style="width:62px;border:2px solid var(--line);border-radius:10px;padding:7px;text-align:center;font-family:inherit;font-weight:700;" onchange="updateChorePoints(${i},this.value)">
       <button class="icon-btn" onclick="delChore(${i})">🗑️</button>`;
     c.appendChild(row);
+    row.querySelector('.drag-handle').addEventListener('pointerdown',ev=>
+      startListDrag(ev,c,state.chores,i,async()=>{ await DB.set('cs_chores',state.chores); renderChoresAdmin(); }));
   });
 }
 async function updateChorePoints(i,v){ state.chores[i].points=parseInt(v)||1; await DB.set('cs_chores',state.chores); toast('עודכן ✓'); }
@@ -2475,13 +2622,16 @@ function adminReportAccidentToday(){
 }
 
 function renderActionsAdmin(){
+  renderEmojiPicker('newActEmojiPicker','newActEmoji');
   const c=document.getElementById('actionsAdmin'); c.innerHTML='';
   state.actions.forEach((a,i)=>{
     const row=document.createElement('div'); row.className='admin-row';
-    row.innerHTML=`<span class="emoji">${a.emoji}</span><span class="t">${esc(a.label)}<br><span style="font-size:.72rem;color:var(--muted);font-weight:400;">עד ${a.max} פעמים ביום · </span>${kidChipsHtml('actions',i,a)}</span>
+    row.innerHTML=`<span class="drag-handle" title="גרור לשינוי הסדר">⠿</span><span class="emoji">${a.emoji}</span><span class="t">${esc(a.label)}<br><span style="font-size:.72rem;color:var(--muted);font-weight:400;">עד ${a.max} פעמים ביום · </span>${kidChipsHtml('actions',i,a)}</span>
       <input type="number" value="${a.points}" min="1" style="width:62px;border:2px solid var(--line);border-radius:10px;padding:7px;text-align:center;font-family:inherit;font-weight:700;" onchange="updateActionPoints(${i},this.value)">
       <button class="icon-btn" onclick="delAction(${i})">🗑️</button>`;
     c.appendChild(row);
+    row.querySelector('.drag-handle').addEventListener('pointerdown',ev=>
+      startListDrag(ev,c,state.actions,i,async()=>{ await DB.set('cs_actions',state.actions); renderActionsAdmin(); }));
   });
 }
 async function updateActionPoints(i,v){ state.actions[i].points=parseInt(v)||1; await DB.set('cs_actions',state.actions); toast('עודכן ✓'); }
