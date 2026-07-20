@@ -635,6 +635,14 @@
           <div class="field"><input id="setGroqKey" type="password" placeholder="gsk_..."></div>
           <button class="btn primary" onclick="saveGroqKey()">שמור מפתח</button>
         </div>
+        <!-- Native-only: shown when game-time enforcement is broken (the
+             accessibility/overlay permission was revoked -- see
+             renderEnforcementWarning). Placed first so a parent opening
+             settings can't miss it. -->
+        <div class="card" id="enforcementWarning" style="display:none;background:#FFEBEB;border:2px solid var(--coral);">
+          <div class="ew-text" style="font-weight:800;margin-bottom:8px;"></div>
+          <button class="btn coral sm" onclick="openEnforcementSettings()">פתח הגדרות והפעל מחדש</button>
+        </div>
         <!-- AN8: native-only, hidden unless checkForAppUpdate() finds a
              newer versionCode than this install. -->
         <div class="card" id="appUpdateBanner" style="display:none;background:#FFF8E6;border:2px solid var(--gold);">

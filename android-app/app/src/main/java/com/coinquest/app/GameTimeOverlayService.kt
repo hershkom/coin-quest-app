@@ -61,9 +61,19 @@ class GameTimeOverlayService : Service() {
         remainingMsAtStop = sessionDurationMs
 
         val prefs = getSharedPreferences(GameTimePrefs.NAME, Context.MODE_PRIVATE)
+        // SESSION_END_AT is the crash backstop: if this process dies before
+        // endSession() flips SESSION_ACTIVE off, the accessibility service
+        // treats an expired deadline as "no session" instead of allowing the
+        // game forever. Also fold the target into ENFORCED_PACKAGES here as
+        // defense in depth, in case the app-launch arming call never ran.
+        val enforced = (prefs.getString(GameTimePrefs.ENFORCED_PACKAGES, null) ?: "")
+            .split(',').filter { it.isNotBlank() }.toMutableSet()
+        enforced.add(targetPackage)
         prefs.edit()
             .putString(GameTimePrefs.TARGET_PACKAGE, targetPackage)
+            .putString(GameTimePrefs.ENFORCED_PACKAGES, enforced.joinToString(","))
             .putBoolean(GameTimePrefs.SESSION_ACTIVE, true)
+            .putLong(GameTimePrefs.SESSION_END_AT, System.currentTimeMillis() + sessionDurationMs)
             .apply()
 
         startForegroundWithNotification()
@@ -183,7 +193,8 @@ class GameTimeOverlayService : Service() {
             // earlier), so the accessibility service's re-block guard can't
             // spuriously fire a redundant extra toast+home while the calm
             // message is still on screen over the game.
-            prefs.edit().putBoolean(GameTimePrefs.SESSION_ACTIVE, false).apply()
+            prefs.edit().putBoolean(GameTimePrefs.SESSION_ACTIVE, false)
+                .remove(GameTimePrefs.SESSION_END_AT).apply()
             val svc = GameTimeAccessibilityService.instance
             if (svc != null) svc.goHome()
             else Log.w(TAG, "Accessibility service not connected -- cannot force home")

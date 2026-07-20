@@ -200,6 +200,19 @@ class NativeGameBridge(private val activity: Activity, private val webView: WebV
         }
     }
 
+    /** Arms the always-on wall for the given packages (CSV) -- called by
+     *  app.js on every launch with every native game it knows about. Without
+     *  this, the accessibility service only learned WHAT to block when the
+     *  first paid session ever started, so on a fresh install the child
+     *  could open the game freely without ever buying time. Replaces (not
+     *  merges) the stored set so a game a parent removed from the app stops
+     *  being blocked too. */
+    @JavascriptInterface
+    fun setEnforcedPackages(csv: String) {
+        activity.getSharedPreferences(GameTimePrefs.NAME, android.content.Context.MODE_PRIVATE)
+            .edit().putString(GameTimePrefs.ENFORCED_PACKAGES, csv.trim()).apply()
+    }
+
     /** Returns false immediately (no session started) if permissions are
      *  missing or the game isn't installed -- a session that can't be
      *  enforced must never start, since enforcement is the entire point. */

@@ -31,11 +31,17 @@ class GameTimeAccessibilityService : AccessibilityService() {
         val pkg = event.packageName?.toString() ?: return
 
         val prefs = getSharedPreferences(GameTimePrefs.NAME, Context.MODE_PRIVATE)
-        val targetPkg = prefs.getString(GameTimePrefs.TARGET_PACKAGE, null)
-        if (targetPkg.isNullOrEmpty() || pkg != targetPkg) return
+        // ENFORCED_PACKAGES is armed on every app launch (see
+        // NativeGameBridge.setEnforcedPackages); TARGET_PACKAGE is kept as a
+        // fallback so a device that ran an older version (where only the
+        // first session ever wrote it) stays blocked even before the web app
+        // has re-armed the new pref.
+        val enforced = (prefs.getString(GameTimePrefs.ENFORCED_PACKAGES, null) ?: "")
+            .split(',').filter { it.isNotBlank() }.toMutableSet()
+        prefs.getString(GameTimePrefs.TARGET_PACKAGE, null)?.let { if (it.isNotBlank()) enforced.add(it) }
+        if (pkg !in enforced) return
 
-        val sessionActive = prefs.getBoolean(GameTimePrefs.SESSION_ACTIVE, false)
-        if (!sessionActive) {
+        if (!isSessionValid(prefs)) {
             Log.d(TAG, "Blocked foreground of $pkg -- no active paid session")
             Toast.makeText(
                 applicationContext,
@@ -46,6 +52,22 @@ class GameTimeAccessibilityService : AccessibilityService() {
         } else {
             Log.d(TAG, "$pkg is in the foreground during an active session")
         }
+    }
+
+    /** A session is valid only if the ACTIVE flag is set AND its wall-clock
+     *  deadline hasn't passed (plus a small grace for clock skew between the
+     *  writer and this check). A stale ACTIVE flag -- the overlay service's
+     *  process died mid-session without running endSession() -- used to mean
+     *  the game was allowed FOREVER; now it's detected here, self-healed,
+     *  and blocked. A missing deadline with ACTIVE=true is treated as stale
+     *  too (every current writer sets both together). */
+    private fun isSessionValid(prefs: android.content.SharedPreferences): Boolean {
+        if (!prefs.getBoolean(GameTimePrefs.SESSION_ACTIVE, false)) return false
+        val endAt = prefs.getLong(GameTimePrefs.SESSION_END_AT, 0L)
+        if (endAt > 0L && System.currentTimeMillis() <= endAt + DEADLINE_GRACE_MS) return true
+        Log.w(TAG, "Stale SESSION_ACTIVE flag (deadline ${endAt}) -- self-healing to inactive")
+        prefs.edit().putBoolean(GameTimePrefs.SESSION_ACTIVE, false).remove(GameTimePrefs.SESSION_END_AT).apply()
+        return false
     }
 
     override fun onInterrupt() {
@@ -66,6 +88,7 @@ class GameTimeAccessibilityService : AccessibilityService() {
 
     companion object {
         private const val TAG = "CoinQuestGameTime"
+        private const val DEADLINE_GRACE_MS = 30_000L
 
         /** Set while the service is connected; null otherwise. */
         var instance: GameTimeAccessibilityService? = null

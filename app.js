@@ -1554,6 +1554,7 @@ function renderGameTimeBanner(){
 }
 function renderGamesView(){
   const k=cur(); if(!k) return;
+  applyEnforcedPackages(); // re-arm on every visit -- catches games added/removed since launch
   document.getElementById('gtWalletBig').textContent='⏱️ '+fmtGT(k.gtime||0);
   const list=document.getElementById('gamesList'); list.innerHTML='';
   if(!state.games.length){ list.innerHTML='<div class="empty"><span class="e-ic">🎮</span>אין משחקים עדיין — אמא או אבא יכולים להוסיף בהגדרות</div>'; return; }
@@ -1721,6 +1722,42 @@ async function endGameSession(expired){
    usage; the wallet is only ever debited by what the native side reports,
    never by anything computed here. */
 function isNativeGameAvailable(){ return typeof window.CoinQuestNative!=='undefined'; }
+// Arms the native always-on wall: tells the accessibility service which
+// packages to block outside a paid session, on EVERY app launch -- not only
+// when the first session ever starts (the old behavior, which left a fresh
+// install with no wall at all until the child's first purchase). Guarded per
+// method (not just per bridge) so Playwright's partial bridge mocks and
+// older APKs without this method don't throw.
+function applyEnforcedPackages(){
+  if(!isNativeGameAvailable()||typeof window.CoinQuestNative.setEnforcedPackages!=='function') return;
+  const csv=(state.games||[]).filter(g=>g.native&&g.androidPackage).map(g=>g.androidPackage).join(',');
+  try{ window.CoinQuestNative.setEnforcedPackages(csv); }catch(e){}
+}
+// Parent-facing enforcement health check (Admin Settings): the accessibility
+// toggle lives in the OS Settings app, which no PIN protects -- if it gets
+// turned off (by the child, a system update, or a "cleaner" app), the wall
+// silently stops existing. We can't prevent that without device-owner
+// privileges; what we CAN do is make sure the parent finds out.
+function renderEnforcementWarning(){
+  const el=document.getElementById('enforcementWarning'); if(!el) return;
+  const hasNativeGames=(state.games||[]).some(g=>g.native&&g.androidPackage);
+  if(!isNativeGameAvailable()||!hasNativeGames){ el.style.display='none'; return; }
+  const missing=[];
+  try{
+    if(typeof window.CoinQuestNative.hasAccessibilityPermission==='function'&&!window.CoinQuestNative.hasAccessibilityPermission()) missing.push('שירות הנגישות');
+    if(typeof window.CoinQuestNative.hasOverlayPermission==='function'&&!window.CoinQuestNative.hasOverlayPermission()) missing.push('חלון צף');
+  }catch(e){}
+  if(missing.length===0){ el.style.display='none'; return; }
+  el.style.display='block';
+  el.querySelector('.ew-text').textContent='⚠️ אכיפת זמן המשחק כבויה — חסר: '+missing.join(' + ')+'. בלי זה הילד יכול לפתוח את המשחק בלי לקנות זמן.';
+}
+function openEnforcementSettings(){
+  if(!isNativeGameAvailable()) return;
+  try{
+    if(typeof window.CoinQuestNative.hasOverlayPermission==='function'&&!window.CoinQuestNative.hasOverlayPermission()) window.CoinQuestNative.requestOverlayPermission();
+    else window.CoinQuestNative.requestAccessibilityPermission();
+  }catch(e){}
+}
 
 /* ---- daily chore-reminder notification (AN5, native-only) ---- */
 function updateChoreReminderCardVisibility(){
@@ -1887,7 +1924,7 @@ function adminTab(t){
   if(t==='events') renderEventsAdmin();
   if(t==='badges') renderBadgesAdmin();
   if(t==='report') renderReportAdmin();
-  if(t==='settings'){ fillAccountSettings(); fillCalmToggle(); fillChoreReminderSettings(); }
+  if(t==='settings'){ fillAccountSettings(); fillCalmToggle(); fillChoreReminderSettings(); renderEnforcementWarning(); }
 }
 async function renderCalmLogStats(){
   const el=document.getElementById('calmLogStats'); if(!el) return;
@@ -4481,6 +4518,7 @@ window.addEventListener('unhandledrejection', (ev)=>{
     await loadState();
     applyCalmModeClass();
     applyChoreReminder();
+    applyEnforcedPackages(); // arm the native game wall from the very first launch
     setInterval(checkEventReminders, 60000);
     checkEventReminders();
 
