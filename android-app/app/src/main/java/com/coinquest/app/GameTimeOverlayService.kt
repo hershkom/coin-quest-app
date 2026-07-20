@@ -216,6 +216,12 @@ class GameTimeOverlayService : Service() {
 
         private const val FIVE_MINUTES_MS = 5 * 60 * 1000L
         private const val ONE_MINUTE_MS = 60 * 1000L
-        private const val CALM_MESSAGE_DISPLAY_MS = 1800L
+        // A2 (ANDROID-APP-PLAN.md): "never an abrupt cutoff" -- was 1800ms,
+        // barely enough to read the message before being forced home. A full
+        // 10s calm buffer (during which the close button is hidden, so this
+        // is a genuine pause, not skippable) matches the plan's explicit
+        // "time's up, that was fun!" spec and the same principle behind the
+        // graduated GT_WARN_STEPS warnings on the web side.
+        private const val CALM_MESSAGE_DISPLAY_MS = 10000L
     }
 }

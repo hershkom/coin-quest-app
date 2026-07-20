@@ -546,15 +546,22 @@ function go(v){
   clearInterval(clockInterval); clockInterval=null;
   if(v==='picker') renderPicker();
   if(v==='home'){
-    renderChores(); renderStreakBanner(); renderGameTimeBanner(); renderEventsHome(); renderDayStrip(); renderFirstThen(); renderBadgesBanner();
-    if(childUsesSchedule(curChild())){
-      clockInterval=setInterval(()=>{
-        renderChores(); renderDayStrip(); renderFirstThen();
-        // Catch the day->night decoration switch across the sleep-time
-        // boundary, same cadence as the schedule refresh above.
-        if(document.querySelector('.app').classList.contains('blocks-mode')) addThemeDecorations('blocks');
-      },45000);
-    }
+    renderChores(); renderStreakBanner(); renderGameTimeBanner(); renderEventsHome(); renderDayStrip(); renderBadgesBanner();
+  }
+  renderFirstThen(); // A1: now runs for every view renderFirstThen() itself allows, not just home
+  // A1: the schedule-refresh interval used to only run on the home view --
+  // now it follows the child to any screen (still only ever re-renders
+  // home-specific elements like the chore list if home is what's actually
+  // showing), so the "now -> then" strip stays correct even if a child
+  // spends a while on e.g. the math screen across a period boundary.
+  if(childUsesSchedule(curChild())&&!FIRSTTHEN_HIDDEN_VIEWS.includes(v)){
+    clockInterval=setInterval(()=>{
+      if(currentView==='home'){ renderChores(); renderDayStrip(); }
+      renderFirstThen();
+      // Catch the day->night decoration switch across the sleep-time
+      // boundary, same cadence as the schedule refresh above.
+      if(document.querySelector('.app').classList.contains('blocks-mode')) addThemeDecorations('blocks');
+    },45000);
   }
   if(v==='scan') startCamera();
   if(v==='math') initMath();
@@ -1049,13 +1056,16 @@ function speakWithHighlight(text,el,lang,onEnd){
     window._nativeTtsBoundary=(id,charIndex)=>{ if(id===uid&&!done&&myGen===_ttsGen) highlightWordAt(el,words,charIndex); };
     window._nativeTtsEnd=(id)=>{ if(id===uid) finish(); };
     try{
-      if(!window.CoinQuestNative.ttsSpeak(text,lang||'he-IL',uid)) finish();
+      if(!window.CoinQuestNative.ttsSpeak(text,lang||'he-IL',uid,state.calmMode?0.75:0.9)) finish();
     }catch(e){ finish(); }
     return;
   }
   try{
     const utter=new SpeechSynthesisUtterance(text);
-    utter.lang=lang||'he-IL'; utter.rate=0.9;
+    // A6 (calm mode): a slower rate gives extra processing time on a
+    // sensitive day, at the parent's discretion via the same toggle that
+    // already dampens confetti/chime/background motion.
+    utter.lang=lang||'he-IL'; utter.rate=state.calmMode?0.75:0.9;
     utter.onboundary=(ev)=>{
       if(done||!el||myGen!==_ttsGen) return;
       if(ev.name&&ev.name!=='word') return;
@@ -1363,10 +1373,17 @@ function renderDayStrip(){
   });
   wrap.innerHTML=html+'</div>';
 }
+// A1 (ANDROID-APP-PLAN.md): visible on every kid-facing screen now (moved to
+// shared chrome in index.html), not just home -- explicitly hidden on
+// parent/meta screens where it would be confusing clutter (picker/welcome
+// have no "current child" context yet; admin is the parent's own screen).
+// Shared with go()'s periodic refresh interval below so both agree on which
+// views count as "kid-facing".
+const FIRSTTHEN_HIDDEN_VIEWS=['picker','welcome','admin'];
 function renderFirstThen(){
   const wrap=document.getElementById('firstThenWrap'); if(!wrap) return;
   const k=cur();
-  if(!childUsesSchedule(curChild())||currentView!=='home'||!k){ wrap.innerHTML=''; return; }
+  if(!childUsesSchedule(curChild())||FIRSTTHEN_HIDDEN_VIEWS.includes(currentView)||!k){ wrap.innerHTML=''; return; }
   ensureTodayKid(state.current);
   const order=['morning','afternoon','evening','sleep'];
   const curIdx=order.indexOf(currentPeriodKey());
@@ -1568,7 +1585,11 @@ function renderGamesView(){
    and the remaining balance is persisted every few seconds so closing the
    app mid-game can't mint time back. */
 let _gt=null; // {gameId, baseMono, baseWallet, warned:{}, interval, paused}
-const GT_WARN_STEPS=[300,60,10]; // seconds-left marks that trigger a warning
+// A2 (ANDROID-APP-PLAN.md): 5min/2min/30sec staged warnings -- enough lead
+// time before a transition that it's never a surprise, matching the same
+// "graduated, never abrupt" principle as GameTimeOverlayService's native
+// calm-message buffer below.
+const GT_WARN_STEPS=[300,120,30]; // seconds-left marks that trigger a warning
 // ---- optional pre-game "learning gate" (L6) ----
 // A non-blocking 3-question warm-up before a game session: always lets the
 // child continue after answering (even if all 3 are wrong — this is a brain

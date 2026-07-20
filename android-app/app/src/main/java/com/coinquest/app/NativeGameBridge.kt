@@ -85,17 +85,21 @@ class NativeGameBridge(private val activity: Activity, private val webView: WebV
 
     /** `lang` is a BCP-47-ish tag like "he-IL" or "en-US" (exactly what
      *  app.js already passes to SpeechSynthesisUtterance.lang) -- split on
-     *  '-' into a Locale rather than requiring a second format. Returns false
-     *  (and speaks nothing) if the engine isn't ready or the language/voice
-     *  isn't available, so the caller can fall back cleanly. */
+     *  '-' into a Locale rather than requiring a second format. `rate`
+     *  mirrors SpeechSynthesisUtterance.rate (1.0 = normal); app.js passes a
+     *  slower value in calm mode (A6, ANDROID-APP-PLAN.md), same as the Web
+     *  Speech fallback path. Returns false (and speaks nothing) if the
+     *  engine isn't ready or the language/voice isn't available, so the
+     *  caller can fall back cleanly. */
     @JavascriptInterface
-    fun ttsSpeak(text: String, lang: String, utteranceId: String): Boolean {
+    fun ttsSpeak(text: String, lang: String, utteranceId: String, rate: Float): Boolean {
         val engine = tts ?: return false
         if (!ttsReady) return false
         val parts = lang.split("-")
         val locale = if (parts.size >= 2) Locale(parts[0], parts[1]) else Locale(parts[0])
         if (engine.isLanguageAvailable(locale) < TextToSpeech.LANG_AVAILABLE) return false
         engine.language = locale
+        engine.setSpeechRate(if (rate > 0f) rate else 1.0f)
         val params = Bundle()
         val result = engine.speak(text, TextToSpeech.QUEUE_FLUSH, params, utteranceId)
         return result == TextToSpeech.SUCCESS

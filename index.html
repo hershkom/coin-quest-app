@@ -54,6 +54,13 @@
     </div>
   </div>
 
+  <!-- A1 (ANDROID-APP-PLAN.md): "now → then" strip, moved from inside
+       #view-home to shared chrome (like .topbar itself) so it's visible on
+       every kid-facing screen, not just home -- predictability matters more
+       than screen-specific real estate for a child who benefits from always
+       knowing what's next. renderFirstThen() itself decides when to hide. -->
+  <div id="firstThenWrap"></div>
+
   <div class="main">
 
     <div class="view" id="view-welcome">
@@ -96,7 +103,6 @@
         <div class="amount-label">מטבעות שהרווחת</div>
       </div>
       <div id="dayStripWrap"></div>
-      <div id="firstThenWrap"></div>
 
       <div class="section-title">⚡ מה עושים?</div>
       <div class="grid2">
