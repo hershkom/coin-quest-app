@@ -12,6 +12,7 @@ import android.os.CountDownTimer
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
+import android.os.SystemClock
 import android.util.Log
 import android.view.Gravity
 import android.view.LayoutInflater
@@ -44,11 +45,19 @@ class GameTimeOverlayService : Service() {
     private var targetPackage: String = ""
     private var childId: String = ""
     private var ended = false // guards against double-reporting/double-goHome
+    // elapsedRealtime when the game first stopped being the foreground app in
+    // this away-streak; 0 = currently in the game (or foreground unknown). See
+    // checkForegroundAway().
+    private var awaySinceMs: Long = 0L
+    // Away-detection only arms AFTER the game has actually been the foreground
+    // app at least once -- so the ~1s between launching the game and its window
+    // first reporting (when the stale previous foreground could still be
+    // showing) never counts as "left the game" and ends the session at birth.
+    private var seenTargetForeground = false
 
     override fun onCreate() {
         super.onCreate()
         windowManager = getSystemService(WINDOW_SERVICE) as WindowManager
-        instance = this
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -96,7 +105,6 @@ class GameTimeOverlayService : Service() {
     override fun onDestroy() {
         countDownTimer?.cancel()
         removeOverlayView()
-        if (instance === this) instance = null
         super.onDestroy()
     }
 
@@ -169,12 +177,46 @@ class GameTimeOverlayService : Service() {
                 val consumed = ((sessionDurationMs - millisUntilFinished) / 1000L).toInt()
                 getSharedPreferences(GameTimePrefs.NAME, Context.MODE_PRIVATE)
                     .edit().putInt(GameTimePrefs.CONSUMED_PENDING_SECONDS, consumed).apply()
+                checkForegroundAway()
             }
             override fun onFinish() {
                 remainingMsAtStop = 0L
                 endSession(showCalmMessage = true)
             }
         }.start()
+    }
+
+    /** Polled once a second from the countdown tick: if the game is no longer
+     *  the foreground app, end the session so the floating timer can't keep
+     *  running (and draining purchased minutes) after the child has left the
+     *  game -- the entire point of the fix. Actively polling the foreground
+     *  package the accessibility service tracks is far more reliable than
+     *  waiting to be told about one specific "left the game" transition event,
+     *  which was being missed on real devices.
+     *
+     *  A short grace (AWAY_GRACE_MS) tolerates the game momentarily not being
+     *  "foreground" -- pulling down the notification shade, an incoming system
+     *  dialog, the app briefly not yet reporting after launch -- without
+     *  killing an active session over a one-second blip.
+     *
+     *  foregroundPackage == null means "not known yet" (no window event seen):
+     *  treat that as NOT-away, so a session is never ended just because the
+     *  accessibility service hasn't reported anything yet. */
+    private fun checkForegroundAway() {
+        val fg = GameTimeAccessibilityService.foregroundPackage
+        if (fg == targetPackage) {
+            seenTargetForeground = true
+            awaySinceMs = 0L
+            return
+        }
+        // Don't arm until the game has genuinely been foreground once (guards
+        // the launch window) and only when we actually know the foreground app.
+        if (!seenTargetForeground || fg == null) { awaySinceMs = 0L; return }
+        if (awaySinceMs == 0L) awaySinceMs = SystemClock.elapsedRealtime()
+        if (SystemClock.elapsedRealtime() - awaySinceMs >= AWAY_GRACE_MS) {
+            Log.d(TAG, "Foreground is '$fg' (not '$targetPackage') for >${AWAY_GRACE_MS}ms -- ending session")
+            endEarlyDueToAppSwitch()
+        }
     }
 
     private fun updateTimerDisplay(millisRemaining: Long) {
@@ -247,15 +289,15 @@ class GameTimeOverlayService : Service() {
         }
     }
 
-    /** Called by GameTimeAccessibilityService when the child has been away
-     *  from the target game for AWAY_GRACE_MS straight (see that class) --
-     *  the whole point of the fix: previously, leaving the game via Home/
-     *  Back left the floating countdown running and the timer draining in
-     *  the background, with no way to stop it short of waiting it out or
-     *  going back in just to tap the overlay's own close button. No calm
-     *  message (they're not looking at the overlay right now) and no forced
-     *  home (see endSession's forceHome doc above). */
-    fun endEarlyDueToAppSwitch() {
+    /** Ends the session because the child has left the game (checkForegroundAway
+     *  saw the game stop being the foreground app for AWAY_GRACE_MS). This is
+     *  the whole point of the fix: previously, leaving via Home/Back left the
+     *  floating countdown running and draining purchased minutes in the
+     *  background, with no way to stop it short of waiting it out or going back
+     *  in just to tap the overlay's own close button. No calm message (the
+     *  child isn't looking at the overlay) and no forced home (see endSession's
+     *  forceHome doc -- they've already navigated somewhere on their own). */
+    private fun endEarlyDueToAppSwitch() {
         endSession(showCalmMessage = false, forceHome = false)
     }
 
@@ -263,18 +305,16 @@ class GameTimeOverlayService : Service() {
         private const val TAG = "CoinQuestGameTime"
         private const val NOTIFICATION_ID = 2001
 
-        /** Set while a session's overlay is up; null otherwise. Lets
-         *  GameTimeAccessibilityService trigger an early end when the child
-         *  switches away from the target game (see endEarlyDueToAppSwitch). */
-        var instance: GameTimeOverlayService? = null
-            private set
-
         const val EXTRA_SECONDS = "seconds"
         const val EXTRA_PACKAGE = "package"
         const val EXTRA_CHILD_ID = "child_id"
 
         private const val FIVE_MINUTES_MS = 5 * 60 * 1000L
         private const val ONE_MINUTE_MS = 60 * 1000L
+        // Grace before "game is no longer foreground" ends the session -- long
+        // enough to ride out a notification-shade pull or a post-launch blip,
+        // short enough that actually leaving stops the drain within seconds.
+        private const val AWAY_GRACE_MS = 3_000L
         // A2 (ANDROID-APP-PLAN.md): "never an abrupt cutoff" -- was 1800ms,
         // barely enough to read the message before being forced home. A full
         // 10s calm buffer (during which the close button is hidden, so this
