@@ -72,6 +72,23 @@ class GameTimeAccessibilityService : AccessibilityService() {
         }
     }
 
+    /** Actively queries which app owns the current active window RIGHT NOW,
+     *  rather than relying on a TYPE_WINDOW_STATE_CHANGED event having fired.
+     *  This is the reliable path on OEMs (notably Samsung/One UI) where pressing
+     *  Home or Back to leave a game does NOT reliably emit a window-state event
+     *  -- app LAUNCHES always emit one (so the re-entry block still works), but
+     *  the LEAVE transition can be silently dropped, which is exactly why the
+     *  event-only away-detection wasn't catching the child exiting the game.
+     *  Requires canRetrieveWindowContent=true (see the service config XML).
+     *  Returns null if unknown / our own package (so the caller treats it as
+     *  "no signal" rather than "left the game"). */
+    fun activeWindowPackage(): String? {
+        return try {
+            val p = rootInActiveWindow?.packageName?.toString()
+            if (p == null || p == applicationContext.packageName) null else p
+        } catch (e: Exception) { null }
+    }
+
     /** A session is valid only if the ACTIVE flag is set AND its wall-clock
      *  deadline hasn't passed (plus a small grace for clock skew between the
      *  writer and this check). A stale ACTIVE flag -- the overlay service's
@@ -97,12 +114,6 @@ class GameTimeAccessibilityService : AccessibilityService() {
         foregroundPackage = null
         if (instance === this) instance = null
         return super.onUnbind(intent)
-    }
-
-    /** Called by GameTimeOverlayService when a session ends (timeout or early stop). */
-    fun goHome() {
-        Log.d(TAG, "Forcing home via GLOBAL_ACTION_HOME")
-        performGlobalAction(GLOBAL_ACTION_HOME)
     }
 
     companion object {

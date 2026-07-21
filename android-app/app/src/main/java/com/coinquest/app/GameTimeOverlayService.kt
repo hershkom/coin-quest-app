@@ -203,7 +203,14 @@ class GameTimeOverlayService : Service() {
      *  treat that as NOT-away, so a session is never ended just because the
      *  accessibility service hasn't reported anything yet. */
     private fun checkForegroundAway() {
-        val fg = GameTimeAccessibilityService.foregroundPackage
+        val svc = GameTimeAccessibilityService.instance
+        // Prefer the ACTIVE query (what's on screen right now) over the
+        // event-tracked value, because the leave-the-game transition event is
+        // dropped on some OEMs -- the active query isn't. Fall back to the
+        // event-tracked package only if the active query can't answer (e.g. a
+        // pure-SurfaceView game exposes no queryable node while it's up, which
+        // is fine: the event-tracked value still reads the game there).
+        val fg = svc?.activeWindowPackage() ?: GameTimeAccessibilityService.foregroundPackage
         if (fg == targetPackage) {
             seenTargetForeground = true
             awaySinceMs = 0L
@@ -234,16 +241,16 @@ class GameTimeOverlayService : Service() {
         view.findViewById<View>(R.id.overlayRoot).setBackgroundColor(getColor(colorRes))
     }
 
-    /** Single exit path for timeout, manual early-stop, AND the child having
-     *  switched away from the game (see endEarlyDueToAppSwitch below) --
+    /** Single exit path for timeout, manual early-stop (the ✖ button), AND the
+     *  child having switched away from the game (endEarlyDueToAppSwitch) --
      *  always reports real elapsed seconds and only ever runs once.
-     *  `forceHome`: true for timeout/manual-close (the child is still "in" the
-     *  flow, so landing on the home screen is the natural next step); false
-     *  when they've ALREADY switched to something else on their own -- forcing
-     *  GLOBAL_ACTION_HOME there would yank them out of whatever they're doing
-     *  now (answering a call, using another app), which has nothing to do
-     *  with this session ending. */
-    private fun endSession(showCalmMessage: Boolean, forceHome: Boolean = true) {
+     *  `returnToApp`: true for timeout / tapping the ✖ (bring CoinQuest back to
+     *  the front, so ending the timer lands the child on THIS app -- showing
+     *  their updated coins/time -- instead of the phone's home screen, which
+     *  read as "the app closed"); false when they've ALREADY navigated away on
+     *  their own (Home/another app) -- yanking them into CoinQuest there would
+     *  interrupt whatever they chose to do next. */
+    private fun endSession(showCalmMessage: Boolean, returnToApp: Boolean = true) {
         if (ended) return
         ended = true
         countDownTimer?.cancel()
@@ -252,7 +259,7 @@ class GameTimeOverlayService : Service() {
         val prefs = getSharedPreferences(GameTimePrefs.NAME, Context.MODE_PRIVATE)
 
         val finish = Runnable {
-            // Flip session_active off right before actually forcing home (not
+            // Flip session_active off right before actually switching away (not
             // earlier), so the accessibility service's re-block guard can't
             // spuriously fire a redundant extra toast+home while the calm
             // message is still on screen over the game.
@@ -264,11 +271,7 @@ class GameTimeOverlayService : Service() {
                 .remove(GameTimePrefs.SESSION_END_AT)
                 .putInt(GameTimePrefs.CONSUMED_PENDING_SECONDS, consumedSeconds)
                 .apply()
-            if (forceHome) {
-                val svc = GameTimeAccessibilityService.instance
-                if (svc != null) svc.goHome()
-                else Log.w(TAG, "Accessibility service not connected -- cannot force home")
-            }
+            if (returnToApp) bringCoinQuestToFront()
             NativeGameBridge.notifySessionEnded(consumedSeconds, childId)
             stopSelf()
         }
@@ -281,8 +284,9 @@ class GameTimeOverlayService : Service() {
                 view.findViewById<View>(R.id.btnOverlayClose).visibility = View.GONE
             }
             // Main-thread Handler (not View.postDelayed) so this still fires
-            // even if the overlay view is somehow already gone -- the forced
-            // home action must never silently no-op.
+            // even if the overlay view is somehow already gone -- ending the
+            // session (report + return to app + stopSelf) must never silently
+            // no-op just because the overlay view went away.
             mainHandler.postDelayed(finish, CALM_MESSAGE_DISPLAY_MS)
         } else {
             finish.run()
@@ -295,10 +299,27 @@ class GameTimeOverlayService : Service() {
      *  floating countdown running and draining purchased minutes in the
      *  background, with no way to stop it short of waiting it out or going back
      *  in just to tap the overlay's own close button. No calm message (the
-     *  child isn't looking at the overlay) and no forced home (see endSession's
-     *  forceHome doc -- they've already navigated somewhere on their own). */
+     *  child isn't looking at the overlay) and don't pull CoinQuest to the
+     *  front (see endSession's returnToApp doc -- they already chose to go
+     *  somewhere else on their own). */
     private fun endEarlyDueToAppSwitch() {
-        endSession(showCalmMessage = false, forceHome = false)
+        endSession(showCalmMessage = false, returnToApp = false)
+    }
+
+    /** Bring the CoinQuest app to the foreground, replacing the game. Used when
+     *  the timer ends "in-flow" (time ran out, or the child tapped the ✖) so
+     *  they land back on this app -- not the phone's home screen, which looked
+     *  like "CoinQuest closed". The SYSTEM_ALERT_WINDOW (overlay) permission
+     *  this feature already requires also exempts us from Android's background-
+     *  activity-start restrictions, so this launch is allowed from the service. */
+    private fun bringCoinQuestToFront() {
+        try {
+            val intent = Intent(this, MainActivity::class.java)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_REORDER_TO_FRONT)
+            startActivity(intent)
+        } catch (e: Exception) {
+            Log.w(TAG, "Could not bring CoinQuest to front", e)
+        }
     }
 
     companion object {
