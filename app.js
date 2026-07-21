@@ -2290,15 +2290,39 @@ async function onAnchoredDragEnd(){
   renderAnchoredAdmin();
 }
 
-async function addAnchoredTask(period){
-  const label=prompt('שם המטלה:');
-  const emoji=prompt('אימוג\'י:','🎯');
-  const points=parseInt(prompt('נקודות:','5'))||5;
-  const max=parseInt(prompt('מקסימום ביום:','1'))||1;
-  state.anchored[period].push({id:'at_'+Date.now(),label,emoji,points,max});
-  await DB.set('cs_anchored',state.anchored);
-  renderAnchoredAdmin();
-  toast('נוסף ✓');
+// Was three chained window.prompt() calls -- inside the Android WebView those
+// render as an ugly native system dialog ("The page at ...firebaseapp.com
+// says:") that looks like an error, not a form. Replaced with the same kind of
+// in-app modal the rest of the admin uses, including the curated emoji picker.
+const ANCHORED_PERIOD_LABELS={morning:'🌅 בוקר',afternoon:'☀️ צהריים',evening:'🌆 ערב'};
+function addAnchoredTask(period){
+  const emojiBtns=CURATED_TASK_EMOJIS.map(e=>`<button type="button" class="emoji-pick-btn" onclick="document.getElementById('aatEmoji').value='${e}'">${e}</button>`).join('');
+  modalContent.innerHTML=`<div class="m-emoji">🎯</div><h3>מטלה חדשה · ${ANCHORED_PERIOD_LABELS[period]||''}</h3>
+    <div class="field" style="text-align:right;"><label>שם המטלה</label>
+      <input id="aatLabel" placeholder="לדוגמה: לקחת תרופה" style="width:100%;border:2px solid var(--line);border-radius:13px;padding:11px;font-family:inherit;"></div>
+    <div class="field" style="text-align:right;"><label>אימוג'י</label>
+      <input id="aatEmoji" value="🎯" maxlength="2" style="width:100%;border:2px solid var(--line);border-radius:13px;padding:11px;font-family:inherit;text-align:center;font-size:1.3rem;">
+      <div class="emoji-picker" style="margin-top:6px;">${emojiBtns}</div></div>
+    <div class="inline-row">
+      <div class="field"><label>מטבעות</label><input id="aatPoints" type="number" value="5" min="1" style="width:100%;border:2px solid var(--line);border-radius:13px;padding:11px;font-family:inherit;text-align:center;"></div>
+      <div class="field"><label>פעמים ביום</label><input id="aatMax" type="number" value="1" min="1" style="width:100%;border:2px solid var(--line);border-radius:13px;padding:11px;font-family:inherit;text-align:center;"></div>
+    </div>
+    <div style="display:flex;gap:8px;margin-top:14px;"><button class="btn ghost" onclick="closeModal()">ביטול</button><button class="btn primary" id="aatOk">הוסף</button></div>`;
+  modalBg.classList.add('show');
+  setTimeout(()=>{ const el=document.getElementById('aatLabel'); if(el) el.focus(); },100);
+  document.getElementById('aatOk').onclick=async()=>{
+    const label=document.getElementById('aatLabel').value.trim();
+    if(!label){ toast('צריך שם למטלה'); return; }
+    const emoji=document.getElementById('aatEmoji').value.trim()||'🎯';
+    const points=parseInt(document.getElementById('aatPoints').value)||5;
+    const max=parseInt(document.getElementById('aatMax').value)||1;
+    state.anchored[period].push({id:'at_'+Date.now(),label,emoji,points,max});
+    await DB.set('cs_anchored',state.anchored);
+    scheduleSync();
+    closeModal();
+    renderAnchoredAdmin();
+    toast('נוסף ✓');
+  };
 }
 async function updateAnchoredPoints(period,i,v){
   state.anchored[period][i].points=parseInt(v)||1;
