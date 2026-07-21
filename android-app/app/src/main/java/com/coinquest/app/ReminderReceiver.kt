@@ -21,8 +21,41 @@ class ReminderReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         when (intent.action) {
             ACTION_FIRE -> showNotification(context)
-            Intent.ACTION_BOOT_COMPLETED -> ChoreReminderScheduler.rescheduleIfEnabled(context)
+            ACTION_EVENT_FIRE -> showEventNotification(
+                context,
+                intent.getStringExtra(EXTRA_EVENT_ID) ?: "",
+                intent.getStringExtra(EXTRA_EVENT_TITLE) ?: "",
+                intent.getStringExtra(EXTRA_EVENT_EMOJI) ?: "📅"
+            )
+            Intent.ACTION_BOOT_COMPLETED -> {
+                ChoreReminderScheduler.rescheduleIfEnabled(context)
+                EventReminderScheduler.rescheduleAll(context)
+            }
         }
+    }
+
+    private fun showEventNotification(context: Context, id: String, title: String, emoji: String) {
+        val channelId = "event_reminder"
+        val manager = context.getSystemService(NotificationManager::class.java)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val channel = NotificationChannel(channelId, "תזכורת אירועים", NotificationManager.IMPORTANCE_HIGH)
+            manager.createNotificationChannel(channel)
+        }
+        val openApp = Intent(context, MainActivity::class.java)
+            .setFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+        val contentIntent = PendingIntent.getActivity(
+            context, id.hashCode(), openApp, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+        val notification = NotificationCompat.Builder(context, channelId)
+            .setContentTitle("$emoji ${if (title.isNotEmpty()) title else "אירוע קרוב"}")
+            .setContentText("בקרוב! זמן להתכונן 😊")
+            .setSmallIcon(android.R.drawable.ic_dialog_info)
+            .setContentIntent(contentIntent)
+            .setAutoCancel(true)
+            .build()
+        // Distinct id per event so several reminders can coexist (the single
+        // chore reminder deliberately reuses one fixed id and replaces itself).
+        manager.notify(EVENT_NOTIFICATION_BASE + (id.hashCode() and 0xFFFF), notification)
     }
 
     private fun showNotification(context: Context) {
@@ -49,6 +82,11 @@ class ReminderReceiver : BroadcastReceiver() {
 
     companion object {
         const val ACTION_FIRE = "com.coinquest.app.CHORE_REMINDER_FIRE"
+        const val ACTION_EVENT_FIRE = "com.coinquest.app.EVENT_REMINDER_FIRE"
+        const val EXTRA_EVENT_ID = "event_id"
+        const val EXTRA_EVENT_TITLE = "event_title"
+        const val EXTRA_EVENT_EMOJI = "event_emoji"
         private const val NOTIFICATION_ID = 4001
+        private const val EVENT_NOTIFICATION_BASE = 40000
     }
 }

@@ -688,33 +688,14 @@ function renderPicker(){
   state.children.forEach(ch=>{
     const card=document.createElement('button');
     card.className='kid-card'; card.style.setProperty('--kc',ch.color);
-    if(ch.id==='ariel'){
-      card.innerHTML=`<div class="kc-av" style="display:flex;align-items:center;justify-content:center;">
-        <svg viewBox="0 0 64 128" style="width:74px;height:100%;filter:drop-shadow(0 2px 4px rgba(0,0,0,.2));">
-          <!-- Head -->
-          <rect x="16" y="0" width="32" height="32" fill="#8B5A3C"/>
-          <!-- Eyes -->
-          <rect x="20" y="8" width="6" height="8" fill="#4444FF"/>
-          <rect x="38" y="8" width="6" height="8" fill="#4444FF"/>
-          <!-- Mouth -->
-          <rect x="24" y="20" width="16" height="2" fill="#000"/>
-          <!-- Body -->
-          <rect x="12" y="32" width="40" height="32" fill="#00CCCC"/>
-          <!-- Left Arm -->
-          <rect x="0" y="32" width="12" height="32" fill="#D4A373"/>
-          <!-- Right Arm -->
-          <rect x="52" y="32" width="12" height="32" fill="#D4A373"/>
-          <!-- Legs -->
-          <rect x="16" y="64" width="14" height="32" fill="#4A3FA5"/>
-          <rect x="34" y="64" width="14" height="32" fill="#4A3FA5"/>
-          <!-- Shoes -->
-          <rect x="16" y="96" width="14" height="8" fill="#222"/>
-          <rect x="34" y="96" width="14" height="8" fill="#222"/>
-          <!-- Sword in hand -->
-          <rect x="50" y="35" width="4" height="20" fill="#1a7d1a"/>
-          <rect x="48" y="32" width="8" height="4" fill="#888"/>
-        </svg>
-      </div><div class="kc-name">${esc(ch.name)}</div><div class="kc-bal">🪙 <span data-bal="${ch.id}">…</span></div>`;
+    // Was a hardcoded id==='ariel' pixel figure using Minecraft-Steve's exact
+    // palette (tan head, blue square eyes, cyan torso) AND a sword -- the same
+    // character-likeness risk G1 removed everywhere else but missed here. Now
+    // driven by the child's theme like every other avatar in the app: the
+    // generic blocky silhouette in the child's OWN color for the 'blocks'
+    // theme, plain emoji otherwise.
+    if(childTheme(ch)==='blocks'){
+      card.innerHTML=`<div class="kc-av" style="display:flex;align-items:center;justify-content:center;"><div style="width:74px;height:100%;">${blockyAvatarSvg(ch.color)}</div></div><div class="kc-name">${esc(ch.name)}</div><div class="kc-bal">🪙 <span data-bal="${ch.id}">…</span></div>`;
     }else{
       card.innerHTML=`<div class="kc-av">${ch.emoji}</div><div class="kc-name">${esc(ch.name)}</div><div class="kc-bal">🪙 <span data-bal="${ch.id}">…</span></div>`;
     }
@@ -904,7 +885,11 @@ function redeemToken(raw){
   const k=cur(); ensureTodayKid(state.current);
   const used=k.daily.counts[id]||0;
   if(used>=maxd){ stopCamera(); modalMsg('🌟','כל הכבוד!','כבר השלמת את "'+label+'" '+maxd+' פעמים היום. נסה שוב מחר!'); return; }
-  k.daily.counts[id]=used+1; DB.set('cs_daily_'+state.current,k.daily);
+  // Same anti-spam floor markChore() enforces: without it, re-scanning the same
+  // code repeatedly banks a whole day's max in seconds for a task never redone.
+  const lastMark=k.daily.lastMark[id]||0;
+  if(Date.now()-lastMark<CHORE_MIN_GAP_MS){ stopCamera(); modalMsg('⏳','רגע קטן...','אפשר לסמן את "'+label+'" שוב עוד דקה 🙂'); return; }
+  k.daily.counts[id]=used+1; k.daily.lastMark[id]=Date.now(); DB.set('cs_daily_'+state.current,k.daily);
   k.taskTotal=(k.taskTotal||0)+1; DB.set('cs_taskt_'+state.current,k.taskTotal);
   stopCamera();
   addPoints(pts,label,'scan');
@@ -1756,16 +1741,34 @@ function renderGateQuestion(){
   const s=_gateSession; if(!s) return;
   const q=s.questions[s.idx];
   const isTyped=q.type==='typed-number';
-  const choicesHtml=isTyped
-    ? `<input type="number" id="gateTypedInput" style="width:100%;text-align:center;font-size:1.3rem;border:2px solid var(--line);border-radius:13px;padding:10px;margin-bottom:10px;" placeholder="?">
-       <button class="btn primary" onclick="answerGateQuestion(document.getElementById('gateTypedInput').value)">✓ בדוק</button>`
-    : shuffleArr([...q.choices]).map(c=>`<button class="learn-choice-btn" onclick="answerGateQuestion(${JSON.stringify(c)})">${esc(c)}</button>`).join('');
   modalContent.innerHTML=`<div style="text-align:center;">
     <div style="font-size:.8rem;color:var(--ink2);margin-bottom:6px;">⛏️ חימום מוח (${s.idx+1}/${s.questions.length})</div>
     <button class="tts-replay-btn" onclick="replayGateQuestionAudio()" title="הקרא שוב">🔊</button>
     <h3 style="margin-top:0;" id="gateQ">${esc(q.q)}</h3>
-    <div style="display:flex;flex-direction:column;gap:8px;" id="gateChoices">${choicesHtml}</div>
+    <div style="display:flex;flex-direction:column;gap:8px;" id="gateChoices"></div>
   </div>`;
+  const wrap=document.getElementById('gateChoices');
+  if(isTyped){
+    // Build via DOM (not an HTML string with an inline onclick): a text answer
+    // run through JSON.stringify into a double-quoted onclick="" attribute
+    // produced nested double-quotes that truncated the attribute and made the
+    // whole button unclickable -- every non-numeric gate answer (English,
+    // science) was broken. createElement + .onclick sidesteps all escaping.
+    const inp=document.createElement('input');
+    inp.type='number'; inp.id='gateTypedInput'; inp.placeholder='?';
+    inp.style.cssText='width:100%;text-align:center;font-size:1.3rem;border:2px solid var(--line);border-radius:13px;padding:10px;margin-bottom:10px;';
+    const btn=document.createElement('button');
+    btn.className='btn primary'; btn.textContent='✓ בדוק';
+    btn.onclick=()=>answerGateQuestion(inp.value);
+    wrap.appendChild(inp); wrap.appendChild(btn);
+  }else{
+    shuffleArr([...q.choices]).forEach(c=>{
+      const btn=document.createElement('button');
+      btn.className='learn-choice-btn'; btn.textContent=c;
+      btn.onclick=()=>answerGateQuestion(c);
+      wrap.appendChild(btn);
+    });
+  }
   modalBg.classList.add('show');
   if(ttsEnabled()) speakQuestionThenChoices(q.q,document.getElementById('gateQ'),[...document.querySelectorAll('#gateChoices .learn-choice-btn')]);
 }
@@ -1963,7 +1966,9 @@ async function startNativeGameSession(g){
   }
   const seconds=Math.floor(k.gtime||0);
   if(seconds<=0) return;
-  const started=window.CoinQuestNative.startNativeSession(g.androidPackage,seconds);
+  // Pass the child id so the native side debits THIS child on session end, even
+  // if a sibling's profile is switched to while the game runs in the foreground.
+  const started=window.CoinQuestNative.startNativeSession(g.androidPackage,seconds,state.current);
   if(!started){ toast('לא הצלחתי להתחיל את המשחק'); return; }
   toast(g.emoji+' '+g.label+' נפתח! '+fmtGT(seconds)+' זמן משחק');
 }
@@ -1973,18 +1978,50 @@ async function startNativeGameSession(g){
 // purpose: a plain top-level function in a non-module script is reachable as
 // window.onNativeGameSessionEnded, which is exactly what the Kotlin side
 // calls via WebView.evaluateJavascript.
-async function onNativeGameSessionEnded(consumedSeconds){
-  const k=cur(); if(!k) return;
+// childId is echoed back from the native side (see NativeGameBridge.notifyEnded)
+// so the debit lands on the child who actually played, not on whoever is the
+// active profile now. Older APKs called this with one argument -- fall back to
+// state.current so a stale wrapper still debits (the old, if imperfect, behavior).
+async function onNativeGameSessionEnded(consumedSeconds,childId){
+  const id=childId||state.current; if(!id) return;
+  // Debit against the specific child. That child may not be the active profile
+  // and may not be loaded in memory, so load them before touching the wallet.
+  const k=state.kid[id]||await loadKid(id); if(!k) return;
   k.gtime=Math.max(0,(k.gtime||0)-Math.max(0,consumedSeconds|0));
-  await DB.set('cs_gtime_'+state.current,k.gtime);
+  await DB.set('cs_gtime_'+id,k.gtime);
+  // The native crash-backstop pref has now been applied -- clear it so the next
+  // app launch's recovery check doesn't debit the same seconds a second time.
+  if(window.CoinQuestNative&&typeof window.CoinQuestNative.clearPendingConsumed==='function'){
+    try{ window.CoinQuestNative.clearPendingConsumed(); }catch(e){}
+  }
   renderGameTimeBanner();
   if(currentView==='games') renderGamesView();
   scheduleSync();
+  // Only surface UI for the currently-viewed child (a background debit on a
+  // sibling shouldn't pop a modal at whoever is using the app now).
+  if(id!==state.current) return;
   if(k.gtime<=0){
     modalMsg('⏰','הזמן נגמר!','זמן המשחק שקנית הסתיים.\nאפשר להרוויח עוד מטבעות ולהמיר אותם לזמן משחק חדש! 💪');
   }else{
     toast('סיימת לשחק — נשארו לך '+fmtGT(k.gtime)+' 🎮');
   }
+}
+// Startup crash-recovery: if a previous native session ended while the app
+// process was dead, the onNativeGameSessionEnded callback never ran and the
+// wallet was never debited. The overlay service persisted the consumed seconds
+// (per tick) to native prefs; read + apply + clear them here, exactly once.
+async function recoverPendingNativeConsume(){
+  const N=window.CoinQuestNative;
+  if(!N||typeof N.getPendingConsumedSeconds!=='function') return;
+  let secs=0, id='';
+  try{ secs=N.getPendingConsumedSeconds()|0; id=(N.getPendingConsumedChild&&N.getPendingConsumedChild())||''; }catch(e){ return; }
+  if(secs<=0||!id) return;
+  if(!state.children.some(c=>c.id===id)){ try{ N.clearPendingConsumed(); }catch(e){} return; }
+  const k=state.kid[id]||await loadKid(id); if(!k){ return; }
+  k.gtime=Math.max(0,(k.gtime||0)-secs);
+  await DB.set('cs_gtime_'+id,k.gtime);
+  try{ N.clearPendingConsumed(); }catch(e){}
+  scheduleSync();
 }
 
 // Pause the drain while the app is backgrounded / screen off: the child only
@@ -2348,7 +2385,7 @@ async function adminDelChild(id){
   modalConfirm('🗑️','למחוק את '+ch.name+'?','כל הנתונים של '+ch.name+' יימחקו לצמיתות.', async()=>{
     state.children=state.children.filter(c=>c.id!==id); await DB.set('cs_children',state.children);
     audit('מחק את הילד/ה '+ch.name);
-    for(const p of ['cs_bal_','cs_hist_','cs_daily_','cs_mathd_','cs_badges_','cs_matht_','cs_taskt_','cs_rwt_','cs_gtime_','cs_mathlvl_']){
+    for(const p of ['cs_bal_','cs_hist_','cs_daily_','cs_mathd_','cs_badges_','cs_matht_','cs_taskt_','cs_rwt_','cs_gtime_','cs_mathlvl_','cs_learn_','cs_learnlvl_']){
       await DB.del(p+id);
     }
     delete state.kid[id];
@@ -2626,7 +2663,9 @@ function recomputeStreak(id){
   if(s.current>best) best=s.current;
   s.best=best;
   if(s.current>=s.goal && !s.wonAt) s.wonAt=Date.now();
-  if(s.current<s.goal) s.wonAt=s.wonAt;
+  // Note: wonAt is intentionally sticky once earned -- a streak that later drops
+  // below goal keeps its "was won" record (the prize was already given), so it
+  // is deliberately NOT cleared here.
 }
 /* -- streak freeze ("grace day"): bridge ONE recent missed day, max once per 14 days -- */
 const FREEZE_COOLDOWN_MS=14*24*3600*1000;
@@ -2816,10 +2855,15 @@ function fillLearningConfig(){
   document.getElementById('learnReadAloudToggle').textContent=state.learning.readAloud!==false?'פעיל ✓':'כבוי';
   renderCustomQuestionsAdmin();
 }
-function toggleLearningEnabled(){ state.learning.enabled=!state.learning.enabled; fillLearningConfig(); }
-function toggleLearningSubject(subj){ state.learning.subjects[subj]=!state.learning.subjects[subj]; fillLearningConfig(); }
-function toggleLearningGate(){ state.learning.gateEnabled=!state.learning.gateEnabled; fillLearningConfig(); }
-function toggleLearningReadAloud(){ state.learning.readAloud=!(state.learning.readAloud!==false); if(!state.learning.readAloud) stopSpeaking(); fillLearningConfig(); }
+// These toggles used to mutate state.learning in memory only -- a parent who
+// flipped one and left without pressing "save" saw it take effect immediately
+// but silently lose it on the next reload. Persist on every toggle, like every
+// other standalone toggle in the app (calm mode, chore reminder, math ops).
+async function persistLearning(){ await DB.set('cs_learning',state.learning); scheduleSync(); }
+function toggleLearningEnabled(){ state.learning.enabled=!state.learning.enabled; persistLearning(); fillLearningConfig(); }
+function toggleLearningSubject(subj){ state.learning.subjects[subj]=!state.learning.subjects[subj]; persistLearning(); fillLearningConfig(); }
+function toggleLearningGate(){ state.learning.gateEnabled=!state.learning.gateEnabled; persistLearning(); fillLearningConfig(); }
+function toggleLearningReadAloud(){ state.learning.readAloud=!(state.learning.readAloud!==false); if(!state.learning.readAloud) stopSpeaking(); persistLearning(); fillLearningConfig(); }
 async function saveLearningConfig(){
   state.learning.coinsPerCorrect=Math.max(1,parseInt(document.getElementById('learnCoinsPerCorrect').value)||1);
   state.learning.sessionBonus=Math.max(0,parseInt(document.getElementById('learnSessionBonus').value)||0);
@@ -2861,8 +2905,9 @@ async function delCustomQuestion(i){
   await delWithUndo(state.learning.customQuestions,i,'cs_learning',renderCustomQuestionsAdmin,'השאלה',
     async()=>{ await DB.set('cs_learning',state.learning); });
 }
-function toggleMathEnabled(){ state.math.enabled=!state.math.enabled; fillMathConfig(); }
-function toggleOp(op){ const i=state.math.ops.indexOf(op); if(i>=0) state.math.ops.splice(i,1); else state.math.ops.push(op); fillMathConfig(); }
+async function persistMath(){ await DB.set('cs_math',state.math); scheduleSync(); }
+function toggleMathEnabled(){ state.math.enabled=!state.math.enabled; persistMath(); fillMathConfig(); }
+function toggleOp(op){ const i=state.math.ops.indexOf(op); if(i>=0) state.math.ops.splice(i,1); else state.math.ops.push(op); persistMath(); fillMathConfig(); }
 async function saveMathConfig(){
   state.math.maxNum=parseInt(document.getElementById('mathMax').value)||20;
   state.math.pts=parseInt(document.getElementById('mathPts').value)||2;
@@ -3020,9 +3065,10 @@ async function savePin(){
 function backupKeyList(){
   const keys=['cs_children','cs_current','cs_chores','cs_actions','cs_rewards','cs_math',
     'cs_streaks','cs_badgedefs','cs_anchored','cs_events','cs_pin','cs_calm','cs_games',
-    'cs_games_v3','cs_games_v4','cs_gtime_seeded','cs_hwm_date','cs_calmlog','cs_familyid'];
+    'cs_games_v3','cs_games_v4','cs_games_v5','cs_gtime_seeded','cs_hwm_date','cs_calmlog',
+    'cs_familyid','cs_learning','cs_auditlog','cs_chore_reminder'];
   for(const ch of state.children){
-    for(const p of ['cs_bal_','cs_hist_','cs_daily_','cs_mathd_','cs_badges_','cs_matht_','cs_taskt_','cs_rwt_','cs_gtime_','cs_mathlvl_']){
+    for(const p of ['cs_bal_','cs_hist_','cs_daily_','cs_mathd_','cs_badges_','cs_matht_','cs_taskt_','cs_rwt_','cs_gtime_','cs_mathlvl_','cs_learn_','cs_learnlvl_']){
       keys.push(p+ch.id);
     }
   }
@@ -3099,7 +3145,12 @@ function modalInput(emoji,title,text,val,onOk){
     <div style="display:flex;gap:8px;margin-top:14px;"><button class="btn ghost" onclick="closeModal()">ביטול</button><button class="btn primary" id="mOk">אישור</button></div>`;
   modalBg.classList.add('show'); document.getElementById('mOk').onclick=()=>{ const v=document.getElementById('mInput').value; closeModal(); onOk(v); };
 }
-let _pinFails=0, _pinLockUntil=0;
+// _pinLockUntil persists in localStorage: a purely in-memory lockout was
+// defeated by simply reloading the page, which reset the brute-force cooldown
+// to zero. _pinFails stays in memory (a reload is a fresh attempt window; the
+// lockout deadline is the part that must survive).
+let _pinFails=0, _pinLockUntil=Number(localStorage.getItem('cs_pin_lock')||0)||0;
+function setPinLock(until){ _pinLockUntil=until; try{ localStorage.setItem('cs_pin_lock',String(until)); }catch(e){} }
 function modalPin(onOk){
   const remain=_pinLockUntil-Date.now();
   if(remain>0){
@@ -3115,10 +3166,10 @@ function modalPin(onOk){
   // not tied to the PIN value itself.
   const ok=()=>{
     const v=document.getElementById('mPin').value.trim();
-    if(v===state.pin){ _pinFails=0; closeModal(); onOk(); }
+    if(v===state.pin){ _pinFails=0; setPinLock(0); closeModal(); onOk(); }
     else{
       _pinFails++;
-      if(_pinFails>=5){ _pinLockUntil=Date.now()+Math.min(300000,10000*Math.pow(2,_pinFails-5)); closeModal(); modalMsg('⏳','יותר מדי ניסיונות','חכה קצת ונסה שוב.'); return; }
+      if(_pinFails>=5){ setPinLock(Date.now()+Math.min(300000,10000*Math.pow(2,_pinFails-5))); closeModal(); modalMsg('⏳','יותר מדי ניסיונות','חכה קצת ונסה שוב.'); return; }
       toast('קוד שגוי 🔒'); document.getElementById('mPin').value='';
     }
   };
@@ -3582,7 +3633,25 @@ function displayMessage(text,isUser){
 }
 
 function speakText(text,btn){
-  if(currentSpeech){window.speechSynthesis.cancel();currentSpeech=null;document.querySelectorAll('.chat-speak-btn.playing').forEach(b=>{b.classList.remove('playing');b.textContent='🔊';});if(btn.textContent==='⏹️'){return;}}
+  // Stop whatever's currently playing (web OR native) first. If the tapped
+  // button was the one playing, this tap just means "stop".
+  const wasThisPlaying=btn.textContent==='⏹️';
+  if(currentSpeech){window.speechSynthesis.cancel();currentSpeech=null;}
+  if(window.CoinQuestNative&&typeof window.CoinQuestNative.ttsStop==='function'){ try{ window.CoinQuestNative.ttsStop(); }catch(e){} }
+  document.querySelectorAll('.chat-speak-btn.playing').forEach(b=>{b.classList.remove('playing');b.textContent='🔊';});
+  if(wasThisPlaying) return;
+  // Prefer Android's own TTS engine: inside the WebView a Hebrew speechSynthesis
+  // voice is frequently just not installed, so the web path below stays silent
+  // (this is exactly why the native bridge exists -- see AN1).
+  if(nativeTtsAvailable()){
+    const uid='chat'+Date.now();
+    btn.classList.add('playing'); btn.textContent='⏹️';
+    const reset=()=>{ btn.classList.remove('playing'); btn.textContent='🔊'; };
+    window._nativeTtsEnd=(id)=>{ if(id===uid) reset(); };
+    try{ if(!window.CoinQuestNative.ttsSpeak(text,'he-IL',uid,state.calmMode?0.75:0.9)) reset(); }
+    catch(e){ reset(); }
+    return;
+  }
   const utt=new SpeechSynthesisUtterance(text);
   utt.lang='he-IL';
   utt.rate=0.85;
@@ -3676,6 +3745,14 @@ async function sendChatMessage(){
       headers:{'Content-Type':'application/json','Authorization':'Bearer '+GROQ_API_KEY},
       body:JSON.stringify({model:'llama-3.3-70b-versatile',messages,max_tokens:200,temperature:0.6})
     });
+    // A non-2xx (bad/expired key, rate limit, server error) can still carry a
+    // non-JSON or empty body; guard so response.json() doesn't throw an opaque
+    // "Unexpected token" that surfaces to the child as a scary raw error.
+    if(!response.ok){
+      let msg='שגיאת שרת ('+response.status+')';
+      try{ const err=await response.json(); if(err&&err.error&&err.error.message) msg=err.error.message; }catch(e){}
+      thinkingWrap.remove(); displayMessage('אופס, לא הצלחתי לענות כרגע 😔 ('+msg+')',false); return;
+    }
     const data=await response.json();
     if(data.error){
       console.error('Groq error:',data.error);
@@ -3826,7 +3903,7 @@ async function applyRemoteSnapshot(data){
       for(const p of ['morning','afternoon','evening']) if(!Array.isArray(state.anchored[p])) state.anchored[p]=[];
       await DB.set('cs_anchored',state.anchored);
     }
-    if(data.events){ state.events=data.events; await DB.set('cs_events',data.events); }
+    if(data.events){ state.events=data.events; await DB.set('cs_events',data.events); syncNativeEventReminders(); }
     if(data.games){
       // Defense in depth alongside the cs_games_v5 migration above: a device
       // that hasn't picked up this code yet could still push the old
@@ -4007,7 +4084,7 @@ function hasExistingLocalData(){
 // device previously used in local-only mode by someone else).
 async function clearLocalFamilyData(){
   for(const ch of state.children){
-    for(const p of ['cs_bal_','cs_hist_','cs_daily_','cs_mathd_','cs_badges_','cs_matht_','cs_taskt_','cs_rwt_','cs_gtime_','cs_mathlvl_']){
+    for(const p of ['cs_bal_','cs_hist_','cs_daily_','cs_mathd_','cs_badges_','cs_matht_','cs_taskt_','cs_rwt_','cs_gtime_','cs_mathlvl_','cs_learn_','cs_learnlvl_']){
       await DB.del(p+ch.id);
     }
   }
@@ -4015,7 +4092,7 @@ async function clearLocalFamilyData(){
   state.chores=DEFAULT_CHORES; state.actions=DEFAULT_ACTIONS; state.rewards=DEFAULT_REWARDS;
   state.math=DEFAULT_MATH; state.streaks=DEFAULT_STREAKS.map(s=>({...s,days:{}})); state.badgeDefs=DEFAULT_BADGE_DEFS;
   state.anchored=DEFAULT_ANCHORED_TASKS; state.events=[]; state.familyId=null;
-  state.games=DEFAULT_GAMES;
+  state.games=DEFAULT_GAMES; state.learning=DEFAULT_LEARNING; state.auditLog=[]; state.pin='1234';
   // Delete rather than write defaults back: hasExistingLocalData() treats a
   // present key as "this device has real data" regardless of its content, so
   // writing DEFAULT_CHILDREN etc back here would leave the keys present and
@@ -4566,10 +4643,38 @@ function copyInviteCode(){
 /* ===== DAILY EVENTS ===== */
 let shownReminderIds=new Set();
 
-function todayDateStr(){ const d=new Date(); return d.getFullYear()+'-'+(d.getMonth()+1)+'-'+d.getDate(); }
+// Events compare their date against these strings, and the date comes from an
+// <input type="date"> which ALWAYS emits zero-padded ISO (2026-07-05). If these
+// helpers returned unpadded values (2026-7-5), every e.date===today / e.date>=today
+// check would silently fail and no dated event would ever show or remind. Keep
+// them zero-padded, and normalize any stored date on read via normEvDate() so a
+// value saved by an older unpadded build still matches.
+function todayDateStr(){ const d=new Date(); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
+function normEvDate(s){
+  const p=(s||'').split('-');
+  if(p.length!==3) return s||'';
+  return p[0]+'-'+String(+p[1]).padStart(2,'0')+'-'+String(+p[2]).padStart(2,'0');
+}
 
 async function loadEvents(){ return (await DB.get('cs_events'))||[]; }
-async function saveEvents(evs){ state.events=evs; await DB.set('cs_events',evs); }
+async function saveEvents(evs){ state.events=evs; await DB.set('cs_events',evs); syncNativeEventReminders(); }
+// Hand the native side (see NativeGameBridge.syncEventReminders) the full list
+// of still-future event reminders so it can post real OS notifications even when
+// the app isn't open -- the in-page checkEventReminders poll only ever fires
+// while a screen is showing. No-op in a plain browser. Trigger time is the
+// event's datetime minus its reminderMins lead.
+function syncNativeEventReminders(){
+  if(!isNativeGameAvailable()||typeof window.CoinQuestNative.syncEventReminders!=='function') return;
+  const now=Date.now();
+  const list=(state.events||[]).map(ev=>{
+    const d=normEvDate(ev.date); const p=d.split('-').map(Number); const t=(ev.time||'').split(':').map(Number);
+    if(p.length!==3||t.length<2) return null;
+    const when=new Date(p[0],p[1]-1,p[2],t[0],t[1],0,0).getTime()-(ev.reminderMins||30)*60000;
+    if(!(when>now)) return null; // already passed -- nothing to schedule
+    return {id:ev.id,at:when,title:ev.title||'',emoji:ev.emoji||'📅'};
+  }).filter(Boolean);
+  try{ window.CoinQuestNative.syncEventReminders(JSON.stringify(list)); }catch(e){}
+}
 
 function resizeImageToBase64(file, maxPx, cb){
   const reader=new FileReader();
@@ -4600,7 +4705,7 @@ async function addEvent(){
   const title=document.getElementById('newEvTitle').value.trim(); if(!title){ toast('צריך כותרת לאירוע'); return; }
   const emoji=document.getElementById('newEvEmoji').value.trim()||'📅';
   const time=document.getElementById('newEvTime').value; if(!time){ toast('בחר שעה לאירוע'); return; }
-  const dateVal=document.getElementById('newEvDate').value||todayDateStr();
+  const dateVal=normEvDate(document.getElementById('newEvDate').value||todayDateStr());
   const reminderMins=parseInt(document.getElementById('newEvReminder').value)||30;
   const image=document.getElementById('newEvImage').dataset.b64||'';
   const evs=await loadEvents();
@@ -4634,15 +4739,20 @@ function renderEventsHome(){
   loadEvents().then(allEvs=>{
     const today=todayDateStr();
     const tomorrow=new Date(); tomorrow.setDate(tomorrow.getDate()+1);
-    const tomorrowStr=tomorrow.getFullYear()+'-'+(tomorrow.getMonth()+1)+'-'+tomorrow.getDate();
+    const tomorrowStr=tomorrow.getFullYear()+'-'+String(tomorrow.getMonth()+1).padStart(2,'0')+'-'+String(tomorrow.getDate()).padStart(2,'0');
+    allEvs.forEach(e=>{ e.date=normEvDate(e.date); });
     const evs=allEvs.filter(e=>e.date===today||e.date===tomorrowStr).sort((a,b)=>a.date===b.date?a.time.localeCompare(b.time):a.date.localeCompare(b.date));
     if(!evs.length){ wrap.innerHTML=''; return; }
     let html='<div class="section-title">📅 האירועים של היום</div>';
     evs.forEach(ev=>{
-      const mins=getMinutesUntil(ev.time);
-      const passed=mins<-5, imminent=mins>=0&&mins<=30;
-      const badgeTxt=passed?'עבר':(imminent&&mins<=0?'עכשיו!':(imminent?'בעוד '+mins+' דק׳':ev.time));
-      const badgeCls=passed?'':(mins<=0?'now':(imminent?'soon':'later'));
+      // getMinutesUntil is time-of-day only — meaningless for tomorrow's events
+      // (it would mark a 9:00 tomorrow event as "passed" at 10:00 today). Only
+      // compute the live countdown/status badge for TODAY's events.
+      const isToday=ev.date===today;
+      const mins=isToday?getMinutesUntil(ev.time):null;
+      const passed=isToday&&mins<-5, imminent=isToday&&mins>=0&&mins<=30;
+      const badgeTxt=!isToday?ev.time:(passed?'עבר':(imminent&&mins<=0?'עכשיו!':(imminent?'בעוד '+mins+' דק׳':ev.time)));
+      const badgeCls=!isToday?'later':(passed?'':(mins<=0?'now':(imminent?'soon':'later')));
       const mediaHtml=ev.image
         ?`<img src="${ev.image}" class="ev-img">`
         :`<div class="ev-emoji">${ev.emoji}</div>`;
@@ -4667,8 +4777,13 @@ function formatDateHe(dateStr){
 }
 async function renderEventsAdmin(){
   const c=document.getElementById('eventsList'); if(!c) return;
+  // Stop a parent from accidentally picking a date that's already passed --
+  // such an event would silently never show/remind (dead on arrival), with no
+  // feedback that anything was wrong.
+  const dateInput=document.getElementById('newEvDate'); if(dateInput) dateInput.min=todayDateStr();
   const evs=await loadEvents();
   const today=todayDateStr();
+  evs.forEach(e=>{ e.date=normEvDate(e.date); });
   const upcoming=evs.filter(e=>e.date>=today).sort((a,b)=>a.date===b.date?a.time.localeCompare(b.time):a.date.localeCompare(b.date));
   if(!upcoming.length){ c.innerHTML='<div class="empty"><span class="e-ic">📅</span>אין אירועים קרובים</div>'; return; }
   c.innerHTML='';
@@ -4686,7 +4801,7 @@ let shownReminders=new Set();
 function checkEventReminders(){
   loadEvents().then(evs=>{
     const today=todayDateStr();
-    evs.filter(e=>e.date===today).forEach(ev=>{
+    evs.filter(e=>normEvDate(e.date)===today).forEach(ev=>{
       const mins=getMinutesUntil(ev.time);
       const shouldAlert=(mins>=0&&mins<=ev.reminderMins)||(mins>=-2&&mins<0);
       if(shouldAlert&&!shownReminders.has(ev.id)){
@@ -4768,6 +4883,8 @@ window.addEventListener('unhandledrejection', (ev)=>{
     applyCalmModeClass();
     applyChoreReminder();
     applyEnforcedPackages(); // arm the native game wall from the very first launch
+    recoverPendingNativeConsume(); // debit any session that ended while the app was dead
+    syncNativeEventReminders(); // arm OS-level event notifications for while the app is closed
     setInterval(checkEventReminders, 60000);
     checkEventReminders();
 

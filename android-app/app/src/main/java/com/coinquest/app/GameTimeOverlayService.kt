@@ -42,6 +42,7 @@ class GameTimeOverlayService : Service() {
     private var sessionDurationMs: Long = 0L
     private var remainingMsAtStop: Long = 0L
     private var targetPackage: String = ""
+    private var childId: String = ""
     private var ended = false // guards against double-reporting/double-goHome
 
     override fun onCreate() {
@@ -52,6 +53,7 @@ class GameTimeOverlayService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         val seconds = intent?.getIntExtra(EXTRA_SECONDS, 0) ?: 0
         targetPackage = intent?.getStringExtra(EXTRA_PACKAGE) ?: ""
+        childId = intent?.getStringExtra(EXTRA_CHILD_ID) ?: ""
         if (seconds <= 0 || targetPackage.isEmpty()) {
             Log.w(TAG, "Missing/invalid session extras -- refusing to start")
             stopSelf()
@@ -74,6 +76,12 @@ class GameTimeOverlayService : Service() {
             .putString(GameTimePrefs.ENFORCED_PACKAGES, enforced.joinToString(","))
             .putBoolean(GameTimePrefs.SESSION_ACTIVE, true)
             .putLong(GameTimePrefs.SESSION_END_AT, System.currentTimeMillis() + sessionDurationMs)
+            .putString(GameTimePrefs.SESSION_CHILD_ID, childId)
+            // Seed the crash-safe consumed record at 0 for this child; onTick
+            // advances it every second so a mid-game process kill still leaves
+            // an accurate "time already spent" for the web app to debit later.
+            .putString(GameTimePrefs.CONSUMED_PENDING_CHILD, childId)
+            .putInt(GameTimePrefs.CONSUMED_PENDING_SECONDS, 0)
             .apply()
 
         startForegroundWithNotification()
@@ -155,6 +163,10 @@ class GameTimeOverlayService : Service() {
             override fun onTick(millisUntilFinished: Long) {
                 remainingMsAtStop = millisUntilFinished
                 updateTimerDisplay(millisUntilFinished)
+                // Persist consumed-so-far every tick as the crash backstop.
+                val consumed = ((sessionDurationMs - millisUntilFinished) / 1000L).toInt()
+                getSharedPreferences(GameTimePrefs.NAME, Context.MODE_PRIVATE)
+                    .edit().putInt(GameTimePrefs.CONSUMED_PENDING_SECONDS, consumed).apply()
             }
             override fun onFinish() {
                 remainingMsAtStop = 0L
@@ -193,12 +205,18 @@ class GameTimeOverlayService : Service() {
             // earlier), so the accessibility service's re-block guard can't
             // spuriously fire a redundant extra toast+home while the calm
             // message is still on screen over the game.
+            // Write the final consumed count before reporting, so the crash
+            // backstop pref is exact even if the WebView callback below is what
+            // ends up (rarely) not delivering. The web side clears it via
+            // clearPendingConsumed() once it has applied the debit.
             prefs.edit().putBoolean(GameTimePrefs.SESSION_ACTIVE, false)
-                .remove(GameTimePrefs.SESSION_END_AT).apply()
+                .remove(GameTimePrefs.SESSION_END_AT)
+                .putInt(GameTimePrefs.CONSUMED_PENDING_SECONDS, consumedSeconds)
+                .apply()
             val svc = GameTimeAccessibilityService.instance
             if (svc != null) svc.goHome()
             else Log.w(TAG, "Accessibility service not connected -- cannot force home")
-            NativeGameBridge.notifySessionEnded(consumedSeconds)
+            NativeGameBridge.notifySessionEnded(consumedSeconds, childId)
             stopSelf()
         }
 
@@ -224,6 +242,7 @@ class GameTimeOverlayService : Service() {
 
         const val EXTRA_SECONDS = "seconds"
         const val EXTRA_PACKAGE = "package"
+        const val EXTRA_CHILD_ID = "child_id"
 
         private const val FIVE_MINUTES_MS = 5 * 60 * 1000L
         private const val ONE_MINUTE_MS = 60 * 1000L

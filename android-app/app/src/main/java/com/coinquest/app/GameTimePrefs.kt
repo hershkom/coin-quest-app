@@ -30,4 +30,21 @@ object GameTimePrefs {
      *  the countdown that ends real sessions is still the monotonic
      *  CountDownTimer -- this deadline is only the crash backstop. */
     const val SESSION_END_AT = "session_end_at"
+
+    /** The child id (web-side profile id) the current session was started for.
+     *  Passed in by NativeGameBridge.startNativeSession and echoed back when the
+     *  session ends, so the wallet debit lands on the child who actually played
+     *  -- not on whoever happens to be the active profile when the session ends
+     *  (a sibling could be switched to while the game ran in the foreground). */
+    const val SESSION_CHILD_ID = "session_child_id"
+
+    /** Crash-safe record of time actually consumed by a session, updated every
+     *  tick by the overlay service. If the app process is killed mid-game the
+     *  onNativeGameSessionEnded WebView callback never arrives and the wallet
+     *  would never be debited (the child effectively played for free). The web
+     *  app reads these on the next launch and debits the pending amount, then
+     *  clears them. The normal end-of-session callback also clears them (via
+     *  clearPendingConsumed) so the two paths never double-count. */
+    const val CONSUMED_PENDING_SECONDS = "consumed_pending_seconds"
+    const val CONSUMED_PENDING_CHILD = "consumed_pending_child"
 }

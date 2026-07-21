@@ -7,7 +7,18 @@
 //    boot without) is stale-while-revalidate: instant from cache, silently
 //    refreshed in the background.
 // Bump CACHE_VERSION on breaking asset changes; activate cleans old caches.
-const CACHE_VERSION='cq-v5';
+const CACHE_VERSION='cq-v6';
+
+// app.js/questions.js/styles.css are the app's actual LOGIC, not decorative
+// assets -- stale-while-revalidate for them meant every deploy's first load
+// (even while online) still ran the OLD code, with the fix only appearing
+// after a SECOND reload once the background refresh finished. That's exactly
+// the class of "why is this still broken" confusion real device-testing hit
+// more than once this project. Serve these network-first (like navigations),
+// same offline-fallback-to-cache safety net, so an online reload always gets
+// this deploy's actual code in one shot.
+const CORE_LOGIC=['app.js','questions.js','styles.css'];
+function isCoreLogic(url){ return CORE_LOGIC.some(f=>url.pathname.endsWith('/'+f)||url.pathname.endsWith(f)); }
 
 // All paths RELATIVE to the SW location, because the app lives at the domain
 // root on Firebase Hosting but under /coin-quest-app/ on GitHub Pages.
@@ -66,7 +77,24 @@ self.addEventListener('fetch',e=>{
     return;
   }
 
-  // Assets (same-origin + boot-critical CDNs): stale-while-revalidate.
+  // Core logic files: network-first, same offline fallback pattern as
+  // navigations above -- see the CORE_LOGIC comment for why.
+  if(url.origin===location.origin&&isCoreLogic(url)){
+    e.respondWith(
+      fetch(req).then(res=>{
+        if(res&&res.status===200){
+          const copy=res.clone();
+          caches.open(CACHE_VERSION).then(c=>c.put(req,copy));
+        }
+        return res;
+      }).catch(()=>caches.match(req))
+    );
+    return;
+  }
+
+  // Everything else (same-origin static assets + boot-critical CDNs):
+  // stale-while-revalidate -- fine here since these are true assets (images,
+  // game files, library scripts), not logic that needs to be exactly current.
   if(url.origin===location.origin||CDN_HOSTS.includes(url.hostname)){
     e.respondWith(
       caches.match(req).then(cached=>{

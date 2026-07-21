@@ -135,6 +135,16 @@ class NativeGameBridge(private val activity: Activity, private val webView: WebV
         ChoreReminderScheduler.cancel(activity)
     }
 
+    /** Native OS-level event reminders. `json` is a JSON array of
+     *  {id, at, title, emoji} for every upcoming event (at = epoch ms when the
+     *  reminder should fire). app.js computes it from state.events and pushes
+     *  the full list on launch and after any add/delete/remote sync; this just
+     *  hands it to EventReminderScheduler, which diffs and (re)arms. */
+    @JavascriptInterface
+    fun syncEventReminders(json: String) {
+        EventReminderScheduler.syncAll(activity, json)
+    }
+
     /** AN6 (ANDROID-APP-PLAN.md): app.js toggles this on entering/leaving a
      *  learning question or game view, so the screen doesn't time out and
      *  lock mid-question -- a real interruption for a child who's slower to
@@ -229,7 +239,7 @@ class NativeGameBridge(private val activity: Activity, private val webView: WebV
      *  missing or the game isn't installed -- a session that can't be
      *  enforced must never start, since enforcement is the entire point. */
     @JavascriptInterface
-    fun startNativeSession(pkg: String, seconds: Int): Boolean {
+    fun startNativeSession(pkg: String, seconds: Int, childId: String): Boolean {
         if (seconds <= 0) return false
         if (!hasOverlayPermission() || !hasAccessibilityPermission()) return false
         val launchIntent = activity.packageManager.getLaunchIntentForPackage(pkg) ?: return false
@@ -242,6 +252,7 @@ class NativeGameBridge(private val activity: Activity, private val webView: WebV
             val overlayIntent = Intent(activity, GameTimeOverlayService::class.java)
                 .putExtra(GameTimeOverlayService.EXTRA_SECONDS, seconds)
                 .putExtra(GameTimeOverlayService.EXTRA_PACKAGE, pkg)
+                .putExtra(GameTimeOverlayService.EXTRA_CHILD_ID, childId)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 activity.startForegroundService(overlayIntent)
             } else {
@@ -252,10 +263,32 @@ class NativeGameBridge(private val activity: Activity, private val webView: WebV
         return true
     }
 
-    private fun notifyEnded(consumedSeconds: Int) {
+    /** Crash backstop for native game time (see GameTimePrefs.CONSUMED_PENDING_*):
+     *  the web app reads these on launch and, if a session ended without its
+     *  onNativeGameSessionEnded callback being delivered (app process killed
+     *  mid-game), debits the pending seconds against the right child, then
+     *  calls clearPendingConsumed(). */
+    @JavascriptInterface
+    fun getPendingConsumedSeconds(): Int {
+        return activity.getSharedPreferences(GameTimePrefs.NAME, android.content.Context.MODE_PRIVATE)
+            .getInt(GameTimePrefs.CONSUMED_PENDING_SECONDS, 0)
+    }
+    @JavascriptInterface
+    fun getPendingConsumedChild(): String {
+        return activity.getSharedPreferences(GameTimePrefs.NAME, android.content.Context.MODE_PRIVATE)
+            .getString(GameTimePrefs.CONSUMED_PENDING_CHILD, "") ?: ""
+    }
+    @JavascriptInterface
+    fun clearPendingConsumed() {
+        activity.getSharedPreferences(GameTimePrefs.NAME, android.content.Context.MODE_PRIVATE)
+            .edit().putInt(GameTimePrefs.CONSUMED_PENDING_SECONDS, 0)
+            .remove(GameTimePrefs.CONSUMED_PENDING_CHILD).apply()
+    }
+
+    private fun notifyEnded(consumedSeconds: Int, childId: String) {
         activity.runOnUiThread {
             webView.evaluateJavascript(
-                "window.onNativeGameSessionEnded && window.onNativeGameSessionEnded($consumedSeconds);",
+                "window.onNativeGameSessionEnded && window.onNativeGameSessionEnded($consumedSeconds,${org.json.JSONObject.quote(childId)});",
                 null
             )
         }
@@ -267,8 +300,15 @@ class NativeGameBridge(private val activity: Activity, private val webView: WebV
         // Activity/WebView references.
         private var instance: NativeGameBridge? = null
 
-        fun notifySessionEnded(consumedSeconds: Int) {
-            instance?.notifyEnded(consumedSeconds)
+        fun notifySessionEnded(consumedSeconds: Int, childId: String) {
+            instance?.notifyEnded(consumedSeconds, childId)
+        }
+
+        /** Clear the static Activity/WebView reference when the bridge's
+         *  Activity is destroyed, so a rotated-away/finished MainActivity (and
+         *  its WebView) isn't leaked for the process lifetime. */
+        fun clearInstance(b: NativeGameBridge) {
+            if (instance === b) instance = null
         }
     }
 }

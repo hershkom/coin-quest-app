@@ -283,6 +283,9 @@ class MainActivity : AppCompatActivity() {
 
     override fun onDestroy() {
         nativeBridge.shutdownTts()
+        // Drop the static WebView-reaching hook so this destroyed Activity and
+        // its WebView aren't leaked for the rest of the process's life.
+        NativeGameBridge.clearInstance(nativeBridge)
         super.onDestroy()
     }
 }
