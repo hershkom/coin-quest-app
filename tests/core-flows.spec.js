@@ -46,44 +46,69 @@ test.describe('chores (golden path)', () => {
   // Noa has useSchedule:false, so her home view always lists the plain
   // state.chores set regardless of time of day — deterministic in CI,
   // unlike Ariel whose home view depends on the current hour.
-  test('completing a chore credits the exact configured points, then caps at max', async ({ page }) => {
+
+  // The whole point of this change: a chore's checkbox is no longer a
+  // self-report button. Tapping it must NEVER credit coins by itself -- it
+  // only takes the child to the scanner, with a hint naming the expected
+  // task, so a parent-generated QR code (real-world proof) is the only thing
+  // that can ever pay out (see goScanForChore()/redeemToken()).
+  test('tapping a chore only opens the scanner and shows a hint for that task -- it does not credit coins', async ({ page }) => {
     await enterLocalOnly(page);
     await selectChild(page, 'נועה');
     await expect(page.locator('#balTop')).toHaveText('0');
 
-    // "לשבת בשירותים": 3 points, max 6/day
     const row = page.locator('.chore-row', { hasText: 'לשבת בשירותים' });
+    await row.locator('.chore-check').click();
+
+    await expect(page.locator('#view-scan')).toHaveClass(/active/);
+    await expect(page.locator('#balTop')).toHaveText('0'); // unchanged -- no self-report credit
+    await expect(page.locator('#scanHint')).toContainText('לשבת בשירותים');
+  });
+
+  test('completing a chore credits the exact configured points ONLY via a real scan/redemption, then caps at max', async ({ page }) => {
+    await enterLocalOnly(page);
+    await selectChild(page, 'נועה');
+    await expect(page.locator('#balTop')).toHaveText('0');
+
+    // "לשבת בשירותים": 3 points, max 6/day. Simulate a successful scan of the
+    // parent-generated code (redeemToken is the ONLY function that ever
+    // credits a chore now) rather than tapping the checkbox, which per the
+    // test above just opens the scanner and pays nothing.
     for (let i = 1; i <= 6; i++) {
-      // Marking the SAME chore twice within CHORE_MIN_GAP_MS is blocked (the
-      // anti-cheat cooldown this test file's own "rapid same-chore tapping"
-      // test below verifies) -- clear the cooldown timestamp between clicks
-      // to simulate real time passing, since this test's whole point is the
-      // per-day COUNT cap, not the per-mark cooldown.
+      // Redeeming the SAME chore twice within CHORE_MIN_GAP_MS is blocked (the
+      // anti-cheat cooldown this test file's own "rapid re-scan" test below
+      // verifies) -- clear the cooldown timestamp between redemptions to
+      // simulate real time passing, since this test's whole point is the
+      // per-day COUNT cap, not the per-redemption cooldown.
       await page.evaluate(() => { cur().daily.lastMark = {}; });
-      await row.locator('.chore-check').click();
+      await page.evaluate(() => redeemToken('CSQR|chore_toilet'));
       await dismissBadgeCelebrationIfAny(page); // first coin ever -> badge modal
       await expect(page.locator('#balTop')).toHaveText(String(3 * i));
     }
-    // 6th completion disables the button in the UI...
+    // redeemToken() (unlike the old direct-tap markChore()) never re-renders
+    // the home chore list itself -- it's normally called from the scan screen,
+    // a different view entirely. Simulate the child tapping "בית" to return
+    // home after scanning, which is what actually refreshes the checkbox.
+    await page.evaluate(() => go('home'));
+    // 6th completion disables the checkbox in the UI...
+    const row = page.locator('.chore-row', { hasText: 'לשבת בשירותים' });
     await expect(row.locator('.chore-check')).toBeDisabled();
-    // ...but the REAL protection must be server-side logic, not just a
-    // disabled attribute (which a forged/replayed QR redemption bypasses
-    // entirely by calling markChore directly) -- a 7th call must not pay out.
+    // ...but the REAL protection is the daily-max check inside redeemToken
+    // itself, not just a disabled button -- a 7th redemption must not pay out.
     // Clear the cooldown again so it's specifically the daily MAX guard being
-    // tested here, not the unrelated per-mark cooldown.
+    // tested here, not the unrelated per-redemption cooldown.
     await page.evaluate(() => { cur().daily.lastMark = {}; });
-    await page.evaluate((id) => markChore(id), 'chore_toilet');
+    await page.evaluate(() => redeemToken('CSQR|chore_toilet'));
     await expect(page.locator('#balTop')).toHaveText('18');
   });
 
-  test('rapid-tapping the SAME chore twice in a row only pays out once (anti-cheat cooldown)', async ({ page }) => {
+  test('rapid re-scanning the SAME chore code twice in a row only pays out once (anti-cheat cooldown)', async ({ page }) => {
     await enterLocalOnly(page);
     await selectChild(page, 'נועה');
-    const row = page.locator('.chore-row', { hasText: 'לשבת בשירותים' });
-    await row.locator('.chore-check').click();
+    await page.evaluate(() => redeemToken('CSQR|chore_toilet'));
     await dismissBadgeCelebrationIfAny(page);
     await expect(page.locator('#balTop')).toHaveText('3');
-    await row.locator('.chore-check').click(); // immediately again, no time cleared
+    await page.evaluate(() => redeemToken('CSQR|chore_toilet')); // immediately again, no time cleared
     await expect(page.locator('#balTop')).toHaveText('3'); // unchanged -- blocked by the cooldown
   });
 });
@@ -485,7 +510,7 @@ test.describe('learning quiz ("מכרה הידע")', () => {
 
   // Mutation-test style: call the crediting function directly past the daily
   // cap, bypassing any UI state, to prove the guard lives in the function
-  // itself (same anti-cheat pattern as markChore's daily-max check).
+  // itself (same anti-cheat pattern as redeemToken's daily-max check).
   test('daily coin cap is enforced even when answerLearningQuestion is called directly past it', async ({ page }) => {
     await enterLocalOnly(page);
     await selectChild(page, 'נועה');

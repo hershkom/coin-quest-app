@@ -552,7 +552,7 @@ function mascotReact(){
 // to the action that caused it (DESIGN-IMPROVEMENTS.md V4).
 async function addPoints(n,label,type,srcEl){
   // Snapshot the rect NOW, synchronously, before any awaits below -- a
-  // caller's own re-render (e.g. markChore -> renderChores()) can run before
+  // caller's own re-render (e.g. mathCheck -> newProblem()) can run before
   // this function resumes and would detach srcEl otherwise (see coinFly()).
   const srcRect=srcEl?srcEl.getBoundingClientRect():null;
   const id=state.current, k=cur();
@@ -659,7 +659,7 @@ function go(v){
       applyPeriodBackground(); // G7: same period-boundary catch, for the non-themed background
     },45000);
   }
-  if(v==='scan') startCamera();
+  if(v==='scan'){ startCamera(); applyScanIntentHint(); }
   if(v==='math') initMath();
   if(v==='rewards') renderRewards();
   if(v==='history') renderHistory();
@@ -780,6 +780,18 @@ function removeThemeDecorations(){
 
 /* ===== SCANNER ===== */
 let stream=null, scanning=false;
+// Set by goScanForChore() so the scan screen can tell the child exactly which
+// task's code it's expecting, instead of a generic "aim the code" hint --
+// cleared by openScan() (the plain scan nav/big-button entry points) so a
+// stale hint from a previous chore doesn't linger once the child navigates to
+// the scanner directly rather than via a specific chore tap.
+let _scanIntentTaskId=null;
+function openScan(){ _scanIntentTaskId=null; go('scan'); }
+function applyScanIntentHint(){
+  const hintEl=document.getElementById('scanHint'); if(!hintEl) return;
+  const t=_scanIntentTaskId&&findTaskById(_scanIntentTaskId);
+  hintEl.textContent=t?('סרוק את קוד ה-QR של: '+t.label+' '+(t.emoji||'')):'כוון את הקוד לתוך הריבוע';
+}
 const video=document.getElementById('scanVideo'), canvas=document.getElementById('scanCanvas');
 async function startCamera(){
   const fb=document.getElementById('scanFallback'),fr=document.getElementById('scanFrame'),ln=document.getElementById('scanLine'),hi=document.getElementById('scanHint');
@@ -885,8 +897,11 @@ function redeemToken(raw){
   const k=cur(); ensureTodayKid(state.current);
   const used=k.daily.counts[id]||0;
   if(used>=maxd){ stopCamera(); modalMsg('🌟','כל הכבוד!','כבר השלמת את "'+label+'" '+maxd+' פעמים היום. נסה שוב מחר!'); return; }
-  // Same anti-spam floor markChore() enforces: without it, re-scanning the same
-  // code repeatedly banks a whole day's max in seconds for a task never redone.
+  // Same friction floor as the daily-max check above: without it, re-scanning
+  // the same code repeatedly banks a whole day's max in seconds for a task
+  // never actually redone. Chores are now earned ONLY through this function
+  // (see goScanForChore()) — there is no separate self-report tap-to-credit
+  // path anymore, so this guard is the single anti-spam authority.
   const lastMark=k.daily.lastMark[id]||0;
   if(Date.now()-lastMark<CHORE_MIN_GAP_MS){ stopCamera(); modalMsg('⏳','רגע קטן...','אפשר לסמן את "'+label+'" שוב עוד דקה 🙂'); return; }
   k.daily.counts[id]=used+1; k.daily.lastMark[id]=Date.now(); DB.set('cs_daily_'+state.current,k.daily);
@@ -1248,7 +1263,7 @@ function submitTypedLearningAnswer(){
 }
 // The ONLY place that checks correctness and credits coins — always against
 // QUESTION_BANK/customQuestions, never trusting anything about which DOM
-// button was clicked, same anti-cheat pattern as markChore/redeemToken.
+// button was clicked, same anti-cheat pattern as redeemToken.
 // Works with OR without an active learnSession: the pre-game "learning gate"
 // (beginGameLaunch/answerGateQuestion) calls this directly with no session
 // running, so crediting/progress/adaptive-level bookkeeping must not depend
@@ -1433,7 +1448,7 @@ function renderChores(){
     const full=used>=ch.max;
     const row=document.createElement('div'); row.className='chore-row'+(full?' done':'');
     row.innerHTML=`
-      <button class="chore-check ${full?'full':''}" ${full?'disabled':''} onclick="markChore('${ch.id}',this)">${full?'✓':(ch.photo?`<img src="${ch.photo}" style="width:100%;height:100%;border-radius:50%;object-fit:cover;">`:ch.emoji)}</button>
+      <button class="chore-check ${full?'full':''}" ${full?'disabled':''} onclick="goScanForChore('${ch.id}')">${full?'✓':(ch.photo?`<img src="${ch.photo}" style="width:100%;height:100%;border-radius:50%;object-fit:cover;">`:ch.emoji)}</button>
       <div class="chore-info">
         <div class="ci-t">${esc(ch.label)}</div>
         <div class="ci-d">${full?'הושלם להיום ✅':(used+'/'+ch.max+' היום')}</div>
@@ -1538,27 +1553,30 @@ function renderFirstThen(){
   </div>`;
 }
 
-// Minimum real-world gap between two marks of the SAME chore: without this,
-// the only guard was a pure daily COUNT (`used>=ch.max`), which is time-blind
-// -- a child could tap "brushed teeth" twice in the same second and bank the
-// full day's points for a task never actually done. This doesn't require any
-// new admin config: it's a floor under every chore's existing max, not a
-// per-chore setting. Not meant to defeat a determined child waiting a minute
-// between fake taps (no UI checkbox can prove real-world behavior) -- it's a
-// friction floor against the specific "mark everything in 3 seconds" exploit.
+// Minimum real-world gap between two redemptions of the SAME chore (enforced
+// in redeemToken, since scanning is now the only way a chore ever pays out --
+// see goScanForChore() below): without this, the only guard was a pure daily
+// COUNT (`used>=ch.max`), which is time-blind -- re-scanning the same code
+// repeatedly would bank the full day's points for a task done once. Not meant
+// to defeat a determined child re-scanning a real code after a real minute
+// passed (no automated guard can prove real-world behavior) -- it's a
+// friction floor against the specific "redeem the same code in 3 seconds"
+// exploit.
 const CHORE_MIN_GAP_MS=60000;
-function markChore(id,btnEl){
+// Chores are earned ONLY by scanning the task's real, parent-generated QR
+// code (see redeemToken) -- tapping the chore-check button on its own must
+// never credit coins, or a child could just tap through the whole list
+// without doing anything. This sends them straight to the scanner instead,
+// with a hint (see applyScanIntentHint) showing exactly which task's code to
+// look for -- consistent with the app's whole "make what's expected concrete
+// and visible" design elsewhere (first-then, day strip, journey map).
+function goScanForChore(id){
   const ch=findTaskById(id); if(!ch) return;
   if(!taskForChild(ch,state.current)) return; // not this child's task
   const k=cur(); ensureTodayKid(state.current);
-  const used=k.daily.counts[id]||0;
-  if(used>=ch.max) return;
-  const lastMark=k.daily.lastMark[id]||0;
-  if(Date.now()-lastMark<CHORE_MIN_GAP_MS){ toast('רגע קטן... 🙂 אפשר לסמן שוב עוד דקה'); return; }
-  k.daily.counts[id]=used+1; k.daily.lastMark[id]=Date.now(); DB.set('cs_daily_'+state.current,k.daily);
-  k.taskTotal=(k.taskTotal||0)+1; DB.set('cs_taskt_'+state.current,k.taskTotal);
-  addPoints(ch.points, ch.label, 'chore', btnEl);
-  renderChores(); renderFirstThen(); renderDayStrip();
+  if((k.daily.counts[id]||0)>=ch.max) return; // already maxed -- button should be disabled anyway
+  _scanIntentTaskId=id;
+  go('scan');
 }
 
 /* ===== STREAK CHALLENGES (multiple daily-streak challenges, e.g. "clean day" / "good behavior") ===== */
@@ -3471,9 +3489,9 @@ async function toggleCalmMode(){
 // legible version of coinBurst() for the moment a specific action earns
 // coins. `from` is a DOMRect, NOT a live element -- callers must snapshot
 // getBoundingClientRect() before any re-render can detach/move the element
-// (e.g. markChore's renderChores() rebuilds the whole list via innerHTML=''
-// right after the tap, so capturing the rect late would always see a
-// detached, zero-size element). Falls back to coinBurst() if the rect is
+// (e.g. answerLearningQuestion's renderLearningQuestion() rebuilds the choice
+// buttons via innerHTML='' right after the tap, so capturing the rect late
+// would always see a detached, zero-size element). Falls back to coinBurst() if the rect is
 // missing/empty, and is a no-op under reduced-motion (same as coinBurst()).
 function coinFly(from){
   if(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;

@@ -118,11 +118,12 @@
 
       <div class="section-title">⚡ מה עושים?</div>
       <div class="grid2">
-        <button class="bigbtn scan" onclick="go('scan')"><span class="ic">📷</span>סורק QR<span class="sub">סרוק קוד וקבל מטבעות</span></button>
+        <button class="bigbtn scan" onclick="openScan()"><span class="ic">📷</span>סורק QR<span class="sub">סרוק קוד וקבל מטבעות</span></button>
         <button class="bigbtn math" onclick="go('math')"><span class="ic">➗</span>חשבון<span class="sub">פתור תרגילים והרווח</span></button>
         <button class="bigbtn rewards" onclick="go('rewards')"><span class="ic">🎁</span>פרסים<span class="sub">החלף מטבעות בפרסים</span></button>
         <button class="bigbtn history" onclick="go('history')"><span class="ic">📜</span>היומן שלי<span class="sub">כל מה שהרווחת</span></button>
         <button class="bigbtn learn" onclick="go('learn')"><span class="ic">⛏️</span>מכרה הידע<span class="sub">למד והרווח מטבעות</span></button>
+        <button class="bigbtn games" onclick="go('games')"><span class="ic">🎮</span>המשחקים שלי<span class="sub">שחק עם זמן שקנית</span></button>
       </div>
 
       <div id="eventsWrap"></div>
@@ -713,7 +714,7 @@
 
   <div class="bottomnav" id="bottomnav">
     <button class="navbtn active" data-nav="home" onclick="go('home')"><span class="ic">🏠</span>בית</button>
-    <button class="navbtn" data-nav="scan" onclick="go('scan')"><span class="ic">📷</span>סריקה</button>
+    <button class="navbtn" data-nav="scan" onclick="openScan()"><span class="ic">📷</span>סריקה</button>
     <button class="navbtn" data-nav="math" onclick="go('math')"><span class="ic">➗</span>חשבון</button>
     <button class="navbtn" data-nav="rewards" onclick="go('rewards')"><span class="ic">🎁</span>פרסים</button>
     <button class="navbtn" data-nav="history" onclick="go('history')"><span class="ic">📜</span>יומן</button>

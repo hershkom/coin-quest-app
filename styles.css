@@ -305,6 +305,7 @@
   .bigbtn.rewards{background:linear-gradient(140deg,var(--gold),var(--gold-d));}
   .bigbtn.history{background:linear-gradient(140deg,var(--purple),var(--purple-d));}
   .bigbtn.learn{background:linear-gradient(140deg,#8B5A3C,#6b4229);}
+  .bigbtn.games{background:linear-gradient(140deg,var(--sky),var(--sky-d));}
   .bigbtn .sub{font-size:.72rem;font-weight:500;opacity:.92;}
   .learn-choice-btn{background:#FAF9FF;border:2px solid var(--line);border-radius:16px;padding:14px;font-family:inherit;font-size:1.05rem;font-weight:700;color:var(--ink);cursor:pointer;transition:transform .1s;min-height:56px;}
   .learn-choice-btn:active{transform:translateY(2px);}

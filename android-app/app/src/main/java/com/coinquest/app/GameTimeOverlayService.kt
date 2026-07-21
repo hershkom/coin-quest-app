@@ -48,6 +48,7 @@ class GameTimeOverlayService : Service() {
     override fun onCreate() {
         super.onCreate()
         windowManager = getSystemService(WINDOW_SERVICE) as WindowManager
+        instance = this
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -95,6 +96,7 @@ class GameTimeOverlayService : Service() {
     override fun onDestroy() {
         countDownTimer?.cancel()
         removeOverlayView()
+        if (instance === this) instance = null
         super.onDestroy()
     }
 
@@ -190,9 +192,16 @@ class GameTimeOverlayService : Service() {
         view.findViewById<View>(R.id.overlayRoot).setBackgroundColor(getColor(colorRes))
     }
 
-    /** Single exit path for both timeout and manual early-stop -- always goes
-     *  home, always reports real elapsed seconds, and only ever runs once. */
-    private fun endSession(showCalmMessage: Boolean) {
+    /** Single exit path for timeout, manual early-stop, AND the child having
+     *  switched away from the game (see endEarlyDueToAppSwitch below) --
+     *  always reports real elapsed seconds and only ever runs once.
+     *  `forceHome`: true for timeout/manual-close (the child is still "in" the
+     *  flow, so landing on the home screen is the natural next step); false
+     *  when they've ALREADY switched to something else on their own -- forcing
+     *  GLOBAL_ACTION_HOME there would yank them out of whatever they're doing
+     *  now (answering a call, using another app), which has nothing to do
+     *  with this session ending. */
+    private fun endSession(showCalmMessage: Boolean, forceHome: Boolean = true) {
         if (ended) return
         ended = true
         countDownTimer?.cancel()
@@ -213,9 +222,11 @@ class GameTimeOverlayService : Service() {
                 .remove(GameTimePrefs.SESSION_END_AT)
                 .putInt(GameTimePrefs.CONSUMED_PENDING_SECONDS, consumedSeconds)
                 .apply()
-            val svc = GameTimeAccessibilityService.instance
-            if (svc != null) svc.goHome()
-            else Log.w(TAG, "Accessibility service not connected -- cannot force home")
+            if (forceHome) {
+                val svc = GameTimeAccessibilityService.instance
+                if (svc != null) svc.goHome()
+                else Log.w(TAG, "Accessibility service not connected -- cannot force home")
+            }
             NativeGameBridge.notifySessionEnded(consumedSeconds, childId)
             stopSelf()
         }
@@ -236,9 +247,27 @@ class GameTimeOverlayService : Service() {
         }
     }
 
+    /** Called by GameTimeAccessibilityService when the child has been away
+     *  from the target game for AWAY_GRACE_MS straight (see that class) --
+     *  the whole point of the fix: previously, leaving the game via Home/
+     *  Back left the floating countdown running and the timer draining in
+     *  the background, with no way to stop it short of waiting it out or
+     *  going back in just to tap the overlay's own close button. No calm
+     *  message (they're not looking at the overlay right now) and no forced
+     *  home (see endSession's forceHome doc above). */
+    fun endEarlyDueToAppSwitch() {
+        endSession(showCalmMessage = false, forceHome = false)
+    }
+
     companion object {
         private const val TAG = "CoinQuestGameTime"
         private const val NOTIFICATION_ID = 2001
+
+        /** Set while a session's overlay is up; null otherwise. Lets
+         *  GameTimeAccessibilityService trigger an early end when the child
+         *  switches away from the target game (see endEarlyDueToAppSwitch). */
+        var instance: GameTimeOverlayService? = null
+            private set
 
         const val EXTRA_SECONDS = "seconds"
         const val EXTRA_PACKAGE = "package"
