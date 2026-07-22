@@ -8,40 +8,50 @@ import android.app.usage.UsageStatsManager
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
+import android.graphics.Color
 import android.os.Build
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
 import android.util.Log
-import android.widget.Toast
+import android.util.TypedValue
+import android.view.Gravity
+import android.view.View
+import android.view.WindowManager
+import android.widget.Button
+import android.widget.FrameLayout
+import android.widget.LinearLayout
+import android.widget.TextView
 import androidx.core.app.NotificationCompat
 
 /**
- * The always-on enforcement watcher that gates the purchased native game
- * (Minecraft) WITHOUT an AccessibilityService -- the whole point being that it
- * coexists with Google Family Link.
+ * The always-on enforcement wall that gates the purchased native game
+ * (Minecraft) WITHOUT an AccessibilityService, so it coexists with Google
+ * Family Link (which force-disables accessibility services but does NOT touch
+ * usage access or the overlay permission).
  *
- * Family Link (a Profile Owner) force-disables third-party accessibility
- * services (it sets an empty permitted-accessibility-services policy), which is
- * why the AccessibilityService-based wall silently died on the user's device.
- * Family Link does NOT, however, restrict the "usage access" special permission
- * or the "draw over other apps" overlay permission. So this service reads the
- * current foreground app from UsageStatsManager (usage access) and, when the
- * enforced game is opened without a valid coin-bought session, sends the device
- * back to the home screen (a plain CATEGORY_HOME intent -- allowed from the
- * background because the app holds SYSTEM_ALERT_WINDOW) with a calm toast. The
- * game is never truly playable outside a session, yet Family Link keeps every
- * one of its own controls (web filtering, app-install approval, remote
- * management, screen time). The two enforcement layers run side by side.
+ * How it blocks: it reads the foreground app from UsageStatsManager and, while
+ * the enforced game is in the foreground with no valid coin-bought session,
+ * draws a FULL-SCREEN blocking overlay over it (a "buy time in CoinQuest"
+ * screen). Drawing an overlay from the background is allowed with
+ * SYSTEM_ALERT_WINDOW -- unlike startActivity()/GLOBAL_ACTION_HOME, which MIUI
+ * silently blocks from the background (that was why an earlier "send home"
+ * attempt showed the toast but never actually stopped play). The child can
+ * still press Home to leave; they just can't play the game underneath the
+ * cover. The overlay is removed the instant a session starts or the game is no
+ * longer foreground.
  *
- * It also exposes currentForegroundPackage() as the single foreground-detection
- * source for GameTimeOverlayService's away-detection, replacing the
- * accessibility service there too.
+ * Foreground detection is stateful (see pollForeground): the last
+ * MOVE_TO_FOREGROUND package is remembered across polls, so it never "ages out"
+ * of a short query window while the child sits inside the game (the second bug
+ * from the first on-device test). This is also the single foreground source for
+ * GameTimeOverlayService's away-detection.
  */
 class GameWatchService : Service() {
 
     private val handler = Handler(Looper.getMainLooper())
-    private var lastKickAtMs = 0L
+    private var windowManager: WindowManager? = null
+    private var blockView: View? = null
 
     private val poll = object : Runnable {
         override fun run() {
@@ -52,15 +62,13 @@ class GameWatchService : Service() {
 
     override fun onCreate() {
         super.onCreate()
+        windowManager = getSystemService(WINDOW_SERVICE) as WindowManager
         startForegroundWithNotification()
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         handler.removeCallbacks(poll)
         handler.post(poll)
-        // START_STICKY: MIUI/OEMs kill background work aggressively; ask the
-        // system to recreate the watcher if it's killed while a device is
-        // meant to be enforced (paired with the BOOT_COMPLETED start).
         return START_STICKY
     }
 
@@ -68,6 +76,7 @@ class GameWatchService : Service() {
 
     override fun onDestroy() {
         handler.removeCallbacks(poll)
+        hideBlockOverlay()
         super.onDestroy()
     }
 
@@ -76,42 +85,103 @@ class GameWatchService : Service() {
         val enforced = (prefs.getString(GameTimePrefs.ENFORCED_PACKAGES, null) ?: "")
             .split(',').filter { it.isNotBlank() }.toMutableSet()
         prefs.getString(GameTimePrefs.TARGET_PACKAGE, null)?.let { if (it.isNotBlank()) enforced.add(it) }
-        if (enforced.isEmpty()) return
+        if (enforced.isEmpty()) { hideBlockOverlay(); return }
 
-        val fg = currentForegroundPackage(this) ?: return
-        if (fg !in enforced) return
-        if (isSessionValid(prefs)) return // a paid session is running -- allow
-
-        // The game is in the foreground with no valid session -- redirect home.
-        val now = System.currentTimeMillis()
-        if (now - lastKickAtMs < KICK_COOLDOWN_MS) return
-        lastKickAtMs = now
-        Log.d(TAG, "Blocked foreground of $fg -- no active paid session; sending home")
-        try {
-            val home = Intent(Intent.ACTION_MAIN).apply {
-                addCategory(Intent.CATEGORY_HOME)
-                flags = Intent.FLAG_ACTIVITY_NEW_TASK
-            }
-            startActivity(home)
-            Toast.makeText(
-                applicationContext,
-                "אין לך זמן משחק כרגע 🪙 — פתח את כספת המטבעות כדי לקנות זמן",
-                Toast.LENGTH_LONG
-            ).show()
-        } catch (e: Exception) {
-            Log.w(TAG, "Could not send home", e)
-        }
+        val fg = pollForeground(this)
+        val shouldBlock = fg != null && fg in enforced && !isSessionValid(prefs)
+        if (shouldBlock) showBlockOverlay() else hideBlockOverlay()
     }
 
     private fun isSessionValid(prefs: android.content.SharedPreferences): Boolean {
         if (!prefs.getBoolean(GameTimePrefs.SESSION_ACTIVE, false)) return false
         val endAt = prefs.getLong(GameTimePrefs.SESSION_END_AT, 0L)
         if (endAt > 0L && System.currentTimeMillis() <= endAt + DEADLINE_GRACE_MS) return true
-        // Stale ACTIVE flag (overlay process died without clearing it) -- heal it.
         prefs.edit().putBoolean(GameTimePrefs.SESSION_ACTIVE, false)
             .remove(GameTimePrefs.SESSION_END_AT).apply()
         return false
     }
+
+    /** Full-screen cover over the game. Consumes touches (the game underneath
+     *  can't be played), shows a calm "buy time" message + a button that opens
+     *  CoinQuest. Idempotent: only one view is ever added. */
+    private fun showBlockOverlay() {
+        if (blockView != null) return
+        val wm = windowManager ?: return
+
+        val root = FrameLayout(this).apply {
+            setBackgroundColor(Color.parseColor("#111825")) // deep calm navy, opaque cover
+        }
+        val col = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER
+            setPadding(dp(32), dp(32), dp(32), dp(32))
+        }
+        val emoji = TextView(this).apply {
+            text = "🪙"
+            textSize = 64f
+            gravity = Gravity.CENTER
+        }
+        val title = TextView(this).apply {
+            text = "אין לך זמן משחק כרגע"
+            setTextColor(Color.WHITE)
+            textSize = 24f
+            gravity = Gravity.CENTER
+            setPadding(0, dp(16), 0, dp(8))
+        }
+        val sub = TextView(this).apply {
+            text = "כדי לשחק צריך לקנות זמן בכספת המטבעות 🎮"
+            setTextColor(Color.parseColor("#CFE0FF"))
+            textSize = 17f
+            gravity = Gravity.CENTER
+            setPadding(0, 0, 0, dp(28))
+        }
+        val open = Button(this).apply {
+            text = "פתח את כספת המטבעות"
+            setOnClickListener { openCoinQuest() }
+        }
+        col.addView(emoji); col.addView(title); col.addView(sub); col.addView(open)
+        root.addView(col, FrameLayout.LayoutParams(
+            FrameLayout.LayoutParams.WRAP_CONTENT,
+            FrameLayout.LayoutParams.WRAP_CONTENT,
+            Gravity.CENTER
+        ))
+
+        val type = WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
+        val params = WindowManager.LayoutParams(
+            WindowManager.LayoutParams.MATCH_PARENT,
+            WindowManager.LayoutParams.MATCH_PARENT,
+            type,
+            // NOT FLAG_NOT_TOUCHABLE: we WANT to eat touches so the game can't be
+            // played. NOT_FOCUSABLE so hardware Back/Home still let the child
+            // leave the game entirely (leaving is fine -- playing isn't).
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
+            android.graphics.PixelFormat.OPAQUE
+        )
+        try {
+            wm.addView(root, params)
+            blockView = root
+            Log.d(TAG, "Block overlay shown over the game")
+        } catch (e: Exception) {
+            Log.w(TAG, "Could not add block overlay", e)
+        }
+    }
+
+    private fun hideBlockOverlay() {
+        val v = blockView ?: return
+        try { windowManager?.removeView(v) } catch (e: Exception) { /* already gone */ }
+        blockView = null
+    }
+
+    private fun openCoinQuest() {
+        try {
+            startActivity(Intent(this, MainActivity::class.java)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_REORDER_TO_FRONT))
+        } catch (e: Exception) { Log.w(TAG, "open CoinQuest failed", e) }
+    }
+
+    private fun dp(v: Int): Int = TypedValue.applyDimension(
+        TypedValue.COMPLEX_UNIT_DIP, v.toFloat(), resources.displayMetrics
+    ).toInt()
 
     private fun startForegroundWithNotification() {
         val channelId = "game_watch"
@@ -140,16 +210,8 @@ class GameWatchService : Service() {
         private const val TAG = "CoinQuestGameWatch"
         private const val NOTIFICATION_ID = 2002
         private const val POLL_INTERVAL_MS = 1000L
-        // Don't re-fire the home-redirect every single second while the child
-        // keeps tapping the game -- one nudge, then a short cooldown, so it's a
-        // calm redirect (matching the app's zero-punishment design) rather than
-        // a frantic bounce loop.
-        private const val KICK_COOLDOWN_MS = 2500L
         private const val DEADLINE_GRACE_MS = 30_000L
 
-        /** True if the parent has granted "usage access" to this app -- the one
-         *  special permission this whole watcher depends on. Family Link does
-         *  NOT restrict it (unlike accessibility). */
         fun hasUsageAccess(context: Context): Boolean {
             return try {
                 val appOps = context.getSystemService(Context.APP_OPS_SERVICE) as AppOpsManager
@@ -169,30 +231,38 @@ class GameWatchService : Service() {
             } catch (e: Exception) { false }
         }
 
-        /** The current foreground app package via UsageStatsManager, or null if
-         *  unknown / no usage access. Reads the most recent MOVE_TO_FOREGROUND
-         *  event in a short trailing window -- reliable across OEMs (unlike the
-         *  accessibility "left the app" event that was dropped on Samsung), and
-         *  the single foreground source for both the block loop here and the
-         *  overlay's away-detection. */
-        fun currentForegroundPackage(context: Context): String? {
+        // Stateful foreground tracking: the last app seen moving to the
+        // foreground, remembered across polls so it never ages out of the query
+        // window while the child stays inside one app.
+        @Volatile private var cachedForeground: String? = null
+        @Volatile private var lastQueryMs: Long = 0L
+
+        /** Current foreground package via UsageStatsManager, retained across
+         *  calls. Returns null only if usage access isn't granted. Any caller
+         *  (the watcher's poll, or the overlay's away-detection) advances the
+         *  shared state. */
+        fun currentForegroundPackage(context: Context): String? = pollForeground(context)
+
+        @Synchronized
+        fun pollForeground(context: Context): String? {
             if (!hasUsageAccess(context)) return null
             return try {
                 val usm = context.getSystemService(Context.USAGE_STATS_SERVICE) as UsageStatsManager
                 val now = System.currentTimeMillis()
-                val events = usm.queryEvents(now - LOOKBACK_MS, now)
+                val begin = if (lastQueryMs == 0L) now - INITIAL_LOOKBACK_MS else lastQueryMs - 500L
+                val events = usm.queryEvents(begin, now)
                 val ev = android.app.usage.UsageEvents.Event()
-                var last: String? = null
                 while (events.hasNextEvent()) {
                     events.getNextEvent(ev)
                     if (ev.eventType == android.app.usage.UsageEvents.Event.MOVE_TO_FOREGROUND) {
-                        last = ev.packageName
+                        cachedForeground = ev.packageName
                     }
                 }
-                last
-            } catch (e: Exception) { null }
+                lastQueryMs = now
+                cachedForeground
+            } catch (e: Exception) { cachedForeground }
         }
 
-        private const val LOOKBACK_MS = 10_000L
+        private const val INITIAL_LOOKBACK_MS = 15_000L
     }
 }
