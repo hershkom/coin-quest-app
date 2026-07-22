@@ -2,6 +2,7 @@ package com.coinquest.app
 
 import android.app.Activity
 import android.content.ComponentName
+import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.os.Build
@@ -196,6 +197,37 @@ class NativeGameBridge(private val activity: Activity, private val webView: WebV
     @JavascriptInterface
     fun isDeviceOwner(): Boolean = GamePolicyManager.isDeviceOwner(activity)
 
+    /** True if "usage access" is granted -- the permission the always-on
+     *  GameWatchService wall runs on. This is the enforcement path that
+     *  coexists with Family Link (which force-disables accessibility services
+     *  but does not touch usage access). */
+    @JavascriptInterface
+    fun hasUsageAccess(): Boolean = GameWatchService.hasUsageAccess(activity)
+
+    /** Opens the system "usage access" settings screen so the parent can grant
+     *  it to CoinQuest (there's no runtime-prompt for this special access). */
+    @JavascriptInterface
+    fun requestUsageAccess() {
+        activity.runOnUiThread {
+            try {
+                activity.startActivity(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS))
+            } catch (e: Exception) {
+                // Some OEMs hide the direct screen -- fall back to app details.
+                activity.startActivity(
+                    Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:${activity.packageName}"))
+                )
+            }
+        }
+    }
+
+    /** Starts (or refreshes) the always-on usage-access game wall. Safe to call
+     *  repeatedly. No-op without usage access (the service would just idle). */
+    @JavascriptInterface
+    fun startGameWatch() {
+        if (!GameWatchService.hasUsageAccess(activity)) return
+        activity.runOnUiThread { startWatch(activity) }
+    }
+
     /** Suspend (block) every enforced native game right now, so a game is
      *  walled off by default whenever no coin-bought session is active.
      *  app.js calls this on launch (and the game stays blocked until a session
@@ -255,8 +287,14 @@ class NativeGameBridge(private val activity: Activity, private val webView: WebV
         // suspended the moment the app knows about it -- not only after the
         // first session ends. block() itself skips a currently-valid session's
         // target, so this can't kill a game the child is legitimately playing.
+        // (No-op if not device owner; the usage-access wall below is the path
+        // that actually runs on a Family-Link device.)
         val pkgs = csv.split(',').map { it.trim() }.filter { it.isNotBlank() }
         GamePolicyManager.block(activity, pkgs)
+        // Bring up the always-on usage-access wall if it's granted, so the game
+        // is guarded from app launch on (the primary enforcement on a
+        // Family-Link device, where device-owner/accessibility aren't available).
+        if (pkgs.isNotEmpty() && GameWatchService.hasUsageAccess(activity)) startWatch(activity)
     }
 
     /** Returns false immediately (no session started) if permissions are
@@ -265,23 +303,24 @@ class NativeGameBridge(private val activity: Activity, private val webView: WebV
     @JavascriptInterface
     fun startNativeSession(pkg: String, seconds: Int, childId: String): Boolean {
         if (seconds <= 0) return false
-        // A session that can't be enforced must never start. Enforcement comes
-        // from EITHER mechanism, so this works whether or not device-owner
-        // could be provisioned (MIUI blocks adb device-owner without a Mi
-        // account, but the accessibility service works there once Family Link
-        // is gone):
+        // A session that can't be enforced must never start. Enforcement is
+        // satisfied by ANY available wall, so this works across device types:
+        //  - Usage access (GameWatchService): the Family-Link-compatible wall,
+        //    the primary path on this user's MIUI + Family Link device.
         //  - Device Owner: GamePolicyManager suspend/unsuspend (allow() below
         //    is a no-op if we're not owner).
-        //  - AccessibilityService: foreground-block + away-detection.
-        // The overlay permission is required in both cases for the countdown.
+        //  - AccessibilityService: legacy path (dies under Family Link).
+        // The overlay permission is required in all cases for the countdown.
         if (!hasOverlayPermission()) return false
-        if (!GamePolicyManager.isDeviceOwner(activity) && !hasAccessibilityPermission()) return false
+        val enforceable = GameWatchService.hasUsageAccess(activity) ||
+            GamePolicyManager.isDeviceOwner(activity) ||
+            hasAccessibilityPermission()
+        if (!enforceable) return false
         val launchIntent = activity.packageManager.getLaunchIntentForPackage(pkg) ?: return false
 
-        // Unsuspend the game so it can launch (no-op if not device owner). In
-        // device-owner mode it's suspended by default (blockGames); in
-        // accessibility-only mode there's nothing to unsuspend and the
-        // accessibility service is what gates re-entry outside a session.
+        // Make sure the always-on wall is running for the usage-access path, and
+        // unsuspend for the device-owner path (no-op otherwise).
+        startGameWatch()
         GamePolicyManager.allow(activity, pkg)
 
         activity.runOnUiThread {
@@ -339,6 +378,20 @@ class NativeGameBridge(private val activity: Activity, private val webView: WebV
         // WebView through this static hook rather than needing its own
         // Activity/WebView references.
         private var instance: NativeGameBridge? = null
+
+        /** Start the always-on usage-access game wall. Reused from the bridge
+         *  (app launch) and ReminderReceiver (BOOT_COMPLETED). Caller checks
+         *  usage access first; this just fires the foreground service. */
+        fun startWatch(context: Context) {
+            try {
+                val intent = Intent(context, GameWatchService::class.java)
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    context.startForegroundService(intent)
+                } else {
+                    context.startService(intent)
+                }
+            } catch (e: Exception) { /* OEM background-start limits: retried next launch */ }
+        }
 
         fun notifySessionEnded(consumedSeconds: Int, childId: String) {
             instance?.notifyEnded(consumedSeconds, childId)

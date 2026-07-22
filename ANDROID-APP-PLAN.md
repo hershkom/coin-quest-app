@@ -1,3 +1,25 @@
+**עדכון 2026-07-22 (7) — Device Owner חסום ב-MIUI + ההורה חייב Family Link. הפתרון: שכבת אכיפה מבוססת Usage Access שחיה יחד עם Family Link:**
+המשך האבחון על המכשיר חשף ש-**Device Owner לא בר-הקצאה ב-MIUI** ללא חשבון Mi: `adb shell dpm set-device-owner`
+נדחה (`Calling identity is not authorized`, המכשיר כבר `device_provisioned=1`), ו-`settings put` נחסם
+(`WRITE_SECURE_SETTINGS` מופשט מה-shell אלא אם מפעילים "USB debugging (Security settings)" שדורש חשבון Mi).
+גם `adb install` נחסם (`INSTALL_FAILED_USER_RESTRICTED` — "Install via USB" של MIUI). **בנוסף, דרישת מפתח
+מההורה:** חייבים פיקוח מרחוק (סינון אתרים, אישור הורדות, שליטה) — כלומר **Family Link חייב להישאר**, ולכן גם
+Device Owner (שמחליף את ה-DPC) וגם שירות נגישות (ש-FL הורג) פסולים. **הפתרון: `GameWatchService`** — שירות
+foreground קבוע שקורא את אפליקציית החזית דרך `UsageStatsManager` (הרשאת "Usage access") ומחזיר את הילד
+למסך הבית (Intent CATEGORY_HOME, מותר מרקע בזכות הרשאת overlay) + Toast כשמיינקראפט נפתח בלי session תקף.
+**המפתח: Family Link חוסם *רק* שירותי נגישות — הוא לא נוגע ב-Usage access ולא ב-overlay** — ולכן השכבה הזו
+**חיה יחד עם Family Link**, וההורה מקבל את הכל: פיקוח מלא של FL + שער-מטבעות למיינקראפט. `UsageStatsManager`
+גם אמין יותר חוצה-יצרנים מאירועי הנגישות (שנבלעו ב-Samsung), ומשמש עכשיו גם כמקור זיהוי-החזית של
+away-detection ב-overlay. **קבצים:** חדש `GameWatchService.kt`; שונו manifest (הרשאת `PACKAGE_USAGE_STATS`,
+שירות `GameWatchService`, `tools` namespace; הוסרו ב-play flavor), `NativeGameBridge` (`hasUsageAccess()`,
+`requestUsageAccess()`, `startGameWatch()`, `startWatch()` companion, gating על usage/owner/accessibility,
+הפעלת ה-wall ב-`setEnforcedPackages`), `GameTimeOverlayService` (away-detection דרך UsageStats),
+`ReminderReceiver` (הפעלת ה-wall ב-BOOT), `app.js` (gating/אזהרה/הודעות עם usage access primary).
+Device Owner (מ-(6)) נשאר בקוד כ-path אופציונלי-מיטבי אם יוקצה אי-פעם; שירות הנגישות נשאר legacy. *אימות:*
+family+play נבנים, 30/30 Playwright. **סדר:** קודם מכיילים את השער בזמן שאין FL (קל לבדוק), אחר כך מחזירים
+את החשבון המפוקח → FL חוזר עם ההגנות → השער ממשיך לעבוד לצדו. **הרשאות שההורה מאשר פעם אחת:** Usage
+access + חלון צף + Autostart (MIUI) + סוללה ללא הגבלה.
+
 **עדכון 2026-07-22 (6) — השורש האמיתי (אבחון על המכשיר דרך ADB): Family Link חוסם את שירות הנגישות. מעבר לארכיטקטורת Device Owner:**
 כל התיקונים (3)-(5) שיפרו קוד ש**מעולם לא רץ**. אבחון על המכשיר (Mi 10T, Android 12) דרך ADB חשף:
 `dumpsys accessibility` הראה `Crashed services:{...GameTimeAccessibilityService}`, ו-`accessibility_enabled=0`

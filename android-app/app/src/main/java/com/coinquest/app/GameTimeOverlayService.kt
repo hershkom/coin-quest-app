@@ -213,14 +213,13 @@ class GameTimeOverlayService : Service() {
      *  treat that as NOT-away, so a session is never ended just because the
      *  accessibility service hasn't reported anything yet. */
     private fun checkForegroundAway() {
-        val svc = GameTimeAccessibilityService.instance
-        // Prefer the ACTIVE query (what's on screen right now) over the
-        // event-tracked value, because the leave-the-game transition event is
-        // dropped on some OEMs -- the active query isn't. Fall back to the
-        // event-tracked package only if the active query can't answer (e.g. a
-        // pure-SurfaceView game exposes no queryable node while it's up, which
-        // is fine: the event-tracked value still reads the game there).
-        val fg = svc?.activeWindowPackage() ?: GameTimeAccessibilityService.foregroundPackage
+        // Foreground source is UsageStatsManager (via GameWatchService) -- the
+        // Family-Link-compatible, cross-OEM-reliable path. Fall back to the
+        // accessibility service's reading only if usage access isn't granted
+        // (legacy/non-Family-Link setups), so away-detection still works there.
+        val fg = GameWatchService.currentForegroundPackage(this)
+            ?: GameTimeAccessibilityService.instance?.activeWindowPackage()
+            ?: GameTimeAccessibilityService.foregroundPackage
         if (fg == targetPackage) {
             seenTargetForeground = true
             awaySinceMs = 0L

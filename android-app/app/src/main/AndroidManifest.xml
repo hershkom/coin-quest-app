@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
     package="com.coinquest.app">
 
     <uses-permission android:name="android.permission.INTERNET" />
@@ -13,6 +14,14 @@
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+    <!-- Usage-access powered game wall (GameWatchService): reads the foreground
+         app to block the purchased game outside a paid session. Chosen over the
+         AccessibilityService because Google Family Link force-disables
+         accessibility services but does NOT restrict usage access, so this wall
+         coexists with Family Link's own parental controls. tools:ignore because
+         PACKAGE_USAGE_STATS is granted by the user in Settings, not at install. -->
+    <uses-permission android:name="android.permission.PACKAGE_USAGE_STATS"
+        tools:ignore="ProtectedPermissions" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <!-- AN5: re-arm the daily chore-reminder alarm after a reboot clears it. -->
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
@@ -76,6 +85,17 @@
             <property
                 android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
                 android:value="game-time-enforcement-overlay" />
+        </service>
+
+        <!-- Always-on usage-access game wall (coexists with Family Link, unlike
+             the accessibility service). Started on app launch and BOOT_COMPLETED. -->
+        <service
+            android:name=".GameWatchService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="game-time-enforcement-watch" />
         </service>
 
         <!-- Device-owner admin component. Provisioned once per device with

@@ -1916,11 +1916,12 @@ function renderEnforcementWarning(){
   if(!isNativeGameAvailable()||!hasNativeGames){ el.style.display='none'; return; }
   const missing=[];
   try{
-    // Enforcement is satisfied by EITHER device-owner OR accessibility; only
-    // warn when neither is present.
+    // Enforcement is satisfied by ANY wall (usage access / device-owner /
+    // accessibility); only warn when none is present.
+    const usage=typeof window.CoinQuestNative.hasUsageAccess==='function'&&window.CoinQuestNative.hasUsageAccess();
     const owner=typeof window.CoinQuestNative.isDeviceOwner==='function'&&window.CoinQuestNative.isDeviceOwner();
     const acc=typeof window.CoinQuestNative.hasAccessibilityPermission==='function'&&window.CoinQuestNative.hasAccessibilityPermission();
-    if(!owner&&!acc) missing.push('אכיפה (שירות נגישות או Device Owner)');
+    if(!usage&&!owner&&!acc) missing.push('אכיפה (גישה לשימוש)');
     if(typeof window.CoinQuestNative.hasOverlayPermission==='function'&&!window.CoinQuestNative.hasOverlayPermission()) missing.push('חלון צף');
   }catch(e){}
   if(missing.length===0){ el.style.display='none'; return; }
@@ -1930,12 +1931,14 @@ function renderEnforcementWarning(){
 function openEnforcementSettings(){
   if(!isNativeGameAvailable()) return;
   try{
-    // Grant overlay first if missing; otherwise, if neither enforcement path is
-    // active, guide the accessibility grant (the parent-grantable one --
-    // device-owner is provisioned from a computer, not from a prompt).
+    // Grant overlay first if missing; otherwise, if no enforcement wall is
+    // active, guide the usage-access grant (the parent-grantable, Family-Link-
+    // compatible one). Device-owner is provisioned from a computer, not here.
+    const usage=typeof window.CoinQuestNative.hasUsageAccess==='function'&&window.CoinQuestNative.hasUsageAccess();
     const owner=typeof window.CoinQuestNative.isDeviceOwner==='function'&&window.CoinQuestNative.isDeviceOwner();
     if(typeof window.CoinQuestNative.hasOverlayPermission==='function'&&!window.CoinQuestNative.hasOverlayPermission()) window.CoinQuestNative.requestOverlayPermission();
-    else if(!owner&&typeof window.CoinQuestNative.requestAccessibilityPermission==='function') window.CoinQuestNative.requestAccessibilityPermission();
+    else if(!usage&&!owner&&typeof window.CoinQuestNative.requestUsageAccess==='function') window.CoinQuestNative.requestUsageAccess();
+    else if(!usage&&!owner&&typeof window.CoinQuestNative.requestAccessibilityPermission==='function') window.CoinQuestNative.requestAccessibilityPermission();
   }catch(e){}
 }
 
@@ -2002,11 +2005,13 @@ async function startNativeGameSession(g){
     });
     return;
   }
+  const _usage=typeof window.CoinQuestNative.hasUsageAccess==='function'&&window.CoinQuestNative.hasUsageAccess();
   const _owner=typeof window.CoinQuestNative.isDeviceOwner==='function'&&window.CoinQuestNative.isDeviceOwner();
   const _acc=typeof window.CoinQuestNative.hasAccessibilityPermission==='function'&&window.CoinQuestNative.hasAccessibilityPermission();
-  if(!_owner&&!_acc){
-    modalConfirm('🔒','נדרשת הרשאה חד-פעמית','כדי לוודא שהזמן שנקנה נאכף בפועל, ההורה צריך לאשר פעם אחת את שירות הנגישות של כספת המטבעות. לפתוח את ההגדרות עכשיו?',()=>{
-      window.CoinQuestNative.requestAccessibilityPermission();
+  if(!_usage&&!_owner&&!_acc){
+    modalConfirm('🔒','נדרשת הרשאה חד-פעמית','כדי לוודא שהזמן שנקנה נאכף — וכך שזה יעבוד יחד עם Family Link — ההורה צריך לאשר פעם אחת הרשאת "גישה לשימוש" (Usage access) לכספת המטבעות. לפתוח את ההגדרות עכשיו?',()=>{
+      if(typeof window.CoinQuestNative.requestUsageAccess==='function') window.CoinQuestNative.requestUsageAccess();
+      else if(typeof window.CoinQuestNative.requestAccessibilityPermission==='function') window.CoinQuestNative.requestAccessibilityPermission();
     });
     return;
   }
