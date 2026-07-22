@@ -1916,7 +1916,11 @@ function renderEnforcementWarning(){
   if(!isNativeGameAvailable()||!hasNativeGames){ el.style.display='none'; return; }
   const missing=[];
   try{
-    if(typeof window.CoinQuestNative.isDeviceOwner==='function'&&!window.CoinQuestNative.isDeviceOwner()) missing.push('בעלות על המכשיר (Device Owner)');
+    // Enforcement is satisfied by EITHER device-owner OR accessibility; only
+    // warn when neither is present.
+    const owner=typeof window.CoinQuestNative.isDeviceOwner==='function'&&window.CoinQuestNative.isDeviceOwner();
+    const acc=typeof window.CoinQuestNative.hasAccessibilityPermission==='function'&&window.CoinQuestNative.hasAccessibilityPermission();
+    if(!owner&&!acc) missing.push('אכיפה (שירות נגישות או Device Owner)');
     if(typeof window.CoinQuestNative.hasOverlayPermission==='function'&&!window.CoinQuestNative.hasOverlayPermission()) missing.push('חלון צף');
   }catch(e){}
   if(missing.length===0){ el.style.display='none'; return; }
@@ -1926,9 +1930,12 @@ function renderEnforcementWarning(){
 function openEnforcementSettings(){
   if(!isNativeGameAvailable()) return;
   try{
-    // Only the overlay permission is grantable from here; device-owner status
-    // is provisioned from a computer via adb and can't be toggled from a prompt.
+    // Grant overlay first if missing; otherwise, if neither enforcement path is
+    // active, guide the accessibility grant (the parent-grantable one --
+    // device-owner is provisioned from a computer, not from a prompt).
+    const owner=typeof window.CoinQuestNative.isDeviceOwner==='function'&&window.CoinQuestNative.isDeviceOwner();
     if(typeof window.CoinQuestNative.hasOverlayPermission==='function'&&!window.CoinQuestNative.hasOverlayPermission()) window.CoinQuestNative.requestOverlayPermission();
+    else if(!owner&&typeof window.CoinQuestNative.requestAccessibilityPermission==='function') window.CoinQuestNative.requestAccessibilityPermission();
   }catch(e){}
 }
 
@@ -1980,20 +1987,27 @@ async function startNativeGameSession(g){
     modalMsg('🤔','המשחק לא מותקן','לא מצאנו את '+g.label+' מותקן במכשיר. ודא שהוא הותקן מ-Google Play.');
     return;
   }
-  // Enforcement is now a device-owner capability (the game is OS-suspended
-  // outside a paid session), which Family Link can't disable -- replacing the
-  // old accessibility service. Two things are still needed: the floating-timer
-  // overlay permission (parent-grantable from a prompt), and device-owner
-  // status (provisioned once via adb during setup -- not grantable from a
-  // prompt, so we can only tell the parent it's missing).
+  // Enforcement can come from EITHER of two mechanisms, so the app works on
+  // devices where one isn't achievable (notably MIUI, which blocks adb
+  // device-owner provisioning without a Mi account):
+  //  - Device Owner (best): the game is OS-suspended outside a paid session.
+  //  - Accessibility service: blocks the game's foreground + detects leaving.
+  // The floating-timer overlay permission is required in both cases. Overlay
+  // and accessibility are parent-grantable from a prompt; device-owner is
+  // provisioned from a computer, so if only that path is intended and it's
+  // missing we still fall back to guiding the accessibility grant here.
   if(!window.CoinQuestNative.hasOverlayPermission()){
     modalConfirm('🔒','נדרשת הרשאה חד-פעמית','כדי להציג את מונה הזמן מעל המשחק, ההורה צריך לאשר פעם אחת הרשאת "חלון צף". לפתוח את ההגדרות עכשיו?',()=>{
       window.CoinQuestNative.requestOverlayPermission();
     });
     return;
   }
-  if(typeof window.CoinQuestNative.isDeviceOwner!=='function'||!window.CoinQuestNative.isDeviceOwner()){
-    modalMsg('🛡️','המכשיר לא מוגדר לאכיפה','כדי שהמשחק ייחסם עד שקונים זמן, כספת המטבעות צריכה להיות "בעלת המכשיר" (Device Owner) — הגדרה חד-פעמית שנעשית עם המחשב בזמן ההתקנה. עד שזה יוגדר, המשחק לא יופעל דרך האפליקציה.');
+  const _owner=typeof window.CoinQuestNative.isDeviceOwner==='function'&&window.CoinQuestNative.isDeviceOwner();
+  const _acc=typeof window.CoinQuestNative.hasAccessibilityPermission==='function'&&window.CoinQuestNative.hasAccessibilityPermission();
+  if(!_owner&&!_acc){
+    modalConfirm('🔒','נדרשת הרשאה חד-פעמית','כדי לוודא שהזמן שנקנה נאכף בפועל, ההורה צריך לאשר פעם אחת את שירות הנגישות של כספת המטבעות. לפתוח את ההגדרות עכשיו?',()=>{
+      window.CoinQuestNative.requestAccessibilityPermission();
+    });
     return;
   }
   const seconds=Math.floor(k.gtime||0);

@@ -265,21 +265,23 @@ class NativeGameBridge(private val activity: Activity, private val webView: WebV
     @JavascriptInterface
     fun startNativeSession(pkg: String, seconds: Int, childId: String): Boolean {
         if (seconds <= 0) return false
-        // Enforcement now comes from being device owner (GamePolicyManager
-        // suspend/unsuspend), not the AccessibilityService -- a session that
-        // can't be enforced must never start, since enforcement is the whole
-        // point. The overlay permission is still required for the visible
-        // countdown. Accessibility is no longer required: it's used only for
-        // best-effort early-stop when the child leaves the game, and the
-        // session degrades gracefully (runs to full purchased time, then the
-        // game is re-suspended) if it isn't enabled.
+        // A session that can't be enforced must never start. Enforcement comes
+        // from EITHER mechanism, so this works whether or not device-owner
+        // could be provisioned (MIUI blocks adb device-owner without a Mi
+        // account, but the accessibility service works there once Family Link
+        // is gone):
+        //  - Device Owner: GamePolicyManager suspend/unsuspend (allow() below
+        //    is a no-op if we're not owner).
+        //  - AccessibilityService: foreground-block + away-detection.
+        // The overlay permission is required in both cases for the countdown.
         if (!hasOverlayPermission()) return false
-        if (!GamePolicyManager.isDeviceOwner(activity)) return false
+        if (!GamePolicyManager.isDeviceOwner(activity) && !hasAccessibilityPermission()) return false
         val launchIntent = activity.packageManager.getLaunchIntentForPackage(pkg) ?: return false
 
-        // Unsuspend the game so it can actually launch -- it's suspended by
-        // default (blockGames/setEnforcedPackages). The overlay service re-
-        // suspends it when the session ends.
+        // Unsuspend the game so it can launch (no-op if not device owner). In
+        // device-owner mode it's suspended by default (blockGames); in
+        // accessibility-only mode there's nothing to unsuspend and the
+        // accessibility service is what gates re-entry outside a session.
         GamePolicyManager.allow(activity, pkg)
 
         activity.runOnUiThread {

@@ -481,22 +481,43 @@ test.describe('native game (real purchased app, e.g. Minecraft)', () => {
     await expect(page.locator('#modalContent')).toContainText('נדרשת הרשאה חד-פעמית');
     expect(blocked.walletUntouched).toBe(300);
 
-    // Not device owner: overlay is fine but enforcement isn't provisioned, so
+    // Neither enforcement path available (not device owner AND no accessibility):
     // the game must not launch and the wallet must stay untouched.
-    const notOwner = await page.evaluate(async () => {
+    const noEnforcement = await page.evaluate(async () => {
       const k = cur(); k.gtime = 300; await DB.set('cs_gtime_ariel', 300);
       window.CoinQuestNative = {
         isPackageInstalled: () => true,
         hasOverlayPermission: () => true,
         isDeviceOwner: () => false,
-        startNativeSession: () => { throw new Error('must not be called when not device owner'); },
+        hasAccessibilityPermission: () => false,
+        requestAccessibilityPermission: () => {},
+        startNativeSession: () => { throw new Error('must not be called without any enforcement path'); },
       };
       const g = state.games.find(x => x.native);
       await startNativeGameSession(g);
       return { walletUntouched: await DB.get('cs_gtime_ariel') };
     });
-    await expect(page.locator('#modalContent')).toContainText('המכשיר לא מוגדר לאכיפה');
-    expect(notOwner.walletUntouched).toBe(300);
+    await expect(page.locator('#modalContent')).toContainText('נדרשת הרשאה חד-פעמית');
+    expect(noEnforcement.walletUntouched).toBe(300);
+
+    // Accessibility-only enforcement (no device owner) is a valid path: the
+    // session starts and the game launches -- this is the MIUI/post-Family-Link
+    // fallback where device-owner can't be provisioned.
+    const accOnly = await page.evaluate(async () => {
+      const k = cur(); k.gtime = 500; await DB.set('cs_gtime_ariel', 500);
+      const calls = [];
+      window.CoinQuestNative = {
+        isPackageInstalled: () => true,
+        hasOverlayPermission: () => true,
+        isDeviceOwner: () => false,
+        hasAccessibilityPermission: () => true,
+        startNativeSession: (pkg, seconds) => { calls.push([pkg, seconds]); return true; },
+      };
+      const g = state.games.find(x => x.native);
+      await startNativeGameSession(g);
+      return { calls };
+    });
+    expect(accOnly.calls[0]).toEqual(['com.mojang.minecraftpe', 500]);
   });
 });
 
