@@ -1890,29 +1890,33 @@ async function endGameSession(expired){
    usage; the wallet is only ever debited by what the native side reports,
    never by anything computed here. */
 function isNativeGameAvailable(){ return typeof window.CoinQuestNative!=='undefined'; }
-// Arms the native always-on wall: tells the accessibility service which
-// packages to block outside a paid session, on EVERY app launch -- not only
+// Arms the native always-on wall: tells the device-owner layer which packages
+// to keep suspended outside a paid session, on EVERY app launch -- not only
 // when the first session ever starts (the old behavior, which left a fresh
-// install with no wall at all until the child's first purchase). Guarded per
-// method (not just per bridge) so Playwright's partial bridge mocks and
-// older APKs without this method don't throw.
+// install with no wall at all until the child's first purchase). The native
+// setEnforcedPackages now also immediately (re)asserts the suspend, so the
+// game is blocked the moment the app knows about it. Guarded per method (not
+// just per bridge) so Playwright's partial bridge mocks and older APKs without
+// this method don't throw.
 function applyEnforcedPackages(){
   if(!isNativeGameAvailable()||typeof window.CoinQuestNative.setEnforcedPackages!=='function') return;
   const csv=(state.games||[]).filter(g=>g.native&&g.androidPackage).map(g=>g.androidPackage).join(',');
   try{ window.CoinQuestNative.setEnforcedPackages(csv); }catch(e){}
 }
-// Parent-facing enforcement health check (Admin Settings): the accessibility
-// toggle lives in the OS Settings app, which no PIN protects -- if it gets
-// turned off (by the child, a system update, or a "cleaner" app), the wall
-// silently stops existing. We can't prevent that without device-owner
-// privileges; what we CAN do is make sure the parent finds out.
+// Parent-facing enforcement health check (Admin Settings). Enforcement now
+// rests on two things: device-owner status (the OS-level power to suspend the
+// game -- provisioned once via adb, and unlike the old accessibility service,
+// NOT something Family Link or the child can silently switch off) and the
+// floating-timer overlay permission. If either is missing the wall isn't fully
+// there, so surface it to the parent. The overlay is re-grantable from the app;
+// device-owner has to be re-provisioned from a computer, so we say so.
 function renderEnforcementWarning(){
   const el=document.getElementById('enforcementWarning'); if(!el) return;
   const hasNativeGames=(state.games||[]).some(g=>g.native&&g.androidPackage);
   if(!isNativeGameAvailable()||!hasNativeGames){ el.style.display='none'; return; }
   const missing=[];
   try{
-    if(typeof window.CoinQuestNative.hasAccessibilityPermission==='function'&&!window.CoinQuestNative.hasAccessibilityPermission()) missing.push('שירות הנגישות');
+    if(typeof window.CoinQuestNative.isDeviceOwner==='function'&&!window.CoinQuestNative.isDeviceOwner()) missing.push('בעלות על המכשיר (Device Owner)');
     if(typeof window.CoinQuestNative.hasOverlayPermission==='function'&&!window.CoinQuestNative.hasOverlayPermission()) missing.push('חלון צף');
   }catch(e){}
   if(missing.length===0){ el.style.display='none'; return; }
@@ -1922,8 +1926,9 @@ function renderEnforcementWarning(){
 function openEnforcementSettings(){
   if(!isNativeGameAvailable()) return;
   try{
+    // Only the overlay permission is grantable from here; device-owner status
+    // is provisioned from a computer via adb and can't be toggled from a prompt.
     if(typeof window.CoinQuestNative.hasOverlayPermission==='function'&&!window.CoinQuestNative.hasOverlayPermission()) window.CoinQuestNative.requestOverlayPermission();
-    else window.CoinQuestNative.requestAccessibilityPermission();
   }catch(e){}
 }
 
@@ -1975,11 +1980,20 @@ async function startNativeGameSession(g){
     modalMsg('🤔','המשחק לא מותקן','לא מצאנו את '+g.label+' מותקן במכשיר. ודא שהוא הותקן מ-Google Play.');
     return;
   }
-  if(!window.CoinQuestNative.hasOverlayPermission()||!window.CoinQuestNative.hasAccessibilityPermission()){
-    modalConfirm('🔒','נדרשת הרשאה חד-פעמית','כדי לוודא שהזמן שנקנה נאכף בפועל, ההורה צריך לאשר פעם אחת חלון-צף והרשאת נגישות. לפתוח את ההגדרות עכשיו?',()=>{
-      if(!window.CoinQuestNative.hasOverlayPermission()) window.CoinQuestNative.requestOverlayPermission();
-      else window.CoinQuestNative.requestAccessibilityPermission();
+  // Enforcement is now a device-owner capability (the game is OS-suspended
+  // outside a paid session), which Family Link can't disable -- replacing the
+  // old accessibility service. Two things are still needed: the floating-timer
+  // overlay permission (parent-grantable from a prompt), and device-owner
+  // status (provisioned once via adb during setup -- not grantable from a
+  // prompt, so we can only tell the parent it's missing).
+  if(!window.CoinQuestNative.hasOverlayPermission()){
+    modalConfirm('🔒','נדרשת הרשאה חד-פעמית','כדי להציג את מונה הזמן מעל המשחק, ההורה צריך לאשר פעם אחת הרשאת "חלון צף". לפתוח את ההגדרות עכשיו?',()=>{
+      window.CoinQuestNative.requestOverlayPermission();
     });
+    return;
+  }
+  if(typeof window.CoinQuestNative.isDeviceOwner!=='function'||!window.CoinQuestNative.isDeviceOwner()){
+    modalMsg('🛡️','המכשיר לא מוגדר לאכיפה','כדי שהמשחק ייחסם עד שקונים זמן, כספת המטבעות צריכה להיות "בעלת המכשיר" (Device Owner) — הגדרה חד-פעמית שנעשית עם המחשב בזמן ההתקנה. עד שזה יוגדר, המשחק לא יופעל דרך האפליקציה.');
     return;
   }
   const seconds=Math.floor(k.gtime||0);

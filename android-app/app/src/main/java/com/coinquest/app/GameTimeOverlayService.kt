@@ -61,6 +61,16 @@ class GameTimeOverlayService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        // Guard against a second session being started while one is already
+        // running (e.g. the child tapping "play" again, or a stray re-launch):
+        // a second onStartCommand would otherwise add a SECOND floating overlay
+        // + countdown over the first, which is exactly the "two timers, wrong
+        // time" bug reported on-device. One live overlay means a session is
+        // already in flight -- ignore the new start and keep the existing one.
+        if (overlayView != null) {
+            Log.d(TAG, "Session already active -- ignoring duplicate start")
+            return START_NOT_STICKY
+        }
         val seconds = intent?.getIntExtra(EXTRA_SECONDS, 0) ?: 0
         targetPackage = intent?.getStringExtra(EXTRA_PACKAGE) ?: ""
         childId = intent?.getStringExtra(EXTRA_CHILD_ID) ?: ""
@@ -271,6 +281,12 @@ class GameTimeOverlayService : Service() {
                 .remove(GameTimePrefs.SESSION_END_AT)
                 .putInt(GameTimePrefs.CONSUMED_PENDING_SECONDS, consumedSeconds)
                 .apply()
+            // Re-assert the device-owner block: with SESSION_ACTIVE now false,
+            // block() will suspend the game again so it can't be reopened
+            // without buying another session. This is the hard stop that makes
+            // "time's up" real -- if the child is still inside the game, the
+            // suspend backgrounds it; bringCoinQuestToFront then lands them here.
+            GamePolicyManager.block(this@GameTimeOverlayService, listOf(targetPackage))
             if (returnToApp) bringCoinQuestToFront()
             NativeGameBridge.notifySessionEnded(consumedSeconds, childId)
             stopSelf()

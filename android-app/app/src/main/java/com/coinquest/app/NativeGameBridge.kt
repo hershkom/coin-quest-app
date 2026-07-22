@@ -190,6 +190,24 @@ class NativeGameBridge(private val activity: Activity, private val webView: WebV
     @JavascriptInterface
     fun hasOverlayPermission(): Boolean = Settings.canDrawOverlays(activity)
 
+    /** True when CoinQuest is the provisioned device owner -- the state that
+     *  lets it hard-block (suspend) the native game. app.js gates the native
+     *  game-launch feature on this the way it used to gate on accessibility. */
+    @JavascriptInterface
+    fun isDeviceOwner(): Boolean = GamePolicyManager.isDeviceOwner(activity)
+
+    /** Suspend (block) every enforced native game right now, so a game is
+     *  walled off by default whenever no coin-bought session is active.
+     *  app.js calls this on launch (and the game stays blocked until a session
+     *  unsuspends it). Never suspends the package of a currently-valid session.
+     *  No-op if not device owner. `csv` is the same comma-separated package
+     *  list app.js already passes to setEnforcedPackages. */
+    @JavascriptInterface
+    fun blockGames(csv: String) {
+        val pkgs = csv.split(',').map { it.trim() }.filter { it.isNotBlank() }
+        GamePolicyManager.block(activity, pkgs)
+    }
+
     @JavascriptInterface
     fun hasAccessibilityPermission(): Boolean {
         val expected = ComponentName(activity, GameTimeAccessibilityService::class.java)
@@ -233,6 +251,12 @@ class NativeGameBridge(private val activity: Activity, private val webView: WebV
     fun setEnforcedPackages(csv: String) {
         activity.getSharedPreferences(GameTimePrefs.NAME, android.content.Context.MODE_PRIVATE)
             .edit().putString(GameTimePrefs.ENFORCED_PACKAGES, csv.trim()).apply()
+        // Immediately assert the device-owner default block, so a game is
+        // suspended the moment the app knows about it -- not only after the
+        // first session ends. block() itself skips a currently-valid session's
+        // target, so this can't kill a game the child is legitimately playing.
+        val pkgs = csv.split(',').map { it.trim() }.filter { it.isNotBlank() }
+        GamePolicyManager.block(activity, pkgs)
     }
 
     /** Returns false immediately (no session started) if permissions are
@@ -241,8 +265,22 @@ class NativeGameBridge(private val activity: Activity, private val webView: WebV
     @JavascriptInterface
     fun startNativeSession(pkg: String, seconds: Int, childId: String): Boolean {
         if (seconds <= 0) return false
-        if (!hasOverlayPermission() || !hasAccessibilityPermission()) return false
+        // Enforcement now comes from being device owner (GamePolicyManager
+        // suspend/unsuspend), not the AccessibilityService -- a session that
+        // can't be enforced must never start, since enforcement is the whole
+        // point. The overlay permission is still required for the visible
+        // countdown. Accessibility is no longer required: it's used only for
+        // best-effort early-stop when the child leaves the game, and the
+        // session degrades gracefully (runs to full purchased time, then the
+        // game is re-suspended) if it isn't enabled.
+        if (!hasOverlayPermission()) return false
+        if (!GamePolicyManager.isDeviceOwner(activity)) return false
         val launchIntent = activity.packageManager.getLaunchIntentForPackage(pkg) ?: return false
+
+        // Unsuspend the game so it can actually launch -- it's suspended by
+        // default (blockGames/setEnforcedPackages). The overlay service re-
+        // suspends it when the session ends.
+        GamePolicyManager.allow(activity, pkg)
 
         activity.runOnUiThread {
             // Start the foreground overlay service BEFORE launching the game:

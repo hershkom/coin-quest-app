@@ -1,3 +1,27 @@
+**עדכון 2026-07-22 (6) — השורש האמיתי (אבחון על המכשיר דרך ADB): Family Link חוסם את שירות הנגישות. מעבר לארכיטקטורת Device Owner:**
+כל התיקונים (3)-(5) שיפרו קוד ש**מעולם לא רץ**. אבחון על המכשיר (Mi 10T, Android 12) דרך ADB חשף:
+`dumpsys accessibility` הראה `Crashed services:{...GameTimeAccessibilityService}`, ו-`accessibility_enabled=0`
+למרות שהמשתמש הפעיל את השירות; בקריאה שנייה `enabled_accessibility_services=null` — **מישהו כיבה אותו**.
+`dumpsys device_policy` הראה `Profile Owner (User 0): com.google.android.gms` (זה Family Link) עם
+`accessibility services: empty` — רשימת-היתר ריקה = **כל שירותי הנגישות של צד-שלישי חסומים במדיניות**.
+זו הגנה מכוונת של Family Link (שירות נגישות = הדרך הקלאסית לעקוף בקרת הורים). **מסקנה:** שירות נגישות
+וכספת המטבעות לא יכולים לחיות יחד עם Family Link על אותו פרופיל — Family Link מנצח כ-Profile Owner.
+זה הסביר את **שתי** התלונות בבת אחת: החסימה לא עבדה (השירות מת) והטיימר לא נעצר (ה-overlay שאל שירות מת
+וקיבל null). **הפתרון (בחירת המשתמש): Device Owner.** במקום שירות נגישות, כספת המטבעות מוקצית כ-device
+owner (`adb shell dpm set-device-owner com.coinquest.app.debug/com.coinquest.app.CoinQuestDeviceAdminReceiver`
+על מכשיר מאופס בלי חשבונות) ומשתמשת ב-`DevicePolicyManager.setPackagesSuspended` כדי **להשהות** את
+מיינקראפט כברירת מחדל — אפליקציה מושהית לא ניתנת להפעלה כלל (חסימה ברמת ה-OS, ש-Family Link לא נוכח
+בכלל כדי לחסום, כי אין פרופיל מפוקח). זרימה: ברירת מחדל = מיינקראפט מושהה; קניית זמן → `allow()` משחרר
+לפני הפעלה; סיום סשן (timeout/✖/עזיבה) → `block()` משהה שוב (זה גם ה-hard-stop של "נגמר הזמן" — המערכת
+מעיפה את הילד מהמשחק). **קבצים חדשים:** `CoinQuestDeviceAdminReceiver.kt`, `GamePolicyManager.kt`,
+`res/xml/device_admin.xml`. **שונו:** manifest (receiver של device-admin; הוסר ב-play flavor),
+`NativeGameBridge` (`isDeviceOwner()`, `blockGames()`, gating על device-owner במקום נגישות, `allow()` לפני הפעלה),
+`GameTimeOverlayService` (re-suspend בסיום; guard מפני overlay כפול — הבאג של "שני מונים"), `app.js`
+(gating + אזהרת אכיפה + הודעות על device-owner). שירות הנגישות נשאר **אופציונלי** לזיהוי-עזיבה מוקדם
+בלבד (עובד עכשיו כי אין Family Link), אך אינו נדרש להתחלת סשן. *אימות:* `assembleFamilyDebug` הצליח,
+30/30 Playwright עוברים. **דורש: איפוס מכשיר להגדרות יצרן, דילוג על חשבון Google, הקצאת device owner
+דרך ADB, ואז בדיקה בפועל.**
+
 **עדכון 2026-07-21 (5) — הטיימר עדיין לא נעצר (Samsung/One UI): מעבר לשאילתה אקטיבית + חזרה לאפליקציה במקום מסך הבית:**
 הפולינג מ-(4) עדיין הסתמך על `foregroundPackage` שמתעדכן רק מאירועי `TYPE_WINDOW_STATE_CHANGED` —
 ועל מכשירי Samsung/One UI (המכשיר של המשתמש) אירוע העזיבה (Home/Back) פשוט **לא נורה באופן אמין**

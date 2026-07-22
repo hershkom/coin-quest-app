@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Device-admin policy declaration for CoinQuestDeviceAdminReceiver. The
+     enforcement power we actually use (setPackagesSuspended, to hard-block the
+     purchased native game unless a coin-bought session is active) comes from
+     being provisioned as DEVICE OWNER via adb, not from these uses-policies,
+     which only gate the classic DeviceAdmin APIs. force-lock is declared so the
+     admin is a valid, activatable component; suspend needs no policy flag. -->
+<device-admin xmlns:android="http://schemas.android.com/apk/res/android">
+    <uses-policies>
+        <force-lock />
+    </uses-policies>
+</device-admin>

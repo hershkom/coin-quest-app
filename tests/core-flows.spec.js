@@ -450,7 +450,7 @@ test.describe('native game (real purchased app, e.g. Minecraft)', () => {
       window.CoinQuestNative = {
         isPackageInstalled: (pkg) => { calls.push(['isPackageInstalled', pkg]); return true; },
         hasOverlayPermission: () => true,
-        hasAccessibilityPermission: () => true,
+        isDeviceOwner: () => true, // enforcement now rests on device-owner status
         startNativeSession: (pkg, seconds) => { calls.push(['startNativeSession', pkg, seconds]); return true; },
       };
       const g = state.games.find(x => x.native);
@@ -462,17 +462,16 @@ test.describe('native game (real purchased app, e.g. Minecraft)', () => {
     expect(happyPath.calls[1]).toEqual(['startNativeSession', 'com.mojang.minecraftpe', 600]);
     expect(happyPath.wallet).toBe(400); // 600 - 200, NOT zeroed and NOT the full 600
 
-    // Missing permissions: a session that can't be enforced must never start,
-    // and the wallet must stay untouched.
+    // Missing overlay permission: a session that can't show its timer must
+    // never start, and the wallet must stay untouched. (Overlay is checked
+    // first, before device-owner status.)
     const blocked = await page.evaluate(async () => {
       const k = cur(); k.gtime = 300; await DB.set('cs_gtime_ariel', 300);
-      const requested = [];
       window.CoinQuestNative = {
         isPackageInstalled: () => true,
         hasOverlayPermission: () => false,
-        hasAccessibilityPermission: () => false,
-        requestOverlayPermission: () => requested.push('overlay'),
-        requestAccessibilityPermission: () => requested.push('accessibility'),
+        isDeviceOwner: () => true,
+        requestOverlayPermission: () => {},
         startNativeSession: () => { throw new Error('must not be called without permissions'); },
       };
       const g = state.games.find(x => x.native);
@@ -481,6 +480,23 @@ test.describe('native game (real purchased app, e.g. Minecraft)', () => {
     });
     await expect(page.locator('#modalContent')).toContainText('נדרשת הרשאה חד-פעמית');
     expect(blocked.walletUntouched).toBe(300);
+
+    // Not device owner: overlay is fine but enforcement isn't provisioned, so
+    // the game must not launch and the wallet must stay untouched.
+    const notOwner = await page.evaluate(async () => {
+      const k = cur(); k.gtime = 300; await DB.set('cs_gtime_ariel', 300);
+      window.CoinQuestNative = {
+        isPackageInstalled: () => true,
+        hasOverlayPermission: () => true,
+        isDeviceOwner: () => false,
+        startNativeSession: () => { throw new Error('must not be called when not device owner'); },
+      };
+      const g = state.games.find(x => x.native);
+      await startNativeGameSession(g);
+      return { walletUntouched: await DB.get('cs_gtime_ariel') };
+    });
+    await expect(page.locator('#modalContent')).toContainText('המכשיר לא מוגדר לאכיפה');
+    expect(notOwner.walletUntouched).toBe(300);
   });
 });
 

@@ -18,6 +18,10 @@
     <application>
         <service android:name=".GameTimeAccessibilityService" tools:node="remove" />
         <service android:name=".GameTimeOverlayService" tools:node="remove" />
+        <!-- Device-owner enforcement is a family-sideload-only mechanism; a
+             DeviceAdminReceiver in a Play listing is both unusable (Play devices
+             are never dpm-provisioned as device owner) and a policy red flag. -->
+        <receiver android:name=".CoinQuestDeviceAdminReceiver" tools:node="remove" />
     </application>
 
 </manifest>

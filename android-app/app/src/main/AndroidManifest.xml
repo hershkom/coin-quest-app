@@ -78,6 +78,27 @@
                 android:value="game-time-enforcement-overlay" />
         </service>
 
+        <!-- Device-owner admin component. Provisioned once per device with
+             "adb shell dpm set-device-owner" (component
+             com.coinquest.app.debug/com.coinquest.app.CoinQuestDeviceAdminReceiver
+             for the family-debug build) on a factory-reset device with no
+             accounts. This is what grants GamePolicyManager the power to
+             setPackagesSuspended the purchased native game (Minecraft) unless a
+             coin-bought session is active: the enforcement mechanism that
+             replaced the AccessibilityService, which Google Family Link
+             force-disables. -->
+        <receiver
+            android:name=".CoinQuestDeviceAdminReceiver"
+            android:permission="android.permission.BIND_DEVICE_ADMIN"
+            android:exported="true">
+            <meta-data
+                android:name="android.app.device_admin"
+                android:resource="@xml/device_admin" />
+            <intent-filter>
+                <action android:name="android.app.action.DEVICE_ADMIN_ENABLED" />
+            </intent-filter>
+        </receiver>
+
         <!-- AN5: daily chore-reminder alarm (ACTION_FIRE, targeted directly by
              ChoreReminderScheduler's PendingIntent) + BOOT_COMPLETED re-arm. -->
         <receiver android:name=".ReminderReceiver" android:exported="false">
