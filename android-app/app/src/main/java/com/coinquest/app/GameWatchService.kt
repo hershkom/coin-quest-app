@@ -68,10 +68,19 @@ class GameWatchService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        // A parent's own install (Settings -> "מכשיר זה שייך להורה") has no
+        // child to enforce against -- refuse to even start polling, and stop
+        // ourselves immediately if something (boot, a stale alarm) tried to
+        // start us anyway.
+        if (isParentDeviceMode()) { stopSelf(); return START_NOT_STICKY }
         handler.removeCallbacks(poll)
         handler.post(poll)
         return START_STICKY
     }
+
+    private fun isParentDeviceMode(): Boolean =
+        getSharedPreferences(GameTimePrefs.NAME, Context.MODE_PRIVATE)
+            .getBoolean(GameTimePrefs.PARENT_DEVICE_MODE, false)
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -97,6 +106,7 @@ class GameWatchService : Service() {
     }
 
     private fun scheduleRestartIfEnforcing() {
+        if (isParentDeviceMode()) return
         // Only bother if a game is actually configured for enforcement.
         val enforced = getSharedPreferences(GameTimePrefs.NAME, Context.MODE_PRIVATE)
             .getString(GameTimePrefs.ENFORCED_PACKAGES, null) ?: ""
@@ -118,6 +128,10 @@ class GameWatchService : Service() {
     }
 
     private fun enforceOnce() {
+        // Defense in depth: the flag could flip to true while we're already
+        // mid-poll-loop (parent enables it from Settings without restarting the
+        // app) -- stop cleanly instead of waiting for the next onStartCommand.
+        if (isParentDeviceMode()) { hideBlockOverlay(); stopSelf(); return }
         val prefs = getSharedPreferences(GameTimePrefs.NAME, Context.MODE_PRIVATE)
         val enforced = (prefs.getString(GameTimePrefs.ENFORCED_PACKAGES, null) ?: "")
             .split(',').filter { it.isNotBlank() }.toMutableSet()

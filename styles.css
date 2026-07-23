@@ -448,6 +448,8 @@
      rich gallery -- distinct from emoji-pick-btn (which IS an emoji choice). */
   .emoji-pick-trigger{width:44px;height:44px;border-radius:13px;border:2px solid var(--line);background:#fff;font-size:1.3rem;cursor:pointer;flex-shrink:0;}
   .emoji-pick-trigger:active{transform:scale(.92);background:#F2F0FB;}
+  .req-toggle{display:inline-flex;align-items:center;gap:5px;font-size:.76rem;font-weight:700;color:var(--coral-d);cursor:pointer;}
+  .req-toggle input{width:15px;height:15px;accent-color:var(--coral);cursor:pointer;}
   .chore-info{flex:1;min-width:0;}
   .chore-info .ci-t{font-weight:800;font-size:1.05rem;}
   .chore-info .ci-d{font-size:.82rem;color:var(--muted);margin-top:2px;}

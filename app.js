@@ -242,7 +242,11 @@ function earnedBadgeCount(k){
 }
 function renderBadgesBanner(){
   const wrap=document.getElementById('badgesBannerWrap'); if(!wrap) return;
-  const k=cur(); if(!k){ wrap.innerHTML=''; return; }
+  const k=cur();
+  // No badges defined at all (a parent who removed every one from the admin
+  // "תגים" tab) -- there's nothing meaningful to show ("אספת 0 מתוך 0 תגים"
+  // reads as broken, not as "feature turned off"), so hide the banner entirely.
+  if(!k||!state.badgeDefs.length){ wrap.innerHTML=''; return; }
   wrap.innerHTML=`<button class="badges-banner" onclick="go('badges')">
     <span class="bb-ic">🏅</span>
     <span class="bb-text">אספת ${earnedBadgeCount(k)} מתוך ${state.badgeDefs.length} תגים</span>
@@ -1563,6 +1567,29 @@ function currentPeriodKey(){
   if(hour>=state.anchored.sleep_time||hour<5) return 'sleep';
   return getTimeOfDay(hour);
 }
+// Tasks marked `required` that must be done before the child is allowed to
+// actually PLAY a game -- distinct from just being eligible to earn coins.
+// Doesn't block earning/banking coins or buying game-time with them, only
+// launching a game (beginGameLaunch), which is the exact moment "spent every
+// banked coin on screen time without ever doing the required chores" would
+// otherwise happen. A period-tagged required task only blocks once its
+// window has actually STARTED today (order up to and including the current
+// period, so a missed morning requirement still blocks play in the evening,
+// not just during the morning itself); an anytime required task (no period)
+// blocks all day until done.
+function pendingRequiredTasks(childId){
+  const k=state.kid[childId]; if(!k) return [];
+  const order=['morning','afternoon','evening'];
+  const cur=currentPeriodKey();
+  const curIdx=cur==='sleep'?order.length-1:order.indexOf(cur);
+  return state.chores.filter(t=>{
+    if(!t.required||!taskForChild(t,childId)) return false;
+    if((k.daily.counts[t.id]||0)>=t.max) return false;
+    if(!t.period) return true;
+    const idx=order.indexOf(t.period);
+    return idx>=0&&idx<=curIdx;
+  });
+}
 // Tasks anchored to a SPECIFIC period only (strict match -- an "anytime" task
 // with no period is deliberately excluded here so a caller that loops over
 // every period, like renderFirstThen()'s remaining-tasks scan, doesn't see the
@@ -1817,6 +1844,12 @@ const GT_WARN_STEPS=[300,120,30]; // seconds-left marks that trigger a warning
 // coinsPerCorrect still applies via the normal answerLearningQuestion path.
 let _gateSession=null; // {questions, idx, onDone}
 function beginGameLaunch(g){
+  const missing=pendingRequiredTasks(state.current);
+  if(missing.length){
+    const names=missing.map(t=>t.emoji+' '+t.label).join(', ');
+    modalConfirm('🎯','קודם המטלות!','כדי לשחק צריך קודם לסיים: '+names+'.\nלסרוק עכשיו?',()=>{ openScan(); });
+    return;
+  }
   const launch=()=> g.native ? startNativeGameSession(g) : startGameSession(g.id);
   if(!state.learning.gateEnabled || !state.learning.enabled){ launch(); return; }
   const qs=pickSessionQuestions().slice(0,3);
@@ -1877,15 +1910,25 @@ function answerGateQuestion(given){
     setTimeout(renderGateQuestion, 900);
   }
 }
-async function startGameSession(gameId){
-  const k=cur(), g=state.games.find(x=>x.id===gameId);
-  if(!k||!g||(k.gtime||0)<=0) return;
+// `bathroomSeconds`: set only by startBathroomSession() (parent-triggered,
+// PIN-gated, capped at 10 minutes) for a game explicitly marked
+// bathroomApproved -- runs the exact same overlay/countdown/exit-button UI as
+// a normal wallet-backed session, but never reads or writes the coin wallet
+// (see the `_gt.bathroom` guards in gtPersist/endGameSession). Deliberately
+// NOT part of the coin economy: crediting leftover minutes back to the
+// wallet would let a child start-then-immediately-cancel a bathroom session
+// to mint free game time.
+async function startGameSession(gameId,bathroomSeconds){
+  const g=state.games.find(x=>x.id===gameId); if(!g) return;
+  const bathroom=bathroomSeconds>0;
+  const k=cur();
+  if(!bathroom&&(!k||(k.gtime||0)<=0)) return;
   document.getElementById('gameFrame').src=g.url;
   document.getElementById('gameOverlay').style.display='block';
   document.getElementById('gtWarnBanner').style.display='none';
   document.getElementById('gameTimerChip').classList.remove('warning');
-  _gt={gameId, baseMono:performance.now(), baseWallet:k.gtime, warned:{}, paused:false,
-       lastPersist:performance.now(), interval:setInterval(gtTick,1000)};
+  _gt={gameId, baseMono:performance.now(), baseWallet:bathroom?bathroomSeconds:k.gtime, warned:{}, paused:false,
+       lastPersist:performance.now(), interval:setInterval(gtTick,1000), bathroom};
   updateKeepScreenOn();
   gtTick();
   // Some sites refuse to be embedded (X-Frame-Options / frame-ancestors) —
@@ -1910,7 +1953,7 @@ function gtRemaining(){
   return _gt.baseWallet-Math.floor((performance.now()-_gt.baseMono)/1000);
 }
 async function gtPersist(){
-  if(!_gt) return;
+  if(!_gt||_gt.bathroom) return; // a bathroom session never touches the coin wallet
   const k=cur(); if(!k) return;
   k.gtime=Math.max(0,gtRemaining());
   await DB.set('cs_gtime_'+state.current,k.gtime);
@@ -1937,8 +1980,9 @@ function gtTick(){
 }
 async function endGameSession(expired){
   if(!_gt) return;
+  const wasBathroom=_gt.bathroom;
   clearInterval(_gt.interval);
-  await gtPersist();
+  await gtPersist(); // no-op for a bathroom session (see the guard inside)
   _gt=null;
   updateKeepScreenOn();
   document.getElementById('gameFrame').src='about:blank'; // actually stop the game
@@ -1946,7 +1990,8 @@ async function endGameSession(expired){
   renderGamesView(); renderGameTimeBanner();
   scheduleSync();
   if(expired){
-    modalMsg('⏰','הזמן נגמר!','זמן המשחק שקנית הסתיים.\nאפשר להרוויח עוד מטבעות ולהמיר אותם לזמן משחק חדש! 💪');
+    if(wasBathroom) modalMsg('🚽','הזמן נגמר','זמן המשחק לשירותים הסתיים. כל הכבוד! 🎉');
+    else modalMsg('⏰','הזמן נגמר!','זמן המשחק שקנית הסתיים.\nאפשר להרוויח עוד מטבעות ולהמיר אותם לזמן משחק חדש! 💪');
   }
 }
 /* ---- native game sessions (a REAL purchased app, e.g. Minecraft) ----
@@ -2015,6 +2060,30 @@ function openEnforcementSettings(){
 function updateChoreReminderCardVisibility(){
   const card=document.getElementById('choreReminderCard');
   if(card) card.style.display=isNativeGameAvailable()?'':'none';
+}
+
+/* ---- parent-device mode (native-only): this install has no child to
+   enforce against, so let the parent turn off the background game-time
+   watcher entirely on it. ---- */
+function updateParentDeviceModeCardVisibility(){
+  const card=document.getElementById('parentDeviceModeCard');
+  if(!card) return;
+  card.style.display=isNativeGameAvailable()?'':'none';
+  if(!isNativeGameAvailable()) return;
+  const on=typeof window.CoinQuestNative.isParentDeviceMode==='function'&&window.CoinQuestNative.isParentDeviceMode();
+  const btn=document.getElementById('parentDeviceModeToggle');
+  if(btn){ btn.textContent=on?'פעיל ✓ (לחץ לכיבוי)':'כבוי (לחץ להפעלה)'; btn.className='btn sm'+(on?' mint':''); }
+}
+function toggleParentDeviceMode(){
+  if(!isNativeGameAvailable()||typeof window.CoinQuestNative.setParentDeviceMode!=='function') return;
+  const wasOn=typeof window.CoinQuestNative.isParentDeviceMode==='function'&&window.CoinQuestNative.isParentDeviceMode();
+  const turnOn=!wasOn;
+  const apply=()=>{ window.CoinQuestNative.setParentDeviceMode(turnOn); updateParentDeviceModeCardVisibility(); toast(turnOn?'הפיקוח כובה במכשיר הזה ✓':'הפיקוח הופעל מחדש ✓'); };
+  if(turnOn){
+    modalConfirm('👨‍👩‍👧','זה המכשיר שלך?','זה יכבה לגמרי את הפיקוח על זמן משחק במכשיר הזה. השתמש בזה רק על המכשיר האישי של ההורה — לא על המכשיר של הילד/ה!',apply);
+  }else{
+    apply();
+  }
 }
 function fillChoreReminderSettings(){
   const t=document.getElementById('choreReminderTime'); if(!t) return;
@@ -2103,6 +2172,15 @@ async function startNativeGameSession(g){
 // active profile now. Older APKs called this with one argument -- fall back to
 // state.current so a stale wrapper still debits (the old, if imperfect, behavior).
 async function onNativeGameSessionEnded(consumedSeconds,childId){
+  // Bathroom sessions (startBathroomSession) use this sentinel childId
+  // specifically so this callback can recognize them and skip ALL wallet
+  // handling -- they were never debited from anyone's coin wallet to begin
+  // with (see startBathroomSession), so there's nothing to credit back either.
+  if(childId===BATHROOM_SESSION_CHILD_ID){
+    if(currentView==='games') renderGamesView();
+    modalMsg('🚽','הזמן נגמר','זמן המשחק לשירותים הסתיים. כל הכבוד! 🎉');
+    return;
+  }
   const id=childId||state.current; if(!id) return;
   // Debit against the specific child. That child may not be the active profile
   // and may not be loaded in memory, so load them before touching the wallet.
@@ -2241,7 +2319,7 @@ function adminTab(t){
   if(t==='events') renderEventsAdmin();
   if(t==='badges') renderBadgesAdmin();
   if(t==='report') renderReportAdmin();
-  if(t==='settings'){ fillAccountSettings(); fillCalmToggle(); fillChoreReminderSettings(); renderEnforcementWarning(); }
+  if(t==='settings'){ fillAccountSettings(); fillCalmToggle(); fillChoreReminderSettings(); renderEnforcementWarning(); updateParentDeviceModeCardVisibility(); }
 }
 async function renderCalmLogStats(){
   const el=document.getElementById('calmLogStats'); if(!el) return;
@@ -2591,9 +2669,12 @@ function renderChoresAdmin(){
     const gapCtrl=ch.max>1
       ? `<input type="number" value="${ch.minGapMin||''}" min="0" placeholder="1 דק'" title="מרווח מינימלי בין פעמים (בדקות, ריק=רגיל)" style="width:64px;border:2px solid var(--line);border-radius:10px;padding:5px;text-align:center;font-family:inherit;font-size:.76rem;" onchange="updateChoreGap(${i},this.value)">`
       : '';
+    // "Required" blocks actually PLAYING a game (not earning/banking coins)
+    // until this task is done -- see pendingRequiredTasks()/beginGameLaunch().
+    const requiredCtrl=`<label class="req-toggle" title="חובה לפני שאפשר לשחק"><input type="checkbox" ${ch.required?'checked':''} onchange="updateChoreRequired(${i},this.checked)"> 🎯 חובה למשחקים</label>`;
     row.innerHTML=`<span class="drag-handle" title="גרור לשינוי הסדר">⠿</span>${icon}
       <span class="t">${esc(ch.label)}<br><span style="font-size:.72rem;color:var(--muted);font-weight:400;">עד ${ch.max} פעמים ביום · </span>${kidChipsHtml('chores',i,ch)}
-        <div style="margin-top:5px;display:flex;gap:6px;align-items:center;flex-wrap:wrap;">${periodSel}${gapCtrl}${photoCtrl}</div></span>
+        <div style="margin-top:5px;display:flex;gap:6px;align-items:center;flex-wrap:wrap;">${periodSel}${gapCtrl}${photoCtrl}${requiredCtrl}</div></span>
       <input type="number" value="${ch.points}" min="1" style="width:62px;border:2px solid var(--line);border-radius:10px;padding:7px;text-align:center;font-family:inherit;font-weight:700;" onchange="updateChorePoints(${i},this.value)">
       <button class="icon-btn" onclick="delChore(${i})">🗑️</button>`;
     c.appendChild(row);
@@ -2611,6 +2692,10 @@ async function updateChorePeriod(i,v){
 async function updateChoreGap(i,v){
   const n=parseInt(v);
   if(n>0) state.chores[i].minGapMin=n; else delete state.chores[i].minGapMin;
+  await DB.set('cs_chores',state.chores); toast('עודכן ✓');
+}
+async function updateChoreRequired(i,checked){
+  if(checked) state.chores[i].required=true; else delete state.chores[i].required;
   await DB.set('cs_chores',state.chores); toast('עודכן ✓');
 }
 async function attachChorePhoto(i,input){
@@ -2632,10 +2717,13 @@ async function addChore(){
   const emoji=document.getElementById('newChoreEmoji').value.trim()||'⭐';
   const points=parseInt(document.getElementById('newChorePoints').value)||5, max=parseInt(document.getElementById('newChoreMax').value)||1;
   const period=document.getElementById('newChorePeriod').value;
+  const required=document.getElementById('newChoreRequired').checked;
   const task={id:'chore_'+Date.now().toString(36),label,emoji,points,max};
   if(period) task.period=period;
+  if(required) task.required=true;
   state.chores.push(task); await DB.set('cs_chores',state.chores);
   document.getElementById('newChoreLabel').value=''; document.getElementById('newChoreEmoji').value='';
+  document.getElementById('newChoreRequired').checked=false;
   renderChoresAdmin(); toast('נוסף! ✓');
 }
 async function updateSleepTime(){
@@ -2712,15 +2800,22 @@ async function renderReportAdmin(){
 
 /* ===== STREAK ADMIN ===== */
 let adminStreakId=null;
-function fillStreakAdmin(){
+// `explicitId`: passed by the <select>'s own onchange (this.value -- the
+// selection the user just picked, before adminStreakId itself has been
+// updated to match) so it wins over whatever adminStreakId still holds.
+// Callers that already set adminStreakId themselves first (addStreak,
+// delStreak) call this with no argument, so THEIR choice wins instead of
+// whatever the <select> happened to display previously.
+function fillStreakAdmin(explicitId){
   const sel=document.getElementById('streakSel');
-  const selectedBefore=document.getElementById('streakSel').value;
   sel.innerHTML='';
   state.streaks.forEach(st=>{ const o=document.createElement('option'); o.value=st.id; o.textContent=(st.icon||'🌟')+' '+st.title; sel.appendChild(o); });
-  adminStreakId=selectedBefore&&getStreak(selectedBefore)?selectedBefore:(adminStreakId&&getStreak(adminStreakId)?adminStreakId:state.streaks[0].id);
+  const requested=explicitId||adminStreakId;
+  adminStreakId=requested&&getStreak(requested)?requested:state.streaks[0].id;
   sel.value=adminStreakId;
   const s=getStreak(adminStreakId);
   document.getElementById('streakTitle').value=s.title;
+  document.getElementById('streakIcon').value=s.icon||'🌟';
   const childSel=document.getElementById('streakChildSel'); childSel.innerHTML='';
   state.children.forEach(c=>{ const o=document.createElement('option'); o.value=c.id; o.textContent=c.emoji+' '+c.name; if(c.id===s.childId) o.selected=true; childSel.appendChild(o); });
   document.getElementById('streakGoal').value=s.goal;
@@ -2733,9 +2828,33 @@ function fillStreakAdmin(){
   renderAdminCalendar();
   fillStreakFreezeStatus();
 }
+async function addStreak(){
+  const s={id:'streak_'+Date.now().toString(36),title:'אתגר חדש',dayWord:'אתגר חדש',icon:'🌟',
+    childId:(state.children[0]||{}).id||'',goal:14,rewardLabel:'פרס','rewardEmoji':'🎁',days:{},current:0,best:0,wonAt:null};
+  state.streaks.push(s);
+  await DB.set('cs_streaks',state.streaks);
+  scheduleSync();
+  adminStreakId=s.id;
+  fillStreakAdmin();
+  toast('אתגר נוסף — ערוך את הפרטים ושמור ✓');
+}
+async function delStreak(){
+  if(state.streaks.length<=1){ toast('צריך לפחות אתגר רצף אחד'); return; }
+  const s=getStreak(adminStreakId); if(!s) return;
+  modalConfirm('🗑️','למחוק את "'+s.title+'"?','כל ההיסטוריה של האתגר הזה (הרצף הנוכחי, השיא, הלוח) תימחק לצמיתות.', async()=>{
+    state.streaks=state.streaks.filter(x=>x.id!==adminStreakId);
+    await DB.set('cs_streaks',state.streaks);
+    scheduleSync();
+    adminStreakId=null; // fillStreakAdmin falls back to state.streaks[0]
+    fillStreakAdmin();
+    toast('האתגר נמחק');
+  });
+}
 async function saveStreakConfig(){
   const s=getStreak(adminStreakId); if(!s) return;
   s.title=document.getElementById('streakTitle').value.trim()||s.title;
+  s.dayWord=s.title; // shown in child-facing copy ("today was a ___ day!") -- always matches the title, one field to manage instead of two
+  s.icon=document.getElementById('streakIcon').value.trim()||'🌟';
   const newChildId=document.getElementById('streakChildSel').value;
   if(newChildId!==s.childId){
     // Reassigning to a different child must not hand them the previous
@@ -3101,10 +3220,12 @@ function renderGamesAdmin(){
     const sub=g.native
       ? '📱 אפליקציה אמיתית באנדרואיד · '+esc(g.androidPackage)
       : esc(g.url||'');
-    row.innerHTML=`<span class="emoji">${g.emoji}</span><span class="t">${esc(g.label)}<br><span style="font-size:.68rem;color:var(--muted);font-weight:400;direction:ltr;display:inline-block;">${sub}</span></span>
+    row.innerHTML=`<span class="emoji">${g.emoji}</span><span class="t">${esc(g.label)}<br><span style="font-size:.68rem;color:var(--muted);font-weight:400;direction:ltr;display:inline-block;">${sub}</span>
+        <div style="margin-top:5px;"><label class="req-toggle" style="color:var(--sky-d);"><input type="checkbox" ${g.bathroomApproved?'checked':''} onchange="updateGameBathroomApproved(${i},this.checked)"> 🚽 מאושר לזמן שירותים</label></div></span>
       <button class="icon-btn" onclick="delGame(${i})">🗑️</button>`;
     c.appendChild(row);
   });
+  renderBathroomSessionAdmin();
   // per-child wallet adjustment
   const w=document.getElementById('gtAdminWallets'); w.innerHTML='';
   state.children.forEach(ch=>{
@@ -3117,6 +3238,56 @@ function renderGamesAdmin(){
   });
 }
 async function delGame(i){ await delWithUndo(state.games,i,'cs_games',renderGamesAdmin,'המשחק'); }
+async function updateGameBathroomApproved(i,checked){
+  if(checked) state.games[i].bathroomApproved=true; else delete state.games[i].bathroomApproved;
+  await DB.set('cs_games',state.games);
+  renderBathroomSessionAdmin(); toast('עודכן ✓');
+}
+// Sentinel childId used only by bathroom sessions (see onNativeGameSessionEnded) --
+// never a real child id, so it can never accidentally match or debit a
+// real wallet even if something else calls the native bridge unexpectedly.
+const BATHROOM_SESSION_CHILD_ID='__bathroom__';
+function renderBathroomSessionAdmin(){
+  const wrap=document.getElementById('bathroomSessionAdmin'); if(!wrap) return;
+  const approved=state.games.filter(g=>g.bathroomApproved);
+  if(!approved.length){
+    wrap.innerHTML='<div class="card-sub">סמן משחק אחד לפחות כ"מאושר לזמן שירותים" למעלה כדי להפעיל כאן.</div>';
+    return;
+  }
+  wrap.innerHTML=`<select id="bathroomGameSelect" style="width:100%;border:2px solid var(--line);border-radius:13px;padding:11px;font-family:inherit;margin-bottom:10px;">
+      ${approved.map(g=>`<option value="${g.id}">${g.emoji} ${esc(g.label)}</option>`).join('')}
+    </select>
+    <div class="inline-row" style="margin-bottom:12px;align-items:flex-end;">
+      <div class="field"><label>דקות (עד 10)</label><input id="bathroomMinutes" type="number" value="10" min="1" max="10"></div>
+      <button class="btn sky" style="flex:1;" onclick="startBathroomSession()">🚽 התחל עכשיו ל${curChild()?esc(curChild().name):'הילד/ה הפעיל/ה'}</button>
+    </div>`;
+}
+// Parent-triggered (already behind the admin PIN gate), for the specific
+// real-world moment of "go sit on the toilet now, here's a game to help" --
+// grants up to 10 minutes of ONE explicitly bathroomApproved game to the
+// currently active child, completely outside the coin economy (see the
+// _gt.bathroom / BATHROOM_SESSION_CHILD_ID guards elsewhere). Not something
+// the child can trigger themselves, and not deducted from or credited to
+// any wallet -- it's a fixed, capped grant each time a parent starts one.
+async function startBathroomSession(){
+  const sel=document.getElementById('bathroomGameSelect'); if(!sel) return;
+  const g=state.games.find(x=>x.id===sel.value);
+  if(!g){ toast('סמן קודם משחק כמאושר לזמן שירותים'); return; }
+  const minutes=Math.max(1,Math.min(10,parseInt(document.getElementById('bathroomMinutes').value)||10));
+  const seconds=minutes*60;
+  if(g.native){
+    if(!isNativeGameAvailable()){ modalMsg('📱','זמין רק באפליקציה','המשחק הזה עובד רק כשפותחים את כספת המטבעות מתוך אפליקציית האנדרואיד.'); return; }
+    if(!window.CoinQuestNative.isPackageInstalled(g.androidPackage)){ modalMsg('🤔','המשחק לא מותקן','לא מצאנו את '+g.label+' מותקן במכשיר.'); return; }
+    if(!window.CoinQuestNative.hasOverlayPermission()){ modalMsg('🔒','נדרשת הרשאה','צריך לאשר הרשאת "חלון צף" בהגדרות המכשיר קודם (מסך המשחקים יבקש זאת בפעם הראשונה שמפעילים משחק רגיל).'); return; }
+    exitAdmin();
+    const started=window.CoinQuestNative.startNativeSession(g.androidPackage,seconds,BATHROOM_SESSION_CHILD_ID);
+    if(!started){ toast('לא הצלחתי להתחיל את המשחק'); return; }
+    toast('🚽 '+g.emoji+' '+g.label+' נפתח ל-'+minutes+' דקות');
+  }else{
+    exitAdmin();
+    startGameSession(g.id,seconds);
+  }
+}
 function toggleNewGameNative(){
   const native=document.getElementById('newGameNative').checked;
   document.getElementById('newGameUrlField').style.display=native?'none':'block';
@@ -3285,7 +3456,16 @@ function updateChatNavVisibility(){
 
 /* ===== MODALS ===== */
 const modalBg=document.getElementById('modalBg'), modalContent=document.getElementById('modalContent');
-function closeModal(){ modalBg.classList.remove('show'); stopSpeaking(); }
+function closeModal(){
+  modalBg.classList.remove('show');
+  stopSpeaking();
+  // Hiding the modal via CSS doesn't remove focus from an input inside it --
+  // the input (e.g. modalPin's numeric PIN field) stays focused even though
+  // it's now invisible, so the on-screen keyboard stays open on mobile,
+  // covering part of the screen until the child/parent manually dismisses
+  // it. Blur whatever's focused inside the modal so the keyboard closes with it.
+  if(document.activeElement&&modalContent.contains(document.activeElement)) document.activeElement.blur();
+}
 modalBg.addEventListener('click',e=>{ if(e.target===modalBg) closeModal(); });
 function modalMsg(emoji,title,text){ modalContent.innerHTML=`<div class="m-emoji">${emoji}</div><h3>${esc(title)}</h3><p style="white-space:pre-line;">${esc(text)}</p><button class="btn primary" onclick="closeModal()">יאללה!</button>`; modalBg.classList.add('show'); }
 function modalConfirm(emoji,title,text,onYes){
@@ -5061,6 +5241,7 @@ window.addEventListener('unhandledrejection', (ev)=>{
     GROQ_API_KEY=localStorage.getItem('cs_groq_key')||'';
     updateChatNavVisibility();
     updateChoreReminderCardVisibility();
+    updateParentDeviceModeCardVisibility();
     checkForAppUpdate(); // fire-and-forget: never blocks startup on a network round-trip
     await detectBackend();
     await loadState();

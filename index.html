@@ -309,7 +309,7 @@
       </div>
 
       <div class="admin-pane" id="pane-chores" style="display:none;">
-        <div class="card"><div class="card-h">מטלות</div><div class="card-sub">הילד/ה סורק/ת את קוד ה-QR של המטלה כדי לקבל את המטבעות (לשונית 🔳 QR). אפשר להגביל כל מטלה למספר פעמים ביום, ואופציונלית לשייך אותה לחלון זמן קבוע (בוקר/צהריים/ערב) — כך היא תופיע רק אז במסך "עכשיו" של הילד; בלי שיוך היא זמינה כל היום.</div></div>
+        <div class="card"><div class="card-h">מטלות</div><div class="card-sub">הילד/ה סורק/ת את קוד ה-QR של המטלה כדי לקבל את המטבעות (לשונית 🔳 QR). אפשר להגביל כל מטלה למספר פעמים ביום, ואופציונלית לשייך אותה לחלון זמן קבוע (בוקר/צהריים/ערב) — כך היא תופיע רק אז במסך "עכשיו" של הילד; בלי שיוך היא זמינה כל היום. סימון מטלה כ-🎯 "חובה למשחקים" חוסם הפעלת משחקים (לא צבירת מטבעות) עד שהיא מבוצעת לאותו יום — כדי שאי אפשר יהיה לנצל זמן מסך שנחסך בלי לבצע את המטלות שחלון הזמן שלהן כבר התחיל.</div></div>
         <div id="choresAdmin"></div>
         <div class="card">
           <div class="card-h" style="margin-bottom:6px;">🛏️ זמן שינה</div>
@@ -336,6 +336,7 @@
               <option value="evening">🌆 ערב</option>
             </select>
           </div>
+          <label class="req-toggle" style="margin-bottom:12px;"><input type="checkbox" id="newChoreRequired"> 🎯 חובה לפני שאפשר לשחק במשחקים</label>
           <!-- G6 (ANDROID-APP-PLAN.md): curated set so a parent doesn't need
                to know how to open an emoji keyboard, and a non-reading child
                gets a clear, recognizable picture for the task. Picking one
@@ -349,8 +350,20 @@
       <div class="admin-pane" id="pane-streak" style="display:none;">
         <div class="card"><div class="card-h">🌟 אתגרי רצף יומי</div><div class="card-sub">לוח רצף יומי לכל אתגר. כל יום מסומן מצטרף לרצף; תקרית מאפסת אותו. בהגעה למטרה — פרס!</div></div>
         <div class="card">
-          <div class="field"><label>אתגר</label><select id="streakSel" onchange="fillStreakAdmin()"></select></div>
+          <div class="field"><label>אתגר</label>
+            <div style="display:flex;gap:6px;align-items:center;">
+              <select id="streakSel" onchange="fillStreakAdmin(this.value)" style="flex:1;"></select>
+              <button type="button" class="icon-btn" title="אתגר חדש" onclick="addStreak()">➕</button>
+              <button type="button" class="icon-btn" title="מחק אתגר" onclick="delStreak()">🗑️</button>
+            </div>
+          </div>
           <div class="field"><label>שם האתגר</label><input id="streakTitle" placeholder="יום נקי"></div>
+          <div class="field"><label>אימוג'י האתגר</label>
+            <div style="display:flex;gap:6px;">
+              <input id="streakIcon" placeholder="🌟" maxlength="2" style="flex:1;min-width:0;">
+              <button type="button" class="emoji-pick-trigger" onclick="openEmojiPicker('streakIcon')">😀</button>
+            </div>
+          </div>
           <div class="field"><label>הילד/ה</label><select id="streakChildSel"></select></div>
           <div class="inline-row" style="margin-bottom:12px;">
             <div class="field"><label>מטרה (ימים ברצף)</label><input id="streakGoal" type="number" value="30" min="1"></div>
@@ -552,6 +565,11 @@
           <div class="card-sub">חבילות "דקות משחק" מוגדרות בלשונית 🎁 פרסים — פרס עם שדה "דקות משחק" נזקף אוטומטית לארנק הזמן של הילד ברגע ההמרה, בלי שום אישור נוסף.</div>
         </div>
         <div class="card">
+          <div class="card-h" style="margin-bottom:6px;">🚽 זמן שירותים</div>
+          <div class="card-sub" style="margin-bottom:10px;">מיועד לרגע הספציפי שבו אתה אומר לילד/ה ללכת לשבת בשירותים — נותן עד 10 דקות ממשחק מאושר, לילד/ה שנבחר/ת כרגע, בלי לקחת מהארנק של המטבעות (וגם בלי להוסיף אליו זמן שלא נוצל). סמן משחק כ"מאושר לזמן שירותים" ברשימה למעלה, ואז הפעל כאן.</div>
+          <div id="bathroomSessionAdmin"></div>
+        </div>
+        <div class="card">
           <div class="card-h" style="margin-bottom:6px;">⏱️ תיקון ארנק זמן</div>
           <div class="card-sub" style="margin-bottom:10px;">להוסיף/להוריד דקות ידנית לילד הנוכחי בבית (לפיצוי או קנס):</div>
           <div id="gtAdminWallets"></div>
@@ -671,6 +689,17 @@
         <div class="card" id="enforcementWarning" style="display:none;background:#FFEBEB;border:2px solid var(--coral);">
           <div class="ew-text" style="font-weight:800;margin-bottom:8px;"></div>
           <button class="btn coral sm" onclick="openEnforcementSettings()">פתח הגדרות והפעל מחדש</button>
+        </div>
+        <!-- Native-only: this install IS the parent's own phone (used for
+             remote admin/control), not a child's -- there's no one here to
+             enforce screen time against, so the always-on watcher/
+             notification/suspended-games-list is pure downside. -->
+        <div class="card" id="parentDeviceModeCard" style="display:none;">
+          <div class="field" style="display:flex;align-items:center;justify-content:space-between;">
+            <label style="margin:0;">👨‍👩‍👧 מכשיר זה שייך להורה</label>
+            <button class="btn sm" id="parentDeviceModeToggle" onclick="toggleParentDeviceMode()">כבוי</button>
+          </div>
+          <div class="card-sub" style="margin-top:8px;">כשמופעל, כספת המטבעות מפסיקה לפקח על זמן משחק במכשיר הזה (אין שירות רקע, אין חסימת משחקים) — כי זה המכשיר שלך, לא של הילד/ה.</div>
         </div>
         <!-- AN8: native-only, hidden unless checkForAppUpdate() finds a
              newer versionCode than this install. -->

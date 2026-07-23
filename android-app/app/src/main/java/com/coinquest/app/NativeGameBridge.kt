@@ -255,11 +255,42 @@ class NativeGameBridge(private val activity: Activity, private val webView: WebV
     }
 
     /** Starts (or refreshes) the always-on usage-access game wall. Safe to call
-     *  repeatedly. No-op without usage access (the service would just idle). */
+     *  repeatedly. No-op without usage access (the service would just idle),
+     *  or on a parent's own device (see isParentDeviceMode). */
     @JavascriptInterface
     fun startGameWatch() {
-        if (!GameWatchService.hasUsageAccess(activity)) return
+        if (isParentDeviceMode() || !GameWatchService.hasUsageAccess(activity)) return
         activity.runOnUiThread { startWatch(activity) }
+    }
+
+    /** True on an install the parent has explicitly marked as their OWN
+     *  device (Admin Settings -> "מכשיר זה שייך להורה") rather than a
+     *  child's -- there's no child to enforce against there, so the
+     *  background watcher/notification/suspended-games-list is pure
+     *  downside. Device-local (not synced) since it describes this specific
+     *  physical install. */
+    @JavascriptInterface
+    fun isParentDeviceMode(): Boolean =
+        activity.getSharedPreferences(GameTimePrefs.NAME, Context.MODE_PRIVATE)
+            .getBoolean(GameTimePrefs.PARENT_DEVICE_MODE, false)
+
+    /** Flips parent-device mode. Enabling it immediately stops the watcher
+     *  and releases any device-owner-suspended games on THIS install (a
+     *  parent's own installed apps shouldn't stay suspended); disabling it
+     *  doesn't need to do anything itself -- setEnforcedPackages/
+     *  startGameWatch already check isParentDeviceMode() on their own and
+     *  will re-arm normally next time app.js calls them (next launch, or the
+     *  next admin-settings save). */
+    @JavascriptInterface
+    fun setParentDeviceMode(enabled: Boolean) {
+        val prefs = activity.getSharedPreferences(GameTimePrefs.NAME, Context.MODE_PRIVATE)
+        prefs.edit().putBoolean(GameTimePrefs.PARENT_DEVICE_MODE, enabled).apply()
+        if (enabled) {
+            try { activity.stopService(Intent(activity, GameWatchService::class.java)) } catch (e: Exception) {}
+            val enforced = (prefs.getString(GameTimePrefs.ENFORCED_PACKAGES, null) ?: "")
+                .split(',').filter { it.isNotBlank() }
+            GamePolicyManager.allowAll(activity, enforced)
+        }
     }
 
     /** Suspend (block) every enforced native game right now, so a game is
@@ -317,6 +348,9 @@ class NativeGameBridge(private val activity: Activity, private val webView: WebV
     fun setEnforcedPackages(csv: String) {
         activity.getSharedPreferences(GameTimePrefs.NAME, android.content.Context.MODE_PRIVATE)
             .edit().putString(GameTimePrefs.ENFORCED_PACKAGES, csv.trim()).apply()
+        // A parent's own install has no child to enforce against -- don't arm
+        // anything (see isParentDeviceMode/setParentDeviceMode).
+        if (isParentDeviceMode()) return
         // Immediately assert the device-owner default block, so a game is
         // suspended the moment the app knows about it -- not only after the
         // first session ends. block() itself skips a currently-valid session's

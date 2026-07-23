@@ -47,4 +47,13 @@ object GameTimePrefs {
      *  clearPendingConsumed) so the two paths never double-count. */
     const val CONSUMED_PENDING_SECONDS = "consumed_pending_seconds"
     const val CONSUMED_PENDING_CHILD = "consumed_pending_child"
+
+    /** Set on a PARENT's own install (a device used for remote admin/control,
+     *  not a child's device) to turn off the entire game-time enforcement
+     *  watcher on THIS install -- there's no child here to enforce against,
+     *  so a persistent background service/notification/suspended-games-list
+     *  is pure downside (battery, confusion, and would suspend a game the
+     *  parent themselves has installed). Device-local only, deliberately not
+     *  synced via Firebase: it describes this physical install, not the family. */
+    const val PARENT_DEVICE_MODE = "parent_device_mode"
 }

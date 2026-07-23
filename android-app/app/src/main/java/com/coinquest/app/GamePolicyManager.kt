@@ -65,6 +65,14 @@ object GamePolicyManager {
     fun allow(context: Context, pkg: String): Boolean =
         setSuspended(context, listOf(pkg), false)
 
+    /** Unsuspend every given package unconditionally -- used when this
+     *  install is switched to parent-device mode (there's no child here to
+     *  enforce against, so nothing should stay suspended), unlike block()
+     *  there's no "skip the active session's target" logic needed since the
+     *  intent here is simply "release everything". */
+    fun allowAll(context: Context, packages: Collection<String>): Boolean =
+        setSuspended(context, packages, false)
+
     private fun setSuspended(context: Context, packages: Collection<String>, suspended: Boolean): Boolean {
         if (!isDeviceOwner(context)) return false
         val admin = CoinQuestDeviceAdminReceiver.componentName(context)

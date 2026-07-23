@@ -179,6 +179,65 @@ test.describe('rewards', () => {
   });
 });
 
+test.describe('required tasks gate game launches', () => {
+  // A task marked `required` must block actually STARTING a game (spending
+  // the banked gtime wallet), not earning/banking coins -- otherwise a child
+  // could stockpile coins/minutes all day and cash them all in on games
+  // without ever doing the chores that were due. Once completed, the same
+  // game must launch normally.
+  test('a required task blocks starting a game until done, then unblocks', async ({ page }) => {
+    await enterLocalOnly(page);
+    await selectChild(page, 'נועה');
+    await page.evaluate(async () => {
+      const k = cur(); k.gtime = 600; await DB.set('cs_gtime_noa', 600);
+      state.chores.push({ id: 'test_req', label: 'מטלת חובה', emoji: '🎯', points: 2, max: 1, required: true });
+      await DB.set('cs_chores', state.chores);
+      go('games');
+    });
+    await page.locator('.game-row').first().click();
+    await expect(page.locator('#modalContent')).toContainText('קודם המטלות');
+    await expect(page.locator('#modalContent')).toContainText('מטלת חובה');
+    // Declining doesn't start the game -- the wallet is untouched.
+    expect(await page.evaluate(() => cur().gtime)).toBe(600);
+
+    await page.evaluate(() => { closeModal(); redeemToken('CSQR|test_req'); });
+    await page.evaluate(() => { closeModal(); go('games'); }); // dismiss the "+points!" celebration modal too
+    await page.locator('.game-row').first().click();
+    await expect(page.locator('#modalContent')).not.toContainText('קודם המטלות');
+  });
+});
+
+test.describe('parent-triggered bathroom session', () => {
+  // Fully outside the coin economy: doesn't touch the wallet on start, and
+  // doesn't credit anything back on end either (a leftover-minutes-into-the-
+  // wallet design would let a child start-then-cancel to mint free time).
+  test('grants up to 10 minutes of a bathroom-approved game without touching the coin wallet', async ({ page }) => {
+    await enterLocalOnly(page);
+    await selectChild(page, 'נועה');
+    const before = await page.evaluate(async () => {
+      const k = cur(); k.gtime = 42; await DB.set('cs_gtime_noa', 42); // arbitrary -- must be untouched throughout
+      const g = state.games.find(x => !x.native); // classicube, a web game
+      g.bathroomApproved = true;
+      await DB.set('cs_games', state.games);
+      return k.gtime;
+    });
+    await openAdminWithPin(page);
+    await page.locator('[data-atab="games"]').click();
+    await expect(page.locator('#bathroomSessionAdmin')).toContainText('קלאסיקיוב');
+    await page.locator('#bathroomMinutes').fill('1');
+    await page.locator('#bathroomSessionAdmin button', { hasText: 'התחל עכשיו' }).click();
+
+    await expect(page.locator('#gameOverlay')).toBeVisible();
+    expect(await page.evaluate(() => _gt && _gt.bathroom)).toBe(true);
+    expect(await page.evaluate(() => cur().gtime)).toBe(before); // untouched the instant it starts
+
+    // End it early (like the ✖ exit button) -- still must not touch the wallet.
+    await page.evaluate(() => endGameSession(false));
+    await expect(page.locator('#gameOverlay')).toBeHidden();
+    expect(await page.evaluate(() => cur().gtime)).toBe(before);
+  });
+});
+
 test.describe('unified chores + anchored (time-window) tasks', () => {
   // Before this fix, "anchored" tasks lived in a completely separate list
   // (state.anchored) that a schedule child's home screen read INSTEAD of
@@ -824,5 +883,67 @@ test.describe('read-aloud (TTS) for learning questions', () => {
       return document.getElementById('learnQ').querySelectorAll('.tts-word').length;
     });
     expect(q).toBe(0);
+  });
+});
+
+test.describe('badges banner hides when no badges are defined', () => {
+  test('removing every badge definition hides the home banner instead of showing "0 of 0"', async ({ page }) => {
+    await enterLocalOnly(page);
+    await selectChild(page, 'נועה');
+    await expect(page.locator('.badges-banner')).toBeVisible();
+    await page.evaluate(async () => {
+      state.badgeDefs = [];
+      await DB.set('cs_badgedefs', state.badgeDefs);
+      renderBadgesBanner();
+    });
+    await expect(page.locator('.badges-banner')).toHaveCount(0);
+  });
+});
+
+test.describe('streak challenges are fully editable (add/remove)', () => {
+  test('a parent can add a brand-new streak challenge and later delete it', async ({ page }) => {
+    await enterLocalOnly(page);
+    await selectChild(page, 'אריאל');
+    await openAdminWithPin(page);
+    await page.locator('[data-atab="streak"]').click();
+    const before = await page.evaluate(() => state.streaks.length);
+
+    await page.evaluate(() => addStreak());
+    expect(await page.evaluate(() => state.streaks.length)).toBe(before + 1);
+    await expect(page.locator('#streakTitle')).toHaveValue('אתגר חדש');
+
+    // Rename and save, then confirm it persisted under the new title.
+    await page.locator('#streakTitle').fill('אתגר בדיקה');
+    await page.locator('button', { hasText: 'שמור הגדרות אתגר' }).click();
+    expect(await page.evaluate(() => getStreak(adminStreakId).title)).toBe('אתגר בדיקה');
+
+    // Delete it -- back to the original count.
+    await page.evaluate(() => delStreak());
+    await page.locator('#mYes').click();
+    expect(await page.evaluate(() => state.streaks.length)).toBe(before);
+  });
+
+  test('the last remaining streak challenge cannot be deleted', async ({ page }) => {
+    await enterLocalOnly(page);
+    await selectChild(page, 'אריאל');
+    await openAdminWithPin(page);
+    await page.locator('[data-atab="streak"]').click();
+    await page.evaluate(() => { state.streaks = [state.streaks[0]]; adminStreakId = state.streaks[0].id; DB.set('cs_streaks', state.streaks); fillStreakAdmin(); });
+    await page.evaluate(() => delStreak());
+    expect(await page.evaluate(() => state.streaks.length)).toBe(1);
+  });
+});
+
+test.describe('modal keyboard dismissal', () => {
+  // On mobile, hiding a modal via CSS alone leaves its input focused -- the
+  // on-screen keyboard stays open (covering part of the screen) until
+  // something blurs it. Most visible with the parent-PIN modal.
+  test('closeModal blurs whatever input was focused inside it', async ({ page }) => {
+    await enterLocalOnly(page);
+    await page.locator('#gearBtn').click();
+    await page.locator('#mPin').focus();
+    await expect(page.locator('#mPin')).toBeFocused();
+    await page.evaluate(() => closeModal());
+    await expect(page.locator('#mPin')).not.toBeFocused();
   });
 });

@@ -32,10 +32,12 @@ class ReminderReceiver : BroadcastReceiver() {
                 EventReminderScheduler.rescheduleAll(context)
                 // Bring the always-on game wall back up after a reboot (only if
                 // usage access is granted and a game is actually enforced, so we
-                // don't run an idle foreground service for nothing).
-                val hasGames = (context.getSharedPreferences(GameTimePrefs.NAME, Context.MODE_PRIVATE)
-                    .getString(GameTimePrefs.ENFORCED_PACKAGES, null) ?: "").isNotBlank()
-                if (hasGames && GameWatchService.hasUsageAccess(context)) {
+                // don't run an idle foreground service for nothing) -- and never
+                // on a parent's own device, which has no child to enforce against.
+                val prefs = context.getSharedPreferences(GameTimePrefs.NAME, Context.MODE_PRIVATE)
+                val hasGames = (prefs.getString(GameTimePrefs.ENFORCED_PACKAGES, null) ?: "").isNotBlank()
+                val isParentDevice = prefs.getBoolean(GameTimePrefs.PARENT_DEVICE_MODE, false)
+                if (hasGames && !isParentDevice && GameWatchService.hasUsageAccess(context)) {
                     NativeGameBridge.startWatch(context)
                 }
             }
