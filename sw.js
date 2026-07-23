@@ -7,7 +7,7 @@
 //    boot without) is stale-while-revalidate: instant from cache, silently
 //    refreshed in the background.
 // Bump CACHE_VERSION on breaking asset changes; activate cleans old caches.
-const CACHE_VERSION='cq-v6';
+const CACHE_VERSION='cq-v7';
 
 // app.js/questions.js/styles.css are the app's actual LOGIC, not decorative
 // assets -- stale-while-revalidate for them meant every deploy's first load
