@@ -111,6 +111,40 @@ class NativeGameBridge(private val activity: Activity, private val webView: WebV
         try { tts?.stop() } catch (e: Exception) { /* nothing to clean up */ }
     }
 
+    /** True only if the engine is ready AND actually has an installed voice
+     *  for `lang` -- distinct from ttsAvailable() (engine ready at all). Many
+     *  Android TTS engines ship without Hebrew data installed (it's a
+     *  separate downloadable language pack), which is why quiz questions can
+     *  go silently unspoken even though the engine itself works fine for
+     *  English. app.js uses this to show the parent an actionable "install
+     *  the Hebrew voice" prompt instead of a mysteriously silent quiz. */
+    @JavascriptInterface
+    fun hasVoiceForLanguage(lang: String): Boolean {
+        val engine = tts ?: return false
+        if (!ttsReady) return false
+        return try {
+            val parts = lang.split("-")
+            val locale = if (parts.size >= 2) Locale(parts[0], parts[1]) else Locale(parts[0])
+            engine.isLanguageAvailable(locale) >= TextToSpeech.LANG_AVAILABLE
+        } catch (e: Exception) { false }
+    }
+
+    /** Opens the system screen for installing missing TTS voice data (falls
+     *  back to the general TTS settings screen if the install-data action
+     *  isn't handled on this device/engine). */
+    @JavascriptInterface
+    fun openTtsSettings() {
+        activity.runOnUiThread {
+            try {
+                activity.startActivity(Intent(TextToSpeech.Engine.ACTION_INSTALL_TTS_DATA))
+            } catch (e: Exception) {
+                try {
+                    activity.startActivity(Intent("com.android.settings.TTS_SETTINGS"))
+                } catch (e2: Exception) { /* no TTS settings screen reachable on this device */ }
+            }
+        }
+    }
+
     /** Fixes Google Sign-In's "Error 403: disallowed_useragent" inside this
      *  WebView -- see the long comment on MainActivity.WEB_CLIENT_ID for
      *  why. Delegates to the Activity since launching the sign-in picker

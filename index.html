@@ -278,7 +278,6 @@
       <div class="admin-tabs">
         <button class="atab active" data-atab="children" onclick="adminTab('children')">👧 ילדים</button>
         <button class="atab" data-atab="chores" onclick="adminTab('chores')">🧹 מטלות</button>
-        <button class="atab" data-atab="anchored" onclick="adminTab('anchored')">⏰ עוגנים</button>
         <button class="atab" data-atab="streak" onclick="adminTab('streak')">🌟 רצף</button>
         <button class="atab" data-atab="actions" onclick="adminTab('actions')">🏆 פעולות</button>
         <button class="atab" data-atab="qr" onclick="adminTab('qr')">🔳 QR</button>
@@ -298,49 +297,29 @@
           <div class="card-h" style="margin-bottom:10px;">➕ הוסף ילד</div>
           <div class="inline-row" style="margin-bottom:12px;">
             <div class="field"><label>שם</label><input id="newKidName" placeholder="שם הילד/ה"></div>
-            <div class="field" style="max-width:90px;"><label>אימוג'י</label><input id="newKidEmoji" placeholder="🦄" maxlength="2"></div>
+            <div class="field" style="max-width:150px;"><label>אימוג'י</label>
+              <div style="display:flex;gap:6px;">
+                <input id="newKidEmoji" placeholder="🦄" maxlength="2" style="flex:1;min-width:0;">
+                <button type="button" class="emoji-pick-trigger" onclick="openEmojiPicker('newKidEmoji')">😀</button>
+              </div>
+            </div>
           </div>
           <button class="btn primary" onclick="addChild()">הוסף ילד</button>
         </div>
       </div>
 
-      <div class="admin-pane" id="pane-anchored" style="display:none;">
-        <div class="card">
-          <div class="card-h">⏰ מטלות עוגנים - מטלות בזמנים קבועים</div>
-          <div class="card-sub" style="margin-bottom:14px;">עדכן מטלות לפי שעות היום</div>
-
-          <div style="margin-bottom:20px;">
-            <div style="font-weight:800;margin-bottom:8px;">🌅 בוקר (5:00-11:59)</div>
-            <div id="anchoredMorning"></div>
-            <button class="btn primary sm" onclick="addAnchoredTask('morning')" style="margin-top:8px;">+ הוסף מטלה</button>
-          </div>
-
-          <div style="margin-bottom:20px;">
-            <div style="font-weight:800;margin-bottom:8px;">☀️ צהריים (12:00-16:59)</div>
-            <div id="anchoredAfternoon"></div>
-            <button class="btn primary sm" onclick="addAnchoredTask('afternoon')" style="margin-top:8px;">+ הוסף מטלה</button>
-          </div>
-
-          <div style="margin-bottom:20px;">
-            <div style="font-weight:800;margin-bottom:8px;">🌆 ערב (17:00-19:59)</div>
-            <div id="anchoredEvening"></div>
-            <button class="btn primary sm" onclick="addAnchoredTask('evening')" style="margin-top:8px;">+ הוסף מטלה</button>
-          </div>
-
-          <div style="margin-bottom:20px;">
-            <div style="font-weight:800;margin-bottom:8px;">🛏️ זמן שינה</div>
-            <div style="display:flex;gap:8px;align-items:center;direction:ltr;">
-              <input id="sleepTime" type="number" min="20" max="23" value="20" style="width:50px;border:2px solid var(--line);border-radius:10px;padding:8px;text-align:center;"/>
-              <span>:00</span>
-            </div>
-            <button class="btn primary sm" onclick="updateSleepTime()" style="margin-top:8px;">שמור</button>
-          </div>
-        </div>
-      </div>
-
       <div class="admin-pane" id="pane-chores" style="display:none;">
-        <div class="card"><div class="card-h">מטלות יומיות (צ'ק-בוקס)</div><div class="card-sub">מטלות שהילד מסמן ישירות באפליקציה — בלי QR. כל מטלה אפשר להגביל למספר פעמים ביום.</div></div>
+        <div class="card"><div class="card-h">מטלות</div><div class="card-sub">הילד/ה סורק/ת את קוד ה-QR של המטלה כדי לקבל את המטבעות (לשונית 🔳 QR). אפשר להגביל כל מטלה למספר פעמים ביום, ואופציונלית לשייך אותה לחלון זמן קבוע (בוקר/צהריים/ערב) — כך היא תופיע רק אז במסך "עכשיו" של הילד; בלי שיוך היא זמינה כל היום.</div></div>
         <div id="choresAdmin"></div>
+        <div class="card">
+          <div class="card-h" style="margin-bottom:6px;">🛏️ זמן שינה</div>
+          <div class="card-sub" style="margin-bottom:10px;">מהשעה הזו ואילך מסך הילד/ה עובר למצב "זמן שינה".</div>
+          <div style="display:flex;gap:8px;align-items:center;direction:ltr;">
+            <input id="sleepTime" type="number" min="20" max="23" value="20" style="width:50px;border:2px solid var(--line);border-radius:10px;padding:8px;text-align:center;"/>
+            <span>:00</span>
+          </div>
+          <button class="btn primary sm" onclick="updateSleepTime()" style="margin-top:8px;">שמור</button>
+        </div>
         <div class="card">
           <div class="card-h" style="margin-bottom:10px;">➕ הוסף מטלה</div>
           <div class="field"><label>שם המטלה</label><input id="newChoreLabel" placeholder="לדוגמה: האכלת הדג"></div>
@@ -348,6 +327,14 @@
             <div class="field"><label>אימוג'י</label><input id="newChoreEmoji" placeholder="🐠" maxlength="2"></div>
             <div class="field"><label>מטבעות</label><input id="newChorePoints" type="number" value="5" min="1"></div>
             <div class="field"><label>פעמים ביום</label><input id="newChoreMax" type="number" value="1" min="1"></div>
+          </div>
+          <div class="field" style="margin-bottom:12px;"><label>⏰ חלון זמן (אופציונלי)</label>
+            <select id="newChorePeriod" style="width:100%;border:2px solid var(--line);border-radius:13px;padding:11px;font-family:inherit;">
+              <option value="">כל היום (ברירת מחדל)</option>
+              <option value="morning">🌅 בוקר</option>
+              <option value="afternoon">☀️ צהריים</option>
+              <option value="evening">🌆 ערב</option>
+            </select>
           </div>
           <!-- G6 (ANDROID-APP-PLAN.md): curated set so a parent doesn't need
                to know how to open an emoji keyboard, and a non-reading child
@@ -367,7 +354,12 @@
           <div class="field"><label>הילד/ה</label><select id="streakChildSel"></select></div>
           <div class="inline-row" style="margin-bottom:12px;">
             <div class="field"><label>מטרה (ימים ברצף)</label><input id="streakGoal" type="number" value="30" min="1"></div>
-            <div class="field"><label>אימוג'י פרס</label><input id="streakRewardEmoji" placeholder="🎮" maxlength="2"></div>
+            <div class="field"><label>אימוג'י פרס</label>
+              <div style="display:flex;gap:6px;">
+                <input id="streakRewardEmoji" placeholder="🎮" maxlength="2" style="flex:1;min-width:0;">
+                <button type="button" class="emoji-pick-trigger" onclick="openEmojiPicker('streakRewardEmoji')">😀</button>
+              </div>
+            </div>
           </div>
           <div class="field"><label>שם הפרס</label><input id="streakRewardLabel" placeholder="Nintendo Switch 2"></div>
           <button class="btn primary" onclick="saveStreakConfig()">שמור הגדרות אתגר</button>
@@ -488,6 +480,9 @@
             <label style="margin:0;">🔊 הקראת שאלות ותשובות בקול</label>
             <button class="btn sm" id="learnReadAloudToggle" onclick="toggleLearningReadAloud()">פעיל ✓</button>
           </div>
+          <div class="card-sub" id="ttsVoiceWarning" style="display:none;background:#FFF6E0;border-radius:12px;padding:10px 12px;margin-bottom:12px;">
+            ⚠️ למכשיר הזה אין קול עברי מותקן להקראה — לכן השאלות לא נשמעות. <button class="btn sm gold" onclick="openTtsVoiceSettings()" style="margin-top:6px;">התקן קול עברי</button>
+          </div>
           <div class="field" style="display:flex;align-items:center;justify-content:space-between;">
             <label style="margin:0;">שער למידה לפני משחק (3 שאלות חימום, לא חוסם)</label>
             <button class="btn sm" id="learnGateToggle" onclick="toggleLearningGate()">כבוי</button>
@@ -519,10 +514,19 @@
           <div class="card-h" style="margin-bottom:10px;">➕ הוסף פרס</div>
           <div class="field"><label>שם הפרס</label><input id="newRwLabel" placeholder="לדוגמה: בחירת הסרט"></div>
           <div class="inline-row" style="margin-bottom:12px;">
-            <div class="field"><label>אימוג'י</label><input id="newRwEmoji" placeholder="🍿" maxlength="2"></div>
+            <div class="field"><label>אימוג'י</label>
+              <div style="display:flex;gap:6px;">
+                <input id="newRwEmoji" placeholder="🍿" maxlength="2" style="flex:1;min-width:0;">
+                <button type="button" class="emoji-pick-trigger" onclick="openEmojiPicker('newRwEmoji')">😀</button>
+              </div>
+            </div>
             <div class="field"><label>מחיר (מטבעות)</label><input id="newRwCost" type="number" value="30" min="1"></div>
             <div class="field"><label>דקות משחק (0=פרס רגיל)</label><input id="newRwMinutes" type="number" value="0" min="0"></div>
           </div>
+          <div class="field" style="margin-bottom:12px;"><label>💵 שווה כסף אמיתי (₪, אופציונלי)</label>
+            <input id="newRwCash" type="number" value="0" min="0" step="0.5" placeholder="0 = פרס רגיל">
+          </div>
+          <div class="card-sub" style="margin-bottom:10px;">אם ממלאים סכום ₪, החלפת הפרס תצטרף למונה "ממתין לתשלום" של הילד/ה (נראה במסך 👧 ילדים) — במקום להסתמך על כך שההורה נמצא ליד בדיוק כשהילד/ה קונה.</div>
           <button class="btn primary" onclick="addReward()">הוסף פרס</button>
         </div>
       </div>
@@ -560,7 +564,12 @@
           <div class="card-h" style="margin-bottom:12px;">➕ הוסף אירוע</div>
           <div class="field"><label>כותרת האירוע</label><input id="newEvTitle" placeholder="הולכים לפארק..."></div>
           <div class="inline-row">
-            <div class="field"><label>אימוג'י</label><input id="newEvEmoji" placeholder="🌳" style="text-align:center;font-size:1.4rem;"></div>
+            <div class="field"><label>אימוג'י</label>
+              <div style="display:flex;gap:6px;">
+                <input id="newEvEmoji" placeholder="🌳" style="text-align:center;font-size:1.4rem;flex:1;min-width:0;">
+                <button type="button" class="emoji-pick-trigger" onclick="openEmojiPicker('newEvEmoji')">😀</button>
+              </div>
+            </div>
             <div class="field"><label>תאריך</label><input id="newEvDate" type="date"></div>
             <div class="field"><label>שעה</label><input id="newEvTime" type="time"></div>
             <div class="field"><label>תזכורת לפני</label>

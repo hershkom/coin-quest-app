@@ -134,6 +134,114 @@ test.describe('rewards', () => {
     const movieBtn = page.locator('.row', { hasText: 'ערב סרט' }).getByRole('button'); // cost 80, balance 0
     await expect(movieBtn).toBeDisabled();
   });
+
+  // A cash reward ("שקל אחד") can't rely on a parent being right there to
+  // physically pay out the instant it's redeemed -- it accrues in a running
+  // "owed" tab instead (k.cashOwed), surfaced to the parent in the children
+  // admin list, and only cleared there once they've actually paid.
+  test('redeeming a cash reward accrues a pending-cash tab that the admin can see and pay out', async ({ page }) => {
+    await enterLocalOnly(page);
+    await selectChild(page, 'נועה');
+    const result = await page.evaluate(async () => {
+      const k = cur(); k.balance = 100; await DB.set('cs_bal_noa', 100);
+      const before = k.cashOwed || 0;
+      const rw = state.rewards.find(r => r.cash); // "שקל אחד", cost 20, cash:1
+      redeemReward(rw);
+      // redeemReward opens a confirm modal -- accept it, then dismiss the
+      // resulting success modalMsg so it doesn't block the next interaction.
+      document.getElementById('mYes').click();
+      await new Promise(r => setTimeout(r, 50));
+      closeModal();
+      return { before, after: cur().cashOwed, cost: rw.cost };
+    });
+    expect(result.before).toBe(0);
+    expect(result.after).toBe(1);
+    expect(await page.evaluate(() => cur().balance)).toBe(80); // 100 - 20 cost
+
+    // Redeem a second time -- the tab accumulates, it doesn't reset per redemption.
+    await page.evaluate(async () => {
+      const rw = state.rewards.find(r => r.cash);
+      redeemReward(rw);
+      document.getElementById('mYes').click();
+      await new Promise(r => setTimeout(r, 50));
+      closeModal();
+    });
+    expect(await page.evaluate(() => cur().cashOwed)).toBe(2);
+
+    // Admin sees the badge and can pay it out, resetting the tab to 0.
+    await openAdminWithPin(page);
+    await page.locator('[data-atab="children"]').click();
+    await expect(page.locator('.kid-admin', { hasText: 'נועה' }).locator('.ka-cash')).toContainText('2 ₪');
+    await page.locator('.kid-admin', { hasText: 'נועה' }).locator('.ka-cash').click();
+    await page.locator('#mYes').click();
+    await expect(page.locator('.kid-admin', { hasText: 'נועה' }).locator('.ka-cash')).toHaveCount(0);
+    expect(await page.evaluate(() => DB.get('cs_cash_noa'))).toBe(0);
+  });
+});
+
+test.describe('unified chores + anchored (time-window) tasks', () => {
+  // Before this fix, "anchored" tasks lived in a completely separate list
+  // (state.anchored) that a schedule child's home screen read INSTEAD of
+  // state.chores -- deleting a task from the chores admin screen had zero
+  // effect on its anchored twin, which kept a separate, never-QR-able daily
+  // counter forever stuck at 0. Now every task lives in state.chores, with an
+  // optional `period` tag; this proves the tag actually governs visibility
+  // for ANY child (not just schedule ones), with no duplication.
+  test('a task tagged with the current period shows now and is hidden in a different period, for schedule AND non-schedule children', async ({ page }) => {
+    await enterLocalOnly(page);
+    await selectChild(page, 'נועה'); // useSchedule:false
+    const now = await page.evaluate(() => getTimeOfDay(new Date().getHours()));
+    const other = ['morning', 'afternoon', 'evening'].find(p => p !== now);
+    await page.evaluate(({ now, other }) => {
+      state.chores.push({ id: 'test_now', label: 'מטלת עכשיו', emoji: '⭐', points: 3, max: 1, period: now });
+      state.chores.push({ id: 'test_other', label: 'מטלת זמן אחר', emoji: '🌙', points: 3, max: 1, period: other });
+      DB.set('cs_chores', state.chores);
+      go('home');
+    }, { now, other });
+    await expect(page.locator('.chore-row', { hasText: 'מטלת עכשיו' })).toBeVisible();
+    await expect(page.locator('.chore-row', { hasText: 'מטלת זמן אחר' })).toHaveCount(0);
+
+    // Same rule applies to the schedule child (Ariel) -- period filtering is
+    // no longer tied to which list the task happens to live in.
+    await page.evaluate(() => go('picker'));
+    await selectChild(page, 'אריאל');
+    await expect(page.locator('.chore-row', { hasText: 'מטלת עכשיו' })).toBeVisible();
+    await expect(page.locator('.chore-row', { hasText: 'מטלת זמן אחר' })).toHaveCount(0);
+  });
+
+  // A task with NO period is unrestricted -- always visible regardless of
+  // time of day, for either kind of child.
+  test('a task with no period is always visible ("anytime")', async ({ page }) => {
+    await enterLocalOnly(page);
+    await selectChild(page, 'אריאל');
+    await page.evaluate(() => {
+      state.chores.push({ id: 'test_anytime', label: 'מטלת כל היום', emoji: '🎯', points: 3, max: 1 });
+      DB.set('cs_chores', state.chores);
+      go('home');
+    });
+    await expect(page.locator('.chore-row', { hasText: 'מטלת כל היום' })).toBeVisible();
+  });
+
+  // A task allowed several times a day can set its own real-world spacing
+  // (minGapMin) instead of the standard 1-minute anti-spam floor -- e.g. a
+  // task legitimately doable 3x/day shouldn't credit twice for one
+  // continuous real-world moment a minute apart.
+  test('a task with minGapMin enforces its own cooldown instead of the standard 1-minute one', async ({ page }) => {
+    await enterLocalOnly(page);
+    await selectChild(page, 'נועה');
+    const result = await page.evaluate(async () => {
+      state.chores.push({ id: 'test_gap', label: 'מטלת מרווח', emoji: '⏳', points: 2, max: 3, minGapMin: 30 });
+      await DB.set('cs_chores', state.chores);
+      redeemToken('CSQR|test_gap');
+      const afterFirst = cur().balance;
+      redeemToken('CSQR|test_gap'); // immediately again -- must be blocked by the 30-minute gap
+      return { afterFirst, afterSecond: cur().balance, count: cur().daily.counts['test_gap'] };
+    });
+    expect(result.afterFirst).toBe(2);
+    expect(result.afterSecond).toBe(2); // unchanged -- blocked
+    expect(result.count).toBe(1);
+    await expect(page.locator('#modalContent')).toContainText('30 דקות');
+  });
 });
 
 test.describe('math (adaptive)', () => {

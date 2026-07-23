@@ -106,7 +106,7 @@ const DEFAULT_ACTIONS=[
 const DEFAULT_REWARDS=[
   {id:'screen', label:'30 דקות מסך', emoji:'🎮', cost:30},
   {id:'icecream', label:'גלידה', emoji:'🍦', cost:50},
-  {id:'money', label:'שקל אחד', emoji:'💵', cost:20},
+  {id:'money', label:'שקל אחד', emoji:'💵', cost:20, cash:1},
   {id:'movie', label:'ערב סרט', emoji:'🍿', cost:80},
 ];
 const DEFAULT_MATH={enabled:true, ops:['+','-'], maxNum:20, pts:2, daily:10};
@@ -153,10 +153,18 @@ const DEFAULT_STREAKS=[
   {id:'behavior', title:'התנהגות טובה', dayWord:'התנהגות טובה', icon:'😊', childId:'ariel', goal:14, rewardLabel:'יום כיף',           rewardEmoji:'🎉', days:{}, current:0, best:0, wonAt:null},
 ];
 function getStreak(id){ return state.streaks.find(s=>s.id===id); }
+// Deliberately non-overlapping with DEFAULT_CHORES (teeth-brushing/toilet
+// already live there as unrestricted "anytime" tasks) -- these are only the
+// truly period-SPECIFIC additions, migrated into state.chores with a
+// `period` tag by the cs_anchored_merged_v1 migration in loadState(). Before
+// that migration these lived in a totally separate list from DEFAULT_CHORES,
+// so a fresh family used to see "brush teeth" duplicated 3x (once per
+// period) alongside the flat chore_teeth entry with no way to notice, since
+// schedule and non-schedule children never saw both lists at once.
 const DEFAULT_ANCHORED_TASKS={
-  morning:[{id:'at_m1',label:'צחצוח שיניים',emoji:'🦷',points:5,max:2},{id:'at_m2',label:'לשבת בשירותים',emoji:'🚽',points:3,max:6},{id:'at_m3',label:'לקחת תרופה',emoji:'💊',points:3,max:1}],
-  afternoon:[{id:'at_a1',label:'פינוי אוכל',emoji:'🍽️',points:8,max:3},{id:'at_a2',label:'צחצוח שיניים',emoji:'🦷',points:5,max:2}],
-  evening:[{id:'at_e1',label:'צחצוח שיניים',emoji:'🦷',points:5,max:2},{id:'at_e2',label:'אמבטיה',emoji:'🛁',points:5,max:1},{id:'at_e3',label:'קריאה לפני שינה',emoji:'📖',points:3,max:1}],
+  morning:[{id:'at_m3',label:'לקחת תרופה',emoji:'💊',points:3,max:1}],
+  afternoon:[{id:'at_a1',label:'ניקוי אחרי ארוחת צהריים',emoji:'🍽️',points:8,max:1}],
+  evening:[{id:'at_e2',label:'אמבטיה',emoji:'🛁',points:5,max:1},{id:'at_e3',label:'קריאה לפני שינה',emoji:'📖',points:3,max:1}],
   sleep_time:20
 };
 // Fixed set of measurable things a badge can track. 'threshold' metrics compare
@@ -277,6 +285,31 @@ async function loadState(){
     await DB.set('cs_streaks',state.streaks);
   }
   state.anchored=(await DB.get('cs_anchored'))??DEFAULT_ANCHORED_TASKS;
+  // One-time migration: anchored tasks used to live in their own per-period
+  // list (cs_anchored), completely disconnected from state.chores -- a parent
+  // deleting a task from the chores admin screen had NO effect on its
+  // anchored twin, which kept showing (and kept its OWN separate daily count,
+  // under a different id) on the schedule-child's home screen forever. Worse,
+  // fillQRSelect() (the QR-code generator) only ever listed state.chores/
+  // state.actions -- an anchored task could never get a real QR code printed
+  // for it at all, so nothing could ever credit its counter to begin with.
+  // Fold every anchored task into state.chores with a `period` tag instead:
+  // one list, one id, one place to edit or delete, and QR generation "just
+  // works" for every task. state.anchored keeps only sleep_time afterward.
+  if(!(await DB.get('cs_anchored_merged_v1'))){
+    const existingIds=new Set(state.chores.map(t=>t.id));
+    for(const period of ['morning','afternoon','evening']){
+      for(const task of (state.anchored[period]||[])){
+        if(existingIds.has(task.id)) continue;
+        state.chores.push({...task,period});
+        existingIds.add(task.id);
+      }
+    }
+    await DB.set('cs_chores',state.chores);
+    state.anchored={sleep_time:state.anchored.sleep_time??20};
+    await DB.set('cs_anchored',state.anchored);
+    await DB.set('cs_anchored_merged_v1',true);
+  }
   state.games   =(await DB.get('cs_games'))   ??DEFAULT_GAMES;
   // One-time migration v3: bloxd.io is REMOVED (open multiplayer lobby +
   // public chat — parent explicitly doesn't want the kid playing with
@@ -347,6 +380,11 @@ async function loadKid(id){
     mathTotal:(await DB.get('cs_matht_'+id)) ??0,
     taskTotal:(await DB.get('cs_taskt_'+id)) ??0,
     rewardsTotal:(await DB.get('cs_rwt_'+id))??0,
+    // Real money the child has "cashed out" (redeemed a reward with a cash
+    // value) but the parent hasn't physically paid out yet -- a running tab,
+    // reset to 0 by the parent once they've actually handed over the money
+    // (see renderChildrenAdmin's cash badge / adminPayOutCash()).
+    cashOwed: (await DB.get('cs_cash_'+id))  ??0,
     gtime:    (await DB.get('cs_gtime_'+id)) ??0, // game-time wallet, in seconds
     mathLevel:(await DB.get('cs_mathlvl_'+id))??1, // adaptive difficulty 1..5
     learn:    (await DB.get('cs_learn_'+id)) ??{progress:{},earnedToday:{date:'',coins:0,minutes:0,sessions:0},recent:{math:[],english:[],science:[]},correctTotal:{math:0,english:0,science:0}},
@@ -393,18 +431,12 @@ function effectiveToday(){
   return _hwmDate;
 }
 function findTaskById(id){
-  // Look up a task/action by id across every configured list. Used to validate
-  // scanned/typed QR codes against the real config so forged ids are rejected.
+  // Look up a task/action by id. Used to validate scanned/typed QR codes
+  // against the real config so forged ids are rejected. Anchored (time-of-day)
+  // tasks live in state.chores too (tagged with a `period`) since the
+  // cs_anchored_merged_v1 migration -- there is exactly one list now.
   if(!id) return null;
-  let t=state.chores.find(x=>x.id===id) || state.actions.find(x=>x.id===id);
-  if(t) return t;
-  if(state.anchored){
-    for(const period of ['morning','afternoon','evening']){
-      const f=(state.anchored[period]||[]).find(x=>x.id===id);
-      if(f) return f;
-    }
-  }
-  return null;
+  return state.chores.find(x=>x.id===id) || state.actions.find(x=>x.id===id) || null;
 }
 
 // G1 (ANDROID-APP-PLAN.md) / retroactive S3 fix: the avatar this replaces
@@ -903,7 +935,17 @@ function redeemToken(raw){
   // (see goScanForChore()) — there is no separate self-report tap-to-credit
   // path anymore, so this guard is the single anti-spam authority.
   const lastMark=k.daily.lastMark[id]||0;
-  if(Date.now()-lastMark<CHORE_MIN_GAP_MS){ stopCamera(); modalMsg('⏳','רגע קטן...','אפשר לסמן את "'+label+'" שוב עוד דקה 🙂'); return; }
+  // A task allowed several times a day (max>1) can optionally set its own
+  // real-world spacing (minGapMin) instead of the 1-minute anti-spam floor --
+  // e.g. "sit on the toilet" allowed 3x/evening shouldn't credit twice for one
+  // continuous bathroom visit a minute apart, so the parent can require a
+  // real gap like 30 minutes between redemptions of that specific task.
+  const gapMs=task.minGapMin>0?task.minGapMin*60000:CHORE_MIN_GAP_MS;
+  if(Date.now()-lastMark<gapMs){
+    stopCamera();
+    const waitMsg=task.minGapMin>0?('אפשר לסמן את "'+label+'" שוב עוד '+task.minGapMin+' דקות 🙂'):('אפשר לסמן את "'+label+'" שוב עוד דקה 🙂');
+    modalMsg('⏳','רגע קטן...',waitMsg); return;
+  }
   k.daily.counts[id]=used+1; k.daily.lastMark[id]=Date.now(); DB.set('cs_daily_'+state.current,k.daily);
   k.taskTotal=(k.taskTotal||0)+1; DB.set('cs_taskt_'+state.current,k.taskTotal);
   stopCamera();
@@ -1145,6 +1187,23 @@ function speakWithHighlight(text,el,lang,onEnd){
   // startup latency. If the real speech finishes first, finish() already
   // ran and this is a no-op (the `done` guard) -- applies to both paths below.
   setTimeout(finish,Math.max(1500,words.length*650));
+  const speakViaWebSpeech=()=>{
+    if(!WEB_TTS_SUPPORTED){ finish(); return; }
+    try{
+      const utter=new SpeechSynthesisUtterance(text);
+      // A6 (calm mode): a slower rate gives extra processing time on a
+      // sensitive day, at the parent's discretion via the same toggle that
+      // already dampens confetti/chime/background motion.
+      utter.lang=lang||'he-IL'; utter.rate=state.calmMode?0.75:0.9;
+      utter.onboundary=(ev)=>{
+        if(done||!el||myGen!==_ttsGen) return;
+        if(ev.name&&ev.name!=='word') return;
+        highlightWordAt(el,words,ev.charIndex);
+      };
+      utter.onend=finish; utter.onerror=finish;
+      speechSynthesis.speak(utter);
+    }catch(e){ finish(); }
+  };
   if(nativeTtsAvailable()){
     // Relayed back from Kotlin's UtteranceProgressListener (see
     // NativeGameBridge.kt). onRangeStart (per-word position) only exists on
@@ -1154,24 +1213,17 @@ function speakWithHighlight(text,el,lang,onEnd){
     window._nativeTtsBoundary=(id,charIndex)=>{ if(id===uid&&!done&&myGen===_ttsGen) highlightWordAt(el,words,charIndex); };
     window._nativeTtsEnd=(id)=>{ if(id===uid) finish(); };
     try{
-      if(!window.CoinQuestNative.ttsSpeak(text,lang||'he-IL',uid,state.calmMode?0.75:0.9)) finish();
-    }catch(e){ finish(); }
+      // ttsSpeak returns false when the device's TTS engine has no installed
+      // voice for this language (common for Hebrew -- many Android TTS
+      // engines don't ship it and it must be downloaded separately in system
+      // settings). Previously this just silently gave up (finish() with no
+      // sound at all); fall back to the Web Speech engine instead, which at
+      // least has a chance of a different installed voice/engine answering.
+      if(!window.CoinQuestNative.ttsSpeak(text,lang||'he-IL',uid,state.calmMode?0.75:0.9)) speakViaWebSpeech();
+    }catch(e){ speakViaWebSpeech(); }
     return;
   }
-  try{
-    const utter=new SpeechSynthesisUtterance(text);
-    // A6 (calm mode): a slower rate gives extra processing time on a
-    // sensitive day, at the parent's discretion via the same toggle that
-    // already dampens confetti/chime/background motion.
-    utter.lang=lang||'he-IL'; utter.rate=state.calmMode?0.75:0.9;
-    utter.onboundary=(ev)=>{
-      if(done||!el||myGen!==_ttsGen) return;
-      if(ev.name&&ev.name!=='word') return;
-      highlightWordAt(el,words,ev.charIndex);
-    };
-    utter.onend=finish; utter.onerror=finish;
-    speechSynthesis.speak(utter);
-  }catch(e){ finish(); }
+  speakViaWebSpeech();
 }
 // Reads the question (word-highlighted in `qEl`), then each answer button in
 // `choiceEls` in turn (English words get an English voice via isLatinText so
@@ -1431,8 +1483,10 @@ function renderChores(){
   wrap.innerHTML='';
   const k=cur(); if(!k) return;
   ensureTodayKid(state.current);
-  // Use time-based tasks if current view is home and this child has the schedule enabled
-  let tasks=state.chores.filter(t=>taskForChild(t,state.current));
+  // Period-aware for every child (see tasksDueNow) -- only the schedule
+  // child's HOME view additionally swaps in the bedtime "time to sleep"
+  // pseudo-task once past sleep_time (see getTasksForTimeOfDay).
+  let tasks=tasksDueNow(state.current);
   if(childUsesSchedule(curChild())&&currentView==='home'){
     tasks=getTasksForTimeOfDay();
     const timeHour=new Date().getHours();
@@ -1462,7 +1516,13 @@ function renderChores(){
 // getTasksForTimeOfDay()) so the journey map below shows whole-day progress,
 // not just what's due right now.
 function todaysTaskList(){
-  if(childUsesSchedule(curChild())) return [...periodTaskList('morning'),...periodTaskList('afternoon'),...periodTaskList('evening')];
+  if(childUsesSchedule(curChild())){
+    // Anytime tasks (no period) counted ONCE, then each period's own anchored
+    // tasks -- periodTaskList() alone would repeat an anytime task 3x if
+    // simply concatenated across all three periods.
+    const anytime=state.chores.filter(t=>taskForChild(t,state.current)&&!t.period);
+    return [...anytime,...periodTaskList('morning'),...periodTaskList('afternoon'),...periodTaskList('evening')];
+  }
   return state.chores.filter(t=>taskForChild(t,state.current));
 }
 // G2 (ANDROID-APP-PLAN.md): a station per today's task, filled in as they're
@@ -1503,9 +1563,15 @@ function currentPeriodKey(){
   if(hour>=state.anchored.sleep_time||hour<5) return 'sleep';
   return getTimeOfDay(hour);
 }
+// Tasks anchored to a SPECIFIC period only (strict match -- an "anytime" task
+// with no period is deliberately excluded here so a caller that loops over
+// every period, like renderFirstThen()'s remaining-tasks scan, doesn't see the
+// same anytime task repeated once per period). Callers that want the full
+// "what's relevant right now" set (anchored-to-now + anytime) should use
+// getTasksForTimeOfDay() instead.
 function periodTaskList(period){
   if(period==='sleep') return [{id:'night_sleep',label:'זמן שינה',emoji:'😴',points:2,max:1}];
-  return (state.anchored&&state.anchored[period])||[];
+  return state.chores.filter(t=>taskForChild(t,state.current)&&t.period===period);
 }
 function renderDayStrip(){
   const wrap=document.getElementById('dayStripWrap'); if(!wrap) return;
@@ -1534,7 +1600,10 @@ function renderFirstThen(){
   ensureTodayKid(state.current);
   const order=['morning','afternoon','evening','sleep'];
   const curIdx=order.indexOf(currentPeriodKey());
-  let remaining=[];
+  // Anytime tasks (no period) are always due, listed once up front -- not
+  // inside the period loop below, which would otherwise repeat them once per
+  // remaining period.
+  let remaining=state.chores.filter(t=>taskForChild(t,state.current)&&!t.period&&(k.daily.counts[t.id]||0)<t.max);
   for(let i=curIdx;i<order.length;i++){
     remaining.push(...periodTaskList(order[i]).filter(t=>(k.daily.counts[t.id]||0)<t.max));
   }
@@ -2122,6 +2191,16 @@ function redeemReward(rw){
       await DB.set('cs_gtime_'+state.current,k.gtime);
       renderGameTimeBanner();
       modalMsg('🎮','יש לך זמן משחק!','קיבלת '+rw.minutes+' דקות משחק.\nסה"כ עכשיו: '+fmtGT(k.gtime)+'.\nלחץ על "המשחקים שלי" במסך הבית כדי לשחק!');
+    } else if(rw.cash){
+      // Real-money reward: the parent isn't necessarily standing right here
+      // (see renderChildrenAdmin's cash badge) -- keep a running "owed" tab
+      // instead of a one-shot "show this to your parent" message that's easy
+      // to forget, so it can be checked and paid out whenever the parent is
+      // actually available, then reset in one place.
+      const k=cur();
+      k.cashOwed=(k.cashOwed||0)+rw.cash;
+      await DB.set('cs_cash_'+state.current,k.cashOwed);
+      modalMsg('💵','מזל טוב! 🎉','החלפת את: '+rw.label+'\nעכשיו ההורה חייב לך '+k.cashOwed+' ₪ — הראה להורה את המסך הזה מתישהו 😊');
     } else {
       modalMsg(rw.emoji,'מזל טוב! 🎉','החלפת את: '+rw.label+'\nהראה את המסך להורים.');
     }
@@ -2152,7 +2231,6 @@ function adminTab(t){
   document.getElementById('pane-'+t).style.display='block';
   if(t==='children') renderChildrenAdmin();
   if(t==='chores') renderChoresAdmin();
-  if(t==='anchored') renderAnchoredAdmin();
   if(t==='streak') fillStreakAdmin();
   if(t==='actions') renderActionsAdmin();
   if(t==='qr') fillQRSelect();
@@ -2237,149 +2315,20 @@ function taskIconHtml(task,size){
   if(task.photo) return `<img src="${task.photo}" alt="" style="width:${s}px;height:${s}px;border-radius:50%;object-fit:cover;">`;
   return `<span style="font-size:${Math.round(s*0.62)}px;">${task.emoji}</span>`;
 }
-function renderAnchoredAdmin(){
-  const a=state.anchored;
-  ['morning','afternoon','evening'].forEach(period=>{
-    const c=document.getElementById('anchored'+period.charAt(0).toUpperCase()+period.slice(1));
-    c.innerHTML='';
-    a[period].forEach((task,i)=>{
-      const row=document.createElement('div'); row.className='admin-row';
-      const icon=task.photo?`<img src="${task.photo}" style="width:34px;height:34px;border-radius:50%;object-fit:cover;">`:`<span class="emoji">${task.emoji}</span>`;
-      const photoCtrl=task.photo
-        ? `<button class="icon-btn" title="הסר תמונה" onclick="removeAnchoredPhoto('${period}',${i})">🖼️✖</button>`
-        : `<label class="icon-btn" title="הוסף תמונה" style="cursor:pointer;">📷<input type="file" accept="image/*" capture="environment" style="display:none;" onchange="attachAnchoredPhoto('${period}',${i},this)"></label>`;
-      row.innerHTML=`<span class="drag-handle" title="גרור לשינוי הסדר">⠿</span>${icon}<span class="t">${esc(task.label)}</span>
-        ${photoCtrl}
-        <input type="number" value="${task.points}" min="1" style="width:50px;border:2px solid var(--line);border-radius:10px;padding:6px;text-align:center;font-family:inherit;" onchange="updateAnchoredPoints('${period}',${i},this.value)">
-        <button class="icon-btn" onclick="delAnchoredTask('${period}',${i})">🗑️</button>`;
-      c.appendChild(row);
-      row.querySelector('.drag-handle').addEventListener('pointerdown',ev=>startAnchoredDrag(ev,period,i));
-    });
-  });
-  document.getElementById('sleepTime').value=a.sleep_time;
-}
-async function attachAnchoredPhoto(period,i,input){
-  const f=input.files&&input.files[0]; input.value='';
-  if(!f) return;
-  const task=state.anchored[period][i]; if(!task) return;
-  try{
-    task.photo=await fileToThumb(f);
-    await DB.set('cs_anchored',state.anchored);
-    renderAnchoredAdmin();
-    toast('התמונה נוספה ✓');
-  }catch(e){ toast('לא הצלחתי לטעון את התמונה'); }
-}
-async function removeAnchoredPhoto(period,i){
-  const task=state.anchored[period][i]; if(!task) return;
-  delete task.photo;
-  await DB.set('cs_anchored',state.anchored);
-  renderAnchoredAdmin(); toast('התמונה הוסרה');
-}
-
-/* ---- Drag-to-reorder anchored tasks. Pointer Events (not the HTML5 Drag API)
-   so this works on touch (mobile) as well as mouse — the admin panel is used
-   from a phone as much as a desktop. Only the small grip handle is
-   draggable, not the whole row, so it doesn't fight with the points input or
-   delete button next to it. The underlying array is only reordered on
-   pointerup; during the drag we just move the row visually and compute where
-   it would land, to avoid the complexity/fragility of live-reflowing every
-   sibling row on each pointermove. ---- */
-let _anchoredDrag=null;
-function startAnchoredDrag(ev,period,index){
-  ev.preventDefault();
-  const list=document.getElementById('anchored'+period.charAt(0).toUpperCase()+period.slice(1));
-  const rows=[...list.querySelectorAll('.admin-row')];
-  const dragged=rows[index];
-  const startRect=dragged.getBoundingClientRect();
-  const others=rows.map((r,i)=>({i,midY:r.getBoundingClientRect().top+r.getBoundingClientRect().height/2})).filter(o=>o.i!==index);
-  _anchoredDrag={period,index,targetIndex:index,dragged,startY:ev.clientY,startTop:startRect.top,height:startRect.height,others};
-  dragged.classList.add('dragging');
-  try{ dragged.setPointerCapture(ev.pointerId); }catch(e){}
-  document.addEventListener('pointermove',onAnchoredDragMove);
-  document.addEventListener('pointerup',onAnchoredDragEnd,{once:true});
-  document.addEventListener('pointercancel',onAnchoredDragEnd,{once:true});
-}
-function onAnchoredDragMove(ev){
-  const d=_anchoredDrag; if(!d) return;
-  const dy=ev.clientY-d.startY;
-  d.dragged.style.transform='translateY('+dy+'px)';
-  const draggedMidY=d.startTop+d.height/2+dy;
-  let count=0;
-  for(const o of d.others){ if(draggedMidY>o.midY) count++; }
-  d.targetIndex=count;
-}
-async function onAnchoredDragEnd(){
-  const d=_anchoredDrag; if(!d) return;
-  document.removeEventListener('pointermove',onAnchoredDragMove);
-  d.dragged.classList.remove('dragging'); d.dragged.style.transform='';
-  if(d.targetIndex!==d.index){
-    const arr=state.anchored[d.period];
-    const [item]=arr.splice(d.index,1);
-    arr.splice(d.targetIndex,0,item);
-    await DB.set('cs_anchored',state.anchored);
-    toast('הסדר עודכן ✓');
-  }
-  _anchoredDrag=null;
-  renderAnchoredAdmin();
-}
-
-// Was three chained window.prompt() calls -- inside the Android WebView those
-// render as an ugly native system dialog ("The page at ...firebaseapp.com
-// says:") that looks like an error, not a form. Replaced with the same kind of
-// in-app modal the rest of the admin uses, including the curated emoji picker.
-const ANCHORED_PERIOD_LABELS={morning:'🌅 בוקר',afternoon:'☀️ צהריים',evening:'🌆 ערב'};
-function addAnchoredTask(period){
-  const emojiBtns=CURATED_TASK_EMOJIS.map(e=>`<button type="button" class="emoji-pick-btn" onclick="document.getElementById('aatEmoji').value='${e}'">${e}</button>`).join('');
-  modalContent.innerHTML=`<div class="m-emoji">🎯</div><h3>מטלה חדשה · ${ANCHORED_PERIOD_LABELS[period]||''}</h3>
-    <div class="field" style="text-align:right;"><label>שם המטלה</label>
-      <input id="aatLabel" placeholder="לדוגמה: לקחת תרופה" style="width:100%;border:2px solid var(--line);border-radius:13px;padding:11px;font-family:inherit;"></div>
-    <div class="field" style="text-align:right;"><label>אימוג'י</label>
-      <input id="aatEmoji" value="🎯" maxlength="2" style="width:100%;border:2px solid var(--line);border-radius:13px;padding:11px;font-family:inherit;text-align:center;font-size:1.3rem;">
-      <div class="emoji-picker" style="margin-top:6px;">${emojiBtns}</div></div>
-    <div class="inline-row">
-      <div class="field"><label>מטבעות</label><input id="aatPoints" type="number" value="5" min="1" style="width:100%;border:2px solid var(--line);border-radius:13px;padding:11px;font-family:inherit;text-align:center;"></div>
-      <div class="field"><label>פעמים ביום</label><input id="aatMax" type="number" value="1" min="1" style="width:100%;border:2px solid var(--line);border-radius:13px;padding:11px;font-family:inherit;text-align:center;"></div>
-    </div>
-    <div style="display:flex;gap:8px;margin-top:14px;"><button class="btn ghost" onclick="closeModal()">ביטול</button><button class="btn primary" id="aatOk">הוסף</button></div>`;
-  modalBg.classList.add('show');
-  setTimeout(()=>{ const el=document.getElementById('aatLabel'); if(el) el.focus(); },100);
-  document.getElementById('aatOk').onclick=async()=>{
-    const label=document.getElementById('aatLabel').value.trim();
-    if(!label){ toast('צריך שם למטלה'); return; }
-    const emoji=document.getElementById('aatEmoji').value.trim()||'🎯';
-    const points=parseInt(document.getElementById('aatPoints').value)||5;
-    const max=parseInt(document.getElementById('aatMax').value)||1;
-    state.anchored[period].push({id:'at_'+Date.now(),label,emoji,points,max});
-    await DB.set('cs_anchored',state.anchored);
-    scheduleSync();
-    closeModal();
-    renderAnchoredAdmin();
-    toast('נוסף ✓');
-  };
-}
-async function updateAnchoredPoints(period,i,v){
-  state.anchored[period][i].points=parseInt(v)||1;
-  await DB.set('cs_anchored',state.anchored);
-  toast('עודכן ✓');
-}
-async function delAnchoredTask(period,i){
-  await delWithUndo(state.anchored[period],i,'cs_anchored',renderAnchoredAdmin,'המשימה',
-    async()=>{ await DB.set('cs_anchored',state.anchored); });
-}
-async function updateSleepTime(){
-  const time=parseInt(document.getElementById('sleepTime').value);
-  if(time<20||time>23){ toast('בחר שעה בין 20-23'); return; }
-  state.anchored.sleep_time=time;
-  await DB.set('cs_anchored',state.anchored);
-  toast('עודכן ✓');
-}
 async function renderChildrenAdmin(){
   const c=document.getElementById('childrenAdmin'); c.innerHTML='';
   for(const ch of state.children){
     const k=await loadKid(ch.id);
     const row=document.createElement('div'); row.className='kid-admin'; row.style.setProperty('--kc',ch.color);
+    // Real money "owed" tab (G-ish, elegant pending-cash affordance): only
+    // shown once something is actually owed, so a parent who never uses cash
+    // rewards sees no clutter. Clicking it opens the payout/reset confirm --
+    // it's the one control for both "check how much" and "mark as paid".
+    const cashBadge=k.cashOwed>0
+      ? `<button class="ka-cash" title="שילמת? לחץ לאיפוס" onclick="adminPayOutCash('${ch.id}')">💵 ${k.cashOwed} ₪ ממתינים</button>`
+      : '';
     row.innerHTML=`<div class="ka-av">${ch.emoji}</div>
-      <div class="ka-info"><div class="ka-name">${esc(ch.name)}</div><div class="ka-bal">🪙 ${k.balance} מטבעות</div></div>
+      <div class="ka-info"><div class="ka-name">${esc(ch.name)}</div><div class="ka-bal">🪙 ${k.balance} מטבעות</div>${cashBadge}</div>
       <div class="ka-acts">
         <button class="icon-btn" title="ערוך" onclick="editChild('${ch.id}')">✏️</button>
         <button class="icon-btn" title="תקן יתרה" onclick="adminSetBalance('${ch.id}')">🪙</button>
@@ -2454,13 +2403,26 @@ async function adminResetChild(id){
     if(id===state.current) renderBalance(); renderChildrenAdmin(); toast('אופס ✓');
   });
 }
+// Real-money reward payout confirmation + reset (see redeemReward's `cash`
+// branch and the ka-cash badge in renderChildrenAdmin). Deliberately a single
+// combined "did you pay them?" + reset action rather than separate check/
+// reset controls -- the whole point is the parent doesn't need to remember
+// to come back and clear it once they've actually handed over the money.
+async function adminPayOutCash(id){
+  const k=await loadKid(id), ch=state.children.find(c=>c.id===id); if(!k||!ch) return;
+  modalConfirm('💵','שילמת ל'+ch.name+'?','זה יאפס את המונה של '+k.cashOwed+' ₪ שממתינים.', async()=>{
+    audit('שילם ל'+ch.name+': '+k.cashOwed+' ₪');
+    k.cashOwed=0; await DB.set('cs_cash_'+id,0);
+    renderChildrenAdmin(); toast('סומן כשולם ✓');
+  });
+}
 async function adminDelChild(id){
   if(state.children.length<=1){ toast('צריך לפחות ילד אחד'); return; }
   const ch=state.children.find(c=>c.id===id);
   modalConfirm('🗑️','למחוק את '+ch.name+'?','כל הנתונים של '+ch.name+' יימחקו לצמיתות.', async()=>{
     state.children=state.children.filter(c=>c.id!==id); await DB.set('cs_children',state.children);
     audit('מחק את הילד/ה '+ch.name);
-    for(const p of ['cs_bal_','cs_hist_','cs_daily_','cs_mathd_','cs_badges_','cs_matht_','cs_taskt_','cs_rwt_','cs_gtime_','cs_mathlvl_','cs_learn_','cs_learnlvl_']){
+    for(const p of ['cs_bal_','cs_hist_','cs_daily_','cs_mathd_','cs_badges_','cs_matht_','cs_taskt_','cs_rwt_','cs_gtime_','cs_mathlvl_','cs_learn_','cs_learnlvl_','cs_cash_']){
       await DB.del(p+id);
     }
     delete state.kid[id];
@@ -2567,12 +2529,71 @@ function renderEmojiPicker(pickerId,inputId){
   wrap.dataset.built='1';
   wrap.innerHTML=CURATED_TASK_EMOJIS.map(e=>`<button type="button" class="emoji-pick-btn" onclick="document.getElementById('${inputId}').value='${e}'">${e}</button>`).join('');
 }
+
+// Rich, categorized emoji gallery -- used anywhere an admin form only had a
+// bare free-text emoji <input> with no picker at all (events, rewards, streak
+// prizes, new-child avatar). Opens as its own modal (reusing the shared
+// modalContent/modalBg the rest of the admin UI already uses), so it's only
+// wired to inputs that live directly on an admin pane, NOT to inputs inside
+// an already-open modal (e.g. editChild's form) -- opening it there would
+// overwrite modalContent and lose the parent form underneath.
+const EMOJI_CATEGORIES={
+  'נפוץ':['⭐','🎉','✅','❤️','👍','🔥','🎯','🏆','💯','✨','🙌','😊','🎁','👏','💪','🙏'],
+  'פרצופים':['😀','😃','😄','😁','😆','😅','🥰','😍','🤩','😎','🥳','😴','😢','😡','🤔','😇','🙃','😜','🤗','🤭'],
+  'חיות':['🐶','🐱','🐭','🐹','🐰','🦊','🐻','🐼','🐨','🐯','🦁','🐮','🐷','🐸','🐵','🐔','🐧','🦄','🐢','🐠','🐳','🦋','🐝','🕷️'],
+  'אוכל':['🍎','🍌','🍇','🍓','🍒','🍉','🍕','🍔','🍟','🌭','🍿','🍩','🍪','🎂','🍦','🍫','🍬','🥤','🍭','🥗','🧁'],
+  'פעילויות':['⚽','🏀','🏈','⚾','🎾','🏐','🎱','🏓','🚴','🏊','🎮','🎲','🧩','🎨','🎭','🎤','🎸','📚','✏️','🎒','🥋'],
+  'עולם וטבע':['🚗','🚕','🚌','🚲','✈️','🚀','⛵','🏠','🏫','🏥','🏖️','⛰️','🌳','🌸','☀️','🌙','🌈','❄️','⛄','🌊'],
+  'חגיגות':['🎁','🎈','🎊','🎉','🏆','🥇','🎖️','👑','💎','🔔','🕯️','🎀','💐','🧸','🪅','🎆'],
+  'סמלים':['❤️','🧡','💛','💚','💙','💜','🖤','🤍','💕','💖','💗','✅','❌','❓','❗','💤','⏰','📌'],
+};
+let _emojiPickerTarget=null;
+function openEmojiPicker(inputId){
+  _emojiPickerTarget=inputId;
+  const cats=Object.keys(EMOJI_CATEGORIES);
+  const tabsHtml=cats.map((c,i)=>`<button type="button" class="ep-tab${i===0?' active':''}" data-cat="${esc(c)}" onclick="switchEmojiCat('${esc(c)}',this)">${esc(c)}</button>`).join('');
+  const gridsHtml=cats.map((c,i)=>`<div class="ep-grid emoji-picker" data-cat="${esc(c)}" style="${i===0?'':'display:none;'}">${EMOJI_CATEGORIES[c].map(e=>`<button type="button" class="emoji-pick-btn" onclick="pickEmoji('${e}')">${e}</button>`).join('')}</div>`).join('');
+  modalContent.innerHTML=`<div class="m-emoji">😀</div><h3>בחר אימוג'י</h3>
+    <div class="ep-tabs">${tabsHtml}</div>
+    <div class="ep-grids">${gridsHtml}</div>
+    <div style="display:flex;gap:8px;margin-top:14px;"><button class="btn ghost" onclick="closeModal()">סגור</button></div>`;
+  modalBg.classList.add('show');
+}
+function switchEmojiCat(cat,btn){
+  document.querySelectorAll('.ep-tab').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active');
+  document.querySelectorAll('.ep-grid').forEach(g=>g.style.display=g.dataset.cat===cat?'':'none');
+}
+function pickEmoji(e){
+  const inp=document.getElementById(_emojiPickerTarget);
+  if(inp) inp.value=e;
+  closeModal();
+}
+// A task with no period is always available; one anchored to a period only
+// shows during that window on a schedule child's home screen (see
+// getTasksForTimeOfDay/periodTaskList). Single unified list -- see the
+// cs_anchored_merged_v1 migration in loadState() for why this used to be two
+// disconnected lists.
+const CHORE_PERIOD_LABELS={'':'⏰ כל היום','morning':'🌅 בוקר','afternoon':'☀️ צהריים','evening':'🌆 ערב'};
 function renderChoresAdmin(){
   renderEmojiPicker('newChoreEmojiPicker','newChoreEmoji');
+  document.getElementById('sleepTime').value=state.anchored.sleep_time;
   const c=document.getElementById('choresAdmin'); c.innerHTML='';
   state.chores.forEach((ch,i)=>{
     const row=document.createElement('div'); row.className='admin-row';
-    row.innerHTML=`<span class="drag-handle" title="גרור לשינוי הסדר">⠿</span><span class="emoji">${ch.emoji}</span><span class="t">${esc(ch.label)}<br><span style="font-size:.72rem;color:var(--muted);font-weight:400;">עד ${ch.max} פעמים ביום · </span>${kidChipsHtml('chores',i,ch)}</span>
+    const icon=ch.photo?`<img src="${ch.photo}" style="width:34px;height:34px;border-radius:50%;object-fit:cover;">`:`<span class="emoji">${ch.emoji}</span>`;
+    const photoCtrl=ch.photo
+      ? `<button class="icon-btn" title="הסר תמונה" onclick="removeChorePhoto(${i})">🖼️✖</button>`
+      : `<label class="icon-btn" title="הוסף תמונה" style="cursor:pointer;">📷<input type="file" accept="image/*" capture="environment" style="display:none;" onchange="attachChorePhoto(${i},this)"></label>`;
+    const periodSel=`<select style="border:2px solid var(--line);border-radius:10px;padding:5px 6px;font-family:inherit;font-size:.76rem;" onchange="updateChorePeriod(${i},this.value)">
+      ${Object.entries(CHORE_PERIOD_LABELS).map(([v,l])=>`<option value="${v}" ${(ch.period||'')===v?'selected':''}>${l}</option>`).join('')}
+    </select>`;
+    const gapCtrl=ch.max>1
+      ? `<input type="number" value="${ch.minGapMin||''}" min="0" placeholder="1 דק'" title="מרווח מינימלי בין פעמים (בדקות, ריק=רגיל)" style="width:64px;border:2px solid var(--line);border-radius:10px;padding:5px;text-align:center;font-family:inherit;font-size:.76rem;" onchange="updateChoreGap(${i},this.value)">`
+      : '';
+    row.innerHTML=`<span class="drag-handle" title="גרור לשינוי הסדר">⠿</span>${icon}
+      <span class="t">${esc(ch.label)}<br><span style="font-size:.72rem;color:var(--muted);font-weight:400;">עד ${ch.max} פעמים ביום · </span>${kidChipsHtml('chores',i,ch)}
+        <div style="margin-top:5px;display:flex;gap:6px;align-items:center;flex-wrap:wrap;">${periodSel}${gapCtrl}${photoCtrl}</div></span>
       <input type="number" value="${ch.points}" min="1" style="width:62px;border:2px solid var(--line);border-radius:10px;padding:7px;text-align:center;font-family:inherit;font-weight:700;" onchange="updateChorePoints(${i},this.value)">
       <button class="icon-btn" onclick="delChore(${i})">🗑️</button>`;
     c.appendChild(row);
@@ -2581,13 +2602,48 @@ function renderChoresAdmin(){
   });
 }
 async function updateChorePoints(i,v){ state.chores[i].points=parseInt(v)||1; await DB.set('cs_chores',state.chores); toast('עודכן ✓'); }
+async function updateChorePeriod(i,v){
+  if(v) state.chores[i].period=v; else delete state.chores[i].period;
+  await DB.set('cs_chores',state.chores);
+  if(state.chores[i].id&&cur()) { renderChores(); renderDayStrip(); renderFirstThen(); }
+  toast('עודכן ✓');
+}
+async function updateChoreGap(i,v){
+  const n=parseInt(v);
+  if(n>0) state.chores[i].minGapMin=n; else delete state.chores[i].minGapMin;
+  await DB.set('cs_chores',state.chores); toast('עודכן ✓');
+}
+async function attachChorePhoto(i,input){
+  const f=input.files&&input.files[0]; input.value=''; if(!f) return;
+  try{
+    state.chores[i].photo=await fileToThumb(f);
+    await DB.set('cs_chores',state.chores);
+    renderChoresAdmin(); toast('התמונה נוספה ✓');
+  }catch(e){ toast('לא הצלחתי לטעון את התמונה'); }
+}
+async function removeChorePhoto(i){
+  delete state.chores[i].photo;
+  await DB.set('cs_chores',state.chores);
+  renderChoresAdmin(); toast('התמונה הוסרה');
+}
 async function delChore(i){ await delWithUndo(state.chores,i,'cs_chores',renderChoresAdmin,'המטלה'); }
 async function addChore(){
   const label=document.getElementById('newChoreLabel').value.trim(); if(!label){ toast('צריך שם למטלה'); return; }
   const emoji=document.getElementById('newChoreEmoji').value.trim()||'⭐';
   const points=parseInt(document.getElementById('newChorePoints').value)||5, max=parseInt(document.getElementById('newChoreMax').value)||1;
-  state.chores.push({id:'chore_'+Date.now().toString(36),label,emoji,points,max}); await DB.set('cs_chores',state.chores);
-  document.getElementById('newChoreLabel').value=''; document.getElementById('newChoreEmoji').value=''; renderChoresAdmin(); toast('נוסף! ✓');
+  const period=document.getElementById('newChorePeriod').value;
+  const task={id:'chore_'+Date.now().toString(36),label,emoji,points,max};
+  if(period) task.period=period;
+  state.chores.push(task); await DB.set('cs_chores',state.chores);
+  document.getElementById('newChoreLabel').value=''; document.getElementById('newChoreEmoji').value='';
+  renderChoresAdmin(); toast('נוסף! ✓');
+}
+async function updateSleepTime(){
+  const time=parseInt(document.getElementById('sleepTime').value);
+  if(time<20||time>23){ toast('בחר שעה בין 20-23'); return; }
+  state.anchored.sleep_time=time;
+  await DB.set('cs_anchored',state.anchored);
+  toast('עודכן ✓');
 }
 
 /* ===== WEEKLY REPORT ===== */
@@ -2928,7 +2984,23 @@ function fillLearningConfig(){
   document.getElementById('learnDailyMaxMinutes').value=state.learning.dailyMaxMinutes;
   document.getElementById('learnGateToggle').textContent=state.learning.gateEnabled?'פעיל ✓':'כבוי';
   document.getElementById('learnReadAloudToggle').textContent=state.learning.readAloud!==false?'פעיל ✓':'כבוי';
+  renderTtsVoiceWarning();
   renderCustomQuestionsAdmin();
+}
+// Surfaces the actual root cause when quiz questions go silently unspoken:
+// the native TTS engine is ready but has no Hebrew voice/language pack
+// installed (a separate download on many Android TTS engines) -- previously
+// this failed completely silently, reading as "the feature is just broken"
+// rather than a one-time device setting the parent can fix themselves.
+function renderTtsVoiceWarning(){
+  const el=document.getElementById('ttsVoiceWarning'); if(!el) return;
+  const missing=nativeTtsAvailable()
+    &&typeof window.CoinQuestNative.hasVoiceForLanguage==='function'
+    &&!window.CoinQuestNative.hasVoiceForLanguage('he-IL');
+  el.style.display=missing?'block':'none';
+}
+function openTtsVoiceSettings(){
+  if(window.CoinQuestNative&&typeof window.CoinQuestNative.openTtsSettings==='function') window.CoinQuestNative.openTtsSettings();
 }
 // These toggles used to mutate state.learning in memory only -- a parent who
 // flipped one and left without pressing "save" saw it take effect immediately
@@ -2994,7 +3066,9 @@ function renderRewardsAdmin(){
   const c=document.getElementById('rewardsAdmin'); c.innerHTML='';
   state.rewards.forEach((r,i)=>{
     const row=document.createElement('div'); row.className='admin-row';
-    row.innerHTML=`<span class="emoji">${r.emoji}</span><span class="t">${esc(r.label)}${r.minutes?`<br><span style="font-size:.72rem;color:var(--mint-d);font-weight:700;">🎮 ${r.minutes} דקות משחק אוטומטית</span>`:''}</span>
+    const sub=r.minutes?`<br><span style="font-size:.72rem;color:var(--mint-d);font-weight:700;">🎮 ${r.minutes} דקות משחק אוטומטית</span>`
+      :r.cash?`<br><span style="font-size:.72rem;color:var(--gold-d);font-weight:700;">💵 ${r.cash} ₪ (נכנס למונה "ממתין לתשלום")</span>`:'';
+    row.innerHTML=`<span class="emoji">${r.emoji}</span><span class="t">${esc(r.label)}${sub}</span>
       <input type="number" value="${r.cost}" min="1" style="width:62px;border:2px solid var(--line);border-radius:10px;padding:7px;text-align:center;font-family:inherit;font-weight:700;" onchange="updateRewardCost(${i},this.value)">
       <button class="icon-btn" onclick="delReward(${i})">🗑️</button>`;
     c.appendChild(row);
@@ -3006,11 +3080,16 @@ async function addReward(){
   const label=document.getElementById('newRwLabel').value.trim(); if(!label){ toast('צריך שם לפרס'); return; }
   const emoji=document.getElementById('newRwEmoji').value.trim()||'🎁', cost=parseInt(document.getElementById('newRwCost').value)||30;
   const minutes=parseInt(document.getElementById('newRwMinutes').value)||0;
+  const cash=parseFloat(document.getElementById('newRwCash').value)||0;
   const rw={id:'r'+Date.now().toString(36),label,emoji,cost};
+  // A reward is either a game-time package OR a cash-out, never both -- minutes
+  // takes priority if a parent somehow fills both fields.
   if(minutes>0) rw.minutes=minutes;
+  else if(cash>0) rw.cash=cash;
   state.rewards.push(rw); await DB.set('cs_rewards',state.rewards);
   scheduleSync();
-  document.getElementById('newRwLabel').value=''; document.getElementById('newRwEmoji').value=''; document.getElementById('newRwMinutes').value=''; renderRewardsAdmin(); toast('נוסף! ✓');
+  document.getElementById('newRwLabel').value=''; document.getElementById('newRwEmoji').value=''; document.getElementById('newRwMinutes').value=''; document.getElementById('newRwCash').value='';
+  renderRewardsAdmin(); toast('נוסף! ✓');
 }
 
 /* ===== GAMES ADMIN ===== */
@@ -3143,7 +3222,7 @@ function backupKeyList(){
     'cs_games_v3','cs_games_v4','cs_games_v5','cs_gtime_seeded','cs_hwm_date','cs_calmlog',
     'cs_familyid','cs_learning','cs_auditlog','cs_chore_reminder'];
   for(const ch of state.children){
-    for(const p of ['cs_bal_','cs_hist_','cs_daily_','cs_mathd_','cs_badges_','cs_matht_','cs_taskt_','cs_rwt_','cs_gtime_','cs_mathlvl_','cs_learn_','cs_learnlvl_']){
+    for(const p of ['cs_bal_','cs_hist_','cs_daily_','cs_mathd_','cs_badges_','cs_matht_','cs_taskt_','cs_rwt_','cs_gtime_','cs_mathlvl_','cs_learn_','cs_learnlvl_','cs_cash_']){
       keys.push(p+ch.id);
     }
   }
@@ -3671,13 +3750,27 @@ function getTimeOfDay(hour){
   if(hour>=17&&hour<21) return 'evening';
   return 'night';
 }
+// Every task due for THIS child right now: anchored-to-the-current-period
+// tasks PLUS every "anytime" task (no period set) -- a task simply isn't
+// restricted unless the parent anchored it to a specific window. Applies to
+// every child, schedule or not: period is a per-task property independent of
+// whether a child has the visual day-schedule UI turned on (useSchedule only
+// controls whether the day-strip/first-then widgets are shown). No sleep
+// special-case here -- that's exclusive to the schedule home view, see
+// getTasksForTimeOfDay().
+function tasksDueNow(childId){
+  const timeOfDay=getTimeOfDay(new Date().getHours());
+  return state.chores.filter(t=>taskForChild(t,childId)&&(!t.period||t.period===timeOfDay));
+}
+// Schedule child's home screen only: same as tasksDueNow, but after
+// sleep_time (or before 5am) the whole list is replaced by a single "time to
+// sleep" pseudo-task -- the bedtime-cutoff concept only makes sense with the
+// visual day-schedule UI, so non-schedule children never get it.
 function getTasksForTimeOfDay(){
-  const now=new Date();
-  const hour=now.getHours();
-  const timeOfDay=getTimeOfDay(hour);
+  const hour=new Date().getHours();
   if(!state.anchored) return [];
   if(hour>=state.anchored.sleep_time||hour<5) return [{id:'night_sleep',label:'זמן שינה',emoji:'😴',points:2,max:1}];
-  return state.anchored[timeOfDay]||[];
+  return tasksDueNow(state.current);
 }
 
 /* ===== GEMINI CHAT + MIC + TTS ===== */
@@ -3796,18 +3889,25 @@ async function sendChatMessage(){
   document.getElementById('chatMessages').appendChild(thinkingWrap);
   document.getElementById('chatMessages').scrollTop=document.getElementById('chatMessages').scrollHeight;
   try{
+    // Hebrew is a lower-resource language for most hosted LLMs (including this
+    // one), so answer quality/fluency here has a real ceiling that no prompt
+    // wording alone fixes -- being explicit about "fluent, natural Hebrew (not
+    // a stiff translation)" measurably helps, but a parent who finds it still
+    // lacking may want to swap in a different provider's API key instead
+    // (would need its own request/response wiring, not just this prompt).
     const systemPrompt=`אתה "איזי", עוזר חכם ואוהב לילד בשם ${childName} בן 7, שנמצא על הספקטרום האוטיסטי בתפקוד גבוה.
 
 חוקים שאסור לשבור:
 - תמיד קרא לילד בשמו: ${childName}. אסור לומר "בני", "יקירי", או כינויים אחרים.
-- ענה תמיד בעברית בלבד.
+- ענה תמיד בעברית תקנית, שוטפת וטבעית — לא תרגום מילולי מאנגלית, לא ניסוח מאולץ.
 - תשובות קצרות: 2-3 משפטים בלבד.
 - השתמש ב-1-2 emojis רלוונטיים בלבד.
 - מילים פשוטות ברמת כיתה א'-ב'.
+- אם אתה לא בטוח בעובדה מסוימת, אמור זאת בפשטות במקום לנחש.
 
 כשהילד משועמם: הצע פעילות יצירתית כמו ציור, בניית לגו, משחק דמיון — לא אוכל.
 כשהילד עצוב/כועס: הכר ברגש שלו קודם ("זה נשמע קשה"), ואז הצע פתרון אחד פשוט.
-כשהילד שואל שאלת ידע: תסביר בצורה מעניינת עם דוגמה מהחיים.
+כשהילד שואל שאלת ידע: תסביר בצורה מעניינת, מדויקת ונכונה עובדתית, עם דוגמה מהחיים.
 אל תיתן עצות על אכילה, ממתקים, או דברים לא בריאים.`;
     const messages=[
       {role:'system',content:systemPrompt},
@@ -3818,7 +3918,7 @@ async function sendChatMessage(){
     const response=await fetch('https://api.groq.com/openai/v1/chat/completions',{
       method:'POST',
       headers:{'Content-Type':'application/json','Authorization':'Bearer '+GROQ_API_KEY},
-      body:JSON.stringify({model:'llama-3.3-70b-versatile',messages,max_tokens:200,temperature:0.6})
+      body:JSON.stringify({model:'llama-3.3-70b-versatile',messages,max_tokens:220,temperature:0.4})
     });
     // A non-2xx (bad/expired key, rate limit, server error) can still carry a
     // non-JSON or empty body; guard so response.json() doesn't throw an opaque
@@ -3875,6 +3975,7 @@ function buildSyncPayload(){
     if(k){
       payload.kids[ch.id]={balance:k.balance,history:k.history,daily:k.daily,mathDaily:k.mathDaily,
         badges:k.badges,mathTotal:k.mathTotal,taskTotal:k.taskTotal,rewardsTotal:k.rewardsTotal,
+        cashOwed:k.cashOwed||0,
         gtime:k.gtime||0,mathLevel:k.mathLevel||1,learn:k.learn,learnLevel:k.learnLevel||{math:1,english:1,science:1}};
     }
   }
@@ -3973,9 +4074,15 @@ async function applyRemoteSnapshot(data){
     }
     if(data.badgeDefs){ state.badgeDefs=data.badgeDefs; await DB.set('cs_badgedefs',data.badgeDefs); }
     if(data.anchored){
-      state.anchored=data.anchored;
-      // Firebase drops empty period arrays; renderAnchoredAdmin does a[period].forEach.
-      for(const p of ['morning','afternoon','evening']) if(!Array.isArray(state.anchored[p])) state.anchored[p]=[];
+      // Anchored tasks now live in state.chores, tagged with a `period` (see
+      // the cs_anchored_merged_v1 migration in loadState()) -- state.anchored
+      // only ever holds sleep_time going forward. A device still running an
+      // older build could still push the legacy per-period-array shape here;
+      // discard it rather than restoring dead arrays nothing reads anymore
+      // (getTasksForTimeOfDay/periodTaskList read state.chores now), which
+      // would otherwise silently resurrect the exact disconnected-list bug
+      // this migration fixed.
+      state.anchored={sleep_time:data.anchored.sleep_time??state.anchored.sleep_time??20};
       await DB.set('cs_anchored',state.anchored);
     }
     if(data.events){ state.events=data.events; await DB.set('cs_events',data.events); syncNativeEventReminders(); }
@@ -4036,6 +4143,7 @@ async function applyRemoteSnapshot(data){
         if(!Number.isFinite(kid.mathTotal)) kid.mathTotal=0;
         if(!Number.isFinite(kid.taskTotal)) kid.taskTotal=0;
         if(!Number.isFinite(kid.rewardsTotal)) kid.rewardsTotal=0;
+        kid.cashOwed=Number.isFinite(kid.cashOwed)?Math.max(0,Math.min(100000,Math.round(kid.cashOwed*100)/100)):0;
         // Game-time wallet: bounded to a sane range (0..24h) for the same
         // corrupted/forged-value reasons as balance above. If a game session
         // is live on THIS device right now, the local draining value wins —
@@ -4051,6 +4159,7 @@ async function applyRemoteSnapshot(data){
         await DB.set('cs_matht_'+id,kid.mathTotal);
         await DB.set('cs_taskt_'+id,kid.taskTotal);
         await DB.set('cs_rwt_'+id,kid.rewardsTotal);
+        await DB.set('cs_cash_'+id,kid.cashOwed);
         await DB.set('cs_gtime_'+id,kid.gtime);
         kid.mathLevel=Number.isFinite(kid.mathLevel)?Math.max(1,Math.min(5,kid.mathLevel)):1;
         await DB.set('cs_mathlvl_'+id,kid.mathLevel);
@@ -4159,7 +4268,7 @@ function hasExistingLocalData(){
 // device previously used in local-only mode by someone else).
 async function clearLocalFamilyData(){
   for(const ch of state.children){
-    for(const p of ['cs_bal_','cs_hist_','cs_daily_','cs_mathd_','cs_badges_','cs_matht_','cs_taskt_','cs_rwt_','cs_gtime_','cs_mathlvl_','cs_learn_','cs_learnlvl_']){
+    for(const p of ['cs_bal_','cs_hist_','cs_daily_','cs_mathd_','cs_badges_','cs_matht_','cs_taskt_','cs_rwt_','cs_gtime_','cs_mathlvl_','cs_learn_','cs_learnlvl_','cs_cash_']){
       await DB.del(p+ch.id);
     }
   }
