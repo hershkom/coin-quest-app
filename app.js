@@ -2349,6 +2349,30 @@ async function renderErrLog(){
       <b>${new Date(e.ts).toLocaleString('he-IL')}</b> [${esc(e.kind)}] ${esc(e.msg)}</div>`).join('')
     +(log.length>5?`<div class="card-sub" style="margin-top:6px;">ועוד ${log.length-5} ישנות יותר (בהעתקה מקבלים הכל)</div>`:'');
 }
+// Escape hatch for "the app is stuck showing something old" -- a real class
+// of confusion this project has hit more than once (see sw.js's own
+// CORE_LOGIC comment): Android's own "clear cache" button is ambiguous about
+// whether it actually touches the Cache Storage API a service worker uses
+// (some OEMs only clear the plain HTTP cache), so a parent following those
+// steps can still be stuck on stale code with no way to tell. This does the
+// one thing that's guaranteed to work: unregister the service worker AND
+// delete every named cache it created, then hard-reload. Never touches
+// family data (localStorage/IndexedDB state) -- only the SW + its caches.
+function hardResetCache(){
+  modalConfirm('🔄','לרענן הכל?','זה ימחק את המטמון המקומי של האפליקציה (לא את נתוני המשפחה) ויטען הכל מחדש מהשרת.',async()=>{
+    try{
+      if('serviceWorker' in navigator){
+        const regs=await navigator.serviceWorker.getRegistrations();
+        for(const r of regs) await r.unregister();
+      }
+      if('caches' in window){
+        const keys=await caches.keys();
+        for(const k of keys) await caches.delete(k);
+      }
+    }catch(e){ /* best-effort -- still reload even if something above failed */ }
+    location.reload();
+  });
+}
 async function copyErrLog(){
   const log=(await DB.get('cs_errlog'))??[];
   try{
