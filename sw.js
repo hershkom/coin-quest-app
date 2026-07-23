@@ -65,10 +65,22 @@ self.addEventListener('fetch',e=>{
   if(url.pathname.startsWith('/__/')||url.hostname.endsWith('firebasedatabase.app')||
      url.hostname.endsWith('googleapis.com')||url.hostname==='accounts.google.com') return;
 
+  // "Network-first" is a lie unless the fetch actually bypasses the HTTP
+  // cache: Firebase Hosting serves app.js/questions.js/styles.css/index.html
+  // with Cache-Control: max-age=3600, and a plain fetch(req) is free to
+  // satisfy that from the browser/WebView's OWN HTTP cache layer -- BELOW
+  // this service worker -- without ever reaching the network, for up to an
+  // hour after every single deploy. That's a separate cache from the one
+  // CACHE_VERSION controls, so bumping CACHE_VERSION does nothing about it.
+  // {cache:'no-store'} forces a real round-trip every time, ignoring
+  // Cache-Control entirely; this is exactly what "core logic must always be
+  // this deploy's code" requires, and it's cheap (these are small text files).
+  const noStoreReq=()=>new Request(req,{cache:'no-store'});
+
   // Navigations: network-first, cached shell as offline fallback.
   if(req.mode==='navigate'){
     e.respondWith(
-      fetch(req).then(res=>{
+      fetch(noStoreReq()).then(res=>{
         const copy=res.clone();
         caches.open(CACHE_VERSION).then(c=>c.put(req,copy));
         return res;
@@ -81,7 +93,7 @@ self.addEventListener('fetch',e=>{
   // navigations above -- see the CORE_LOGIC comment for why.
   if(url.origin===location.origin&&isCoreLogic(url)){
     e.respondWith(
-      fetch(req).then(res=>{
+      fetch(noStoreReq()).then(res=>{
         if(res&&res.status===200){
           const copy=res.clone();
           caches.open(CACHE_VERSION).then(c=>c.put(req,copy));
