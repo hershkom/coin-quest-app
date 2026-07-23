@@ -263,6 +263,20 @@
   .balance-pill{display:flex;align-items:center;gap:7px;background:var(--card);border-radius:30px;padding:7px 13px 7px 10px;font-weight:800;box-shadow:0 4px 14px rgba(124,92,252,.16);font-size:1.02rem;}
   .balance-pill .coin{width:23px;height:23px;border-radius:50%;background:radial-gradient(circle at 35% 30%,var(--gold-l),var(--gold-d));display:flex;align-items:center;justify-content:center;font-size:.78rem;box-shadow:inset 0 -2px 3px rgba(0,0,0,.15);}
   .balance-pill b{color:var(--gold-d);min-width:16px;text-align:center;}
+  .gt-pill{background:linear-gradient(135deg,#D9F5E8,#bdeed7);}
+  .gt-pill .coin{background:radial-gradient(circle at 35% 30%,#7EE0B8,#16a360);}
+  .gt-pill b{color:#0c4f32;}
+  .req-alert{border:none;width:100%;text-align:right;font-family:inherit;cursor:pointer;border-radius:22px;padding:16px 18px;margin-top:10px;background:linear-gradient(135deg,#FFE1D6,#FF9B7A);box-shadow:0 8px 22px rgba(217,80,9,.28);display:flex;align-items:center;gap:14px;transition:transform .12s;animation:reqPulse 1.8s infinite;}
+  .req-alert:active{transform:scale(.98);}
+  .req-alert .ra-ic{font-size:2.2rem;flex-shrink:0;}
+  .req-alert .ra-text{flex:1;min-width:0;}
+  .req-alert .ra-title{font-weight:900;font-size:1.05rem;color:#7a1f00;}
+  .req-alert .ra-sub{font-size:.86rem;color:#8a3410;margin-top:2px;font-weight:700;}
+  .req-alert .ra-arrow{font-size:1.3rem;color:#a4400a;}
+  @keyframes reqPulse{0%,100%{box-shadow:0 8px 22px rgba(217,80,9,.28);}50%{box-shadow:0 8px 30px rgba(217,80,9,.45);}}
+  .kid-swatch{width:32px;height:32px;border-radius:50%;border:3px solid transparent;cursor:pointer;padding:0;transition:transform .1s;}
+  .kid-swatch:active{transform:scale(.9);}
+  .kid-swatch.sel{border-color:var(--ink);box-shadow:0 0 0 2px #fff inset;}
   .gear{width:38px;height:38px;border-radius:50%;background:var(--card);border:none;display:flex;align-items:center;justify-content:center;font-size:1.1rem;box-shadow:0 4px 12px rgba(124,92,252,.14);cursor:pointer;transition:transform .15s;flex-shrink:0;}
   .gear:active{transform:rotate(40deg) scale(.92);}
   .main{flex:1;padding:6px 18px 100px;}

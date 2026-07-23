@@ -50,6 +50,7 @@
     <div class="top-right">
       <button class="break-btn" id="breakBtn" title="מרגיש/ה לא טוב? כועס/ת? לחץ כאן">🌿</button>
       <div class="balance-pill" id="balPill"><span class="coin">🪙</span><b id="balTop">0</b></div>
+      <div class="balance-pill gt-pill" id="gtPill" style="display:none;"><span class="coin">⏱️</span><b id="gtPillVal">0</b></div>
       <button class="gear" id="gearBtn" title="הורים">⚙️</button>
     </div>
   </div>
@@ -111,6 +112,11 @@
         <div class="amount-label">מטבעות שהרווחת</div>
       </div>
       <div id="dayStripWrap"></div>
+      <!-- Prominent "must-do-now" banner for required (game-blocking) anchored
+           tasks -- renderRequiredTaskAlert() in app.js. Placed above the
+           action grid, not buried below the fold with the regular chore list,
+           since missing this is what silently costs the child their game time. -->
+      <div id="requiredTaskWrap"></div>
       <!-- G2 (ANDROID-APP-PLAN.md): task-completion journey map -- distinct
            from dayStripWrap above (that's TIME-OF-DAY orientation; this is
            "how many of today's tasks are done"). renderJourneyMap() in app.js. -->
@@ -303,6 +309,11 @@
                 <button type="button" class="emoji-pick-trigger" onclick="openEmojiPicker('newKidEmoji')">😀</button>
               </div>
             </div>
+          </div>
+          <div class="field" style="margin-bottom:12px;">
+            <label>צבע (הסמל/הדמות של הילד/ה באפליקציה)</label>
+            <input type="hidden" id="newKidColor">
+            <div id="newKidColorSwatches" style="display:flex;gap:8px;"></div>
           </div>
           <button class="btn primary" onclick="addChild()">הוסף ילד</button>
         </div>

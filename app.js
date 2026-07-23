@@ -674,7 +674,7 @@ function go(v){
   clearInterval(clockInterval); clockInterval=null;
   if(v==='picker') renderPicker();
   if(v==='home'){
-    renderChores(); renderStreakBanner(); renderGameTimeBanner(); renderEventsHome(); renderDayStrip(); renderBadgesBanner();
+    renderChores(); renderStreakBanner(); renderGameTimeBanner(); renderEventsHome(); renderDayStrip(); renderBadgesBanner(); renderRequiredTaskAlert();
   }
   renderFirstThen(); // A1: now runs for every view renderFirstThen() itself allows, not just home
   renderMascot(); // G1: same "which views" rule as the strip above (reuses FIRSTTHEN_HIDDEN_VIEWS)
@@ -687,7 +687,7 @@ function go(v){
   // spends a while on e.g. the math screen across a period boundary.
   if(childUsesSchedule(curChild())&&!FIRSTTHEN_HIDDEN_VIEWS.includes(v)){
     clockInterval=setInterval(()=>{
-      if(currentView==='home'){ renderChores(); renderDayStrip(); }
+      if(currentView==='home'){ renderChores(); renderDayStrip(); renderRequiredTaskAlert(); }
       renderFirstThen();
       // Catch the day->night decoration switch across the sleep-time
       // boundary, same cadence as the schedule refresh above.
@@ -1577,6 +1577,21 @@ function currentPeriodKey(){
 // period, so a missed morning requirement still blocks play in the evening,
 // not just during the morning itself); an anytime required task (no period)
 // blocks all day until done.
+// Surfaces pendingRequiredTasks() as a standing home-screen banner instead of
+// only a modal that appears at the moment a game is blocked -- a required
+// task (bathroom sitting, medicine) should be obvious BEFORE the child even
+// tries to play, not just when they hit a wall.
+function renderRequiredTaskAlert(){
+  const wrap=document.getElementById('requiredTaskWrap'); if(!wrap) return;
+  const k=cur(); if(!k){ wrap.innerHTML=''; return; }
+  const missing=pendingRequiredTasks(state.current);
+  if(!missing.length){ wrap.innerHTML=''; return; }
+  const names=missing.map(t=>t.emoji+' '+esc(t.label)).join(', ');
+  wrap.innerHTML=`<button class="req-alert" onclick="openScan()">
+    <span class="ra-ic">🎯</span>
+    <span class="ra-text"><div class="ra-title">קודם המטלות האלה, אחר כך משחקים!</div><div class="ra-sub">${names}</div></span>
+    <span class="ra-arrow">›</span></button>`;
+}
 function pendingRequiredTasks(childId){
   const k=state.kid[childId]; if(!k) return [];
   const order=['morning','afternoon','evening'];
@@ -1783,9 +1798,19 @@ function fmtGTLong(sec){
   return m>0 ? m+' דקות' : sec+' שניות';
 }
 function renderGameTimeBanner(){
+  const k=cur();
+  // Always-visible topbar counter, separate from the home-only banner below --
+  // "I bought time and can't tell if it landed" was exactly the confusion this
+  // closes: a bank counter visible from every screen, not just home.
+  const gtPill=document.getElementById('gtPill'), gtPillVal=document.getElementById('gtPillVal');
+  if(gtPill&&gtPillVal){
+    const hasPill=!!(k&&(k.gtime||0)>0);
+    gtPill.style.display=hasPill?'flex':'none';
+    if(hasPill) gtPillVal.textContent=fmtGT(k.gtime);
+  }
   const wrap=document.getElementById('gameTimeWrap'); if(!wrap) return;
   wrap.innerHTML='';
-  const k=cur(); if(!k||!state.games.length) return;
+  if(!k||!state.games.length) return;
   const has=(k.gtime||0)>0;
   const banner=document.createElement('button');
   banner.className='gt-banner'; banner.onclick=()=>go('games');
@@ -2439,16 +2464,33 @@ async function renderChildrenAdmin(){
       </div>`;
     c.appendChild(row);
   }
+  const sw=document.getElementById('newKidColorSwatches');
+  if(sw) sw.innerHTML=colorSwatchesHtml('newKidColor',document.getElementById('newKidColor').value);
+}
+// Shared between add/edit -- this IS the "symbol" (the colored figure used
+// for the blocky-theme avatar and the profile-bubble background) that was
+// previously only ever auto-assigned by list position with no picker anywhere,
+// while the emoji ("icon") field right next to it always had one. Same kind
+// of per-child visual, same place a parent would expect to set it.
+const KID_PALETTE=['#7C5CFC','#FF6B6B','#27C99A','#4DABF7','#F5B82E','#FF8FCB'];
+function colorSwatchesHtml(inputId,selected){
+  return KID_PALETTE.map(c=>`<button type="button" class="kid-swatch${c===selected?' sel':''}" data-color="${c}" style="background:${c};" onclick="pickKidColor('${inputId}','${c}',this)"></button>`).join('');
+}
+function pickKidColor(inputId,color,btn){
+  document.getElementById(inputId).value=color;
+  btn.parentElement.querySelectorAll('.kid-swatch').forEach(b=>b.classList.remove('sel'));
+  btn.classList.add('sel');
 }
 async function addChild(){
   const name=document.getElementById('newKidName').value.trim();
   if(!name){ toast('צריך שם'); return; }
   const emoji=document.getElementById('newKidEmoji').value.trim()||'🙂';
-  const palette=['#7C5CFC','#FF6B6B','#27C99A','#4DABF7','#F5B82E','#FF8FCB'];
-  const color=palette[state.children.length%palette.length];
+  const color=document.getElementById('newKidColor').value||KID_PALETTE[state.children.length%KID_PALETTE.length];
   state.children.push({id:'k'+Date.now().toString(36),name,emoji,color});
   await DB.set('cs_children',state.children);
   document.getElementById('newKidName').value=''; document.getElementById('newKidEmoji').value='';
+  document.getElementById('newKidColor').value='';
+  document.querySelectorAll('#newKidColorSwatches .kid-swatch').forEach(b=>b.classList.remove('sel'));
   renderChildrenAdmin(); toast('נוסף! ✓');
 }
 function editChild(id){
@@ -2459,6 +2501,10 @@ function editChild(id){
   modalContent.innerHTML=`<div class="m-emoji">${ch.emoji}</div><h3>עריכת ${esc(ch.name)}</h3>
     <div class="field" style="text-align:right;"><label>שם</label><input id="ecName" value="${esc(ch.name)}" style="width:100%;border:2px solid var(--line);border-radius:13px;padding:11px;font-family:inherit;"></div>
     <div class="field" style="text-align:right;"><label>אימוג'י</label><input id="ecEmoji" value="${ch.emoji}" maxlength="2" style="width:100%;border:2px solid var(--line);border-radius:13px;padding:11px;font-family:inherit;"></div>
+    <div class="field" style="text-align:right;"><label>צבע (הסמל/הדמות)</label>
+      <input type="hidden" id="ecColor" value="${ch.color}">
+      <div id="ecColorSwatches" style="display:flex;gap:8px;">${colorSwatchesHtml('ecColor',ch.color)}</div>
+    </div>
     <div class="field" style="text-align:right;"><label>🎨 העולם שלו/ה באפליקציה</label>
       <select id="ecTheme" style="width:100%;border:2px solid var(--line);border-radius:13px;padding:11px;font-family:inherit;">
         ${themeOpt('none','ללא (ברירת מחדל)')}${themeOpt('blocks','⛏️ עולם הבלוקים')}${themeOpt('unicorn','🦄 חד-קרן')}
@@ -2479,6 +2525,7 @@ function editChild(id){
   document.getElementById('ecOk').onclick=async()=>{
     ch.name=document.getElementById('ecName').value.trim()||ch.name;
     ch.emoji=document.getElementById('ecEmoji').value.trim()||ch.emoji;
+    ch.color=document.getElementById('ecColor').value||ch.color;
     ch.useSchedule=scheduleOn;
     ch.theme=document.getElementById('ecTheme').value;
     await DB.set('cs_children',state.children);
@@ -4424,7 +4471,7 @@ function refreshUIAfterRemoteChange(){
   try{
     if(!cur()) return;
     renderBalance();
-    if(currentView==='home'){ renderChores(); renderStreakBanner(); renderGameTimeBanner(); renderEventsHome(); renderDayStrip(); renderFirstThen(); renderBadgesBanner(); }
+    if(currentView==='home'){ renderChores(); renderStreakBanner(); renderGameTimeBanner(); renderEventsHome(); renderDayStrip(); renderFirstThen(); renderBadgesBanner(); renderRequiredTaskAlert(); }
     else if(currentView==='rewards') renderRewards();
     else if(currentView==='history') renderHistory();
     else if(currentView==='streak') renderStreakView();
