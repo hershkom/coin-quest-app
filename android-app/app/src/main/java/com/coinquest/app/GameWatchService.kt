@@ -1,6 +1,7 @@
 package com.coinquest.app
 
 import android.app.AppOpsManager
+import android.app.PendingIntent
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.Service
@@ -77,7 +78,43 @@ class GameWatchService : Service() {
     override fun onDestroy() {
         handler.removeCallbacks(poll)
         hideBlockOverlay()
+        // Self-heal: if we're being torn down while a game is still meant to be
+        // guarded, schedule a restart. On MIUI + Family Link we can't set the
+        // Autostart/battery exceptions that would keep us alive (Family Link
+        // locks those settings), so an AlarmManager-driven restart is the only
+        // way to survive being killed.
+        scheduleRestartIfEnforcing()
         super.onDestroy()
+    }
+
+    /** Called when the user swipes CoinQuest away from Recents -- the exact
+     *  bypass found on-device (kill the app, the wall disappears, the game is
+     *  free). Schedule an almost-immediate restart so the wall comes back on
+     *  its own within ~1s and re-covers the game. */
+    override fun onTaskRemoved(rootIntent: Intent?) {
+        scheduleRestartIfEnforcing()
+        super.onTaskRemoved(rootIntent)
+    }
+
+    private fun scheduleRestartIfEnforcing() {
+        // Only bother if a game is actually configured for enforcement.
+        val enforced = getSharedPreferences(GameTimePrefs.NAME, Context.MODE_PRIVATE)
+            .getString(GameTimePrefs.ENFORCED_PACKAGES, null) ?: ""
+        if (enforced.isBlank()) return
+        try {
+            val restart = Intent(applicationContext, GameWatchService::class.java)
+            val flags = PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            val pi = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O)
+                PendingIntent.getForegroundService(this, 42, restart, flags)
+            else
+                PendingIntent.getService(this, 42, restart, flags)
+            val am = getSystemService(Context.ALARM_SERVICE) as android.app.AlarmManager
+            // ~1s later; RTC_WAKEUP so it fires even if the process was killed.
+            am.set(android.app.AlarmManager.RTC_WAKEUP, System.currentTimeMillis() + 1200, pi)
+            Log.d(TAG, "Scheduled self-restart in ~1.2s")
+        } catch (e: Exception) {
+            Log.w(TAG, "Could not schedule restart", e)
+        }
     }
 
     private fun enforceOnce() {
