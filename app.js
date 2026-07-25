@@ -2714,10 +2714,15 @@ function switchEmojiCat(cat,btn){
   document.querySelectorAll('.ep-grid').forEach(g=>g.style.display=g.dataset.cat===cat?'':'none');
 }
 function pickEmoji(e){
+  if(typeof _emojiPickerTarget==='function'){ _emojiPickerTarget(e); closeModal(); return; }
   const inp=document.getElementById(_emojiPickerTarget);
   if(inp) inp.value=e;
   closeModal();
 }
+// Variant for editing an emoji that isn't backed by a visible <input> -- e.g.
+// an already-saved reward's emoji in its admin row, which (unlike the "add
+// reward" form) has no input field to point openEmojiPicker() at.
+function openEmojiPickerFor(onPick){ openEmojiPicker(onPick); }
 // A task with no period is always available; one anchored to a period only
 // shows during that window on a schedule child's home screen (see
 // getTasksForTimeOfDay/periodTaskList). Single unified list -- see the
@@ -3258,10 +3263,16 @@ function renderRewardsAdmin(){
     const row=document.createElement('div'); row.className='admin-row';
     const sub=r.minutes?`<br><span style="font-size:.72rem;color:var(--mint-d);font-weight:700;">🎮 ${r.minutes} דקות משחק אוטומטית</span>`
       :r.cash?`<br><span style="font-size:.72rem;color:var(--gold-d);font-weight:700;">💵 ${r.cash} ₪ (נכנס למונה "ממתין לתשלום")</span>`:'';
-    row.innerHTML=`<span class="emoji">${r.emoji}</span><span class="t">${esc(r.label)}${sub}</span>
+    row.innerHTML=`<button type="button" class="emoji" title="שנה אימוג'י" onclick="pickRewardEmoji(${i})" style="border:none;background:none;cursor:pointer;padding:0;font-size:inherit;">${r.emoji}</button><span class="t">${esc(r.label)}${sub}</span>
       <input type="number" value="${r.cost}" min="1" style="width:62px;border:2px solid var(--line);border-radius:10px;padding:7px;text-align:center;font-family:inherit;font-weight:700;" onchange="updateRewardCost(${i},this.value)">
       <button class="icon-btn" onclick="delReward(${i})">🗑️</button>`;
     c.appendChild(row);
+  });
+}
+function pickRewardEmoji(i){
+  openEmojiPickerFor(async(e)=>{
+    state.rewards[i].emoji=e; await DB.set('cs_rewards',state.rewards);
+    renderRewardsAdmin(); toast('עודכן ✓');
   });
 }
 async function updateRewardCost(i,v){ state.rewards[i].cost=parseInt(v)||1; await DB.set('cs_rewards',state.rewards); toast('עודכן ✓'); }
