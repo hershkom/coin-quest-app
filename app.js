@@ -147,6 +147,15 @@ const DEFAULT_GAMES=[
   // not in this web page, since the WebView itself is backgrounded the whole
   // time the game is open.
   {id:'minecraft_real', label:'מיינקראפט (הגרסה שקנית)', emoji:'⛏️', native:true, androidPackage:'com.mojang.minecraftpe'},
+  // Same nominative-use, same native-enforcement pattern as minecraft_real
+  // above -- YouTube can't be embedded in an iframe for general browsing
+  // (it sends X-Frame-Options/CSP frame-ancestors denying that, unlike the
+  // single-video nocookie embed player), so it can only ever be a native
+  // app launch, never a web `url` game. That also means it's exactly as
+  // "bought with game time" as any other game: the overlay wall drains the
+  // same gtime wallet and enforces the same countdown, just against
+  // com.google.android.youtube instead of a game package.
+  {id:'youtube', label:'יוטיוב', emoji:'📺', native:true, androidPackage:'com.google.android.youtube'},
 ];
 const DEFAULT_STREAKS=[
   {id:'clean',    title:'יום נקי',       dayWord:'יום נקי',      icon:'🧼', childId:'ariel', goal:30, rewardLabel:'Nintendo Switch 2', rewardEmoji:'🎮', days:{}, current:0, best:0, wonAt:null},
@@ -345,6 +354,15 @@ async function loadState(){
     state.games=state.games.filter(g=>!/classic\.minecraft\.net/.test(g.url||''));
     await DB.set('cs_games',state.games);
     await DB.set('cs_games_v5',true);
+  }
+  // One-time migration v6: add the native YouTube entry for devices that
+  // already synced a games list before it existed (same pattern as v4 above).
+  if(!(await DB.get('cs_games_v6'))){
+    if(!state.games.some(g=>g.native&&g.androidPackage==='com.google.android.youtube')){
+      state.games.push({...DEFAULT_GAMES[DEFAULT_GAMES.length-1]});
+      await DB.set('cs_games',state.games);
+    }
+    await DB.set('cs_games_v6',true);
   }
   // One-time seed: make sure at least one coins→minutes package exists in the
   // rewards shop, so the whole buy-time flow works out of the box with zero
