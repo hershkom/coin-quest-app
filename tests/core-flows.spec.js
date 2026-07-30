@@ -509,6 +509,31 @@ test.describe('calm toolkit', () => {
     expect(entry.tool).toBe('ocean');
     expect(entry.body).toBe('heart');
   });
+
+  test('switching between the 4 soundscapes updates the label, and the sleep timer stops the sound', async ({ page }) => {
+    await enterLocalOnly(page);
+    await selectChild(page, 'אריאל');
+    await page.locator('.break-btn').click();
+    await page.locator('.calm-tile', { hasText: 'גלים בים' }).click();
+    await expect(page.locator('.calm-sound-switch[data-sound="ocean"]')).toHaveClass(/sel/);
+
+    await page.locator('.calm-sound-switch[data-sound="heartbeat"]').click();
+    await expect(page.locator('#calmSoundLabel')).toHaveText(/פעימות לב/);
+    await expect(page.locator('.calm-sound-switch[data-sound="heartbeat"]')).toHaveClass(/sel/);
+
+    await page.locator('.calm-sound-switch[data-sound="purr"]').click();
+    await expect(page.locator('#calmSoundLabel')).toHaveText(/גרגור חתול/);
+
+    // Exercise the real timer path with a short delay instead of waiting real minutes:
+    // temporarily shrink the minute->ms conversion just for this one call.
+    await page.evaluate(() => {
+      const realSetTimeout = window.setTimeout;
+      window.setTimeout = (fn, ms) => realSetTimeout(fn, Math.min(ms, 50));
+      setCalmSoundTimer(5);
+      window.setTimeout = realSetTimeout;
+    });
+    await expect(page.locator('#calmSoundLabel')).toHaveText(/נגמר בשקט/, { timeout: 2000 });
+  });
 });
 
 test.describe('backup / restore', () => {

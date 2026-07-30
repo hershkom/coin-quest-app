@@ -3634,7 +3634,7 @@ const CALM_PANES=['calmMenu','calmBreathe','calmSound','calmGround','calmMuscle'
 // Shared display names for cs_calmlog tool ids -- used by the parent-facing
 // stats (renderCalmLogStats) and by calmPickFeeling's personalized-suggestion
 // path (bestToolFor), so a new tool only needs to be added here once.
-const CALM_TOOL_NAMES={breathe:'🎈 נשימת בלון',muscle:'🍋 סוחטים לימון',heavy:'🦸 כוח-על',ground:'🖐️ משחק החושים',ocean:'🌊 גלים בים',rain:'🌧️ גשם שקט',visual:'✨ מסך מרגיע'};
+const CALM_TOOL_NAMES={breathe:'🎈 נשימת בלון',muscle:'🍋 סוחטים לימון',heavy:'🦸 כוח-על',ground:'🖐️ משחק החושים',ocean:'🌊 גלים בים',rain:'🌧️ גשם שקט',heartbeat:'💓 פעימות לב',purr:'🐱 גרגור חתול',visual:'✨ מסך מרגיע'};
 
 function openCalmBreak(){
   _calmSession={before:null, tool:null, body:null, ts:Date.now()};
@@ -3710,8 +3710,20 @@ function openCalmActivity(kind){
   _calmActive=kind;
   if(_calmSession&&!_calmSession.tool) _calmSession.tool=kind;
   if(kind==='breathe'){ calmShowPane('calmBreathe'); startBreathing(); }
-  else if(kind==='ocean'){ calmShowPane('calmSound'); document.getElementById('calmSoundIcon').textContent='🌊'; document.getElementById('calmSoundLabel').textContent='גלים בים... שומעים את הים עולה ויורד'; startCalmNoise('ocean'); }
-  else if(kind==='rain'){ calmShowPane('calmSound'); document.getElementById('calmSoundIcon').textContent='🌧️'; document.getElementById('calmSoundLabel').textContent='גשם שקט על החלון...'; startCalmNoise('rain'); }
+  else if(kind==='ocean'||kind==='rain'||kind==='heartbeat'||kind==='purr'){
+    calmShowPane('calmSound');
+    document.querySelectorAll('.calm-timer-btn').forEach(b=>b.classList.toggle('sel',+b.dataset.min===0));
+    const info={
+      ocean:['🌊','גלים בים... שומעים את הים עולה ויורד'],
+      rain:['🌧️','גשם שקט על החלון...'],
+      heartbeat:['💓','פעימות לב רגועות...'],
+      purr:['🐱','גרגור חתול רך...'],
+    }[kind];
+    document.getElementById('calmSoundIcon').textContent=info[0];
+    document.getElementById('calmSoundLabel').textContent=info[1];
+    document.querySelectorAll('.calm-sound-switch').forEach(b=>b.classList.toggle('sel',b.dataset.sound===kind));
+    startCalmNoise(kind);
+  }
   else if(kind==='ground'){ calmShowPane('calmGround'); startGrounding(); }
   else if(kind==='muscle'){ calmShowPane('calmMuscle'); startMuscle(); }
   else if(kind==='heavy'){ calmShowPane('calmHeavy'); startHeavy(); }

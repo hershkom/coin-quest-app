@@ -629,6 +629,12 @@
   .calm-bubble.popping{animation:bubblePop .4s ease-out forwards;pointer-events:none;}
   @keyframes bubblePop{to{transform:scale(1.7);opacity:0;}}
   .calm-music-icon{font-size:4rem;animation:calmpulse 3s ease-in-out infinite;}
+  .calm-sound-switches{display:flex;gap:8px;justify-content:center;margin-top:16px;}
+  .calm-sound-switch{border:2px solid transparent;background:rgba(255,255,255,.8);border-radius:16px;width:52px;height:52px;font-size:1.5rem;cursor:pointer;}
+  .calm-sound-switch.sel{border-color:var(--mint-d);background:rgba(39,201,154,.18);}
+  .calm-timer-row{display:flex;gap:8px;justify-content:center;margin-top:8px;}
+  .calm-timer-btn{border:2px solid transparent;background:rgba(255,255,255,.8);border-radius:14px;padding:8px 14px;font-family:inherit;font-weight:700;font-size:.8rem;color:#1a6b52;cursor:pointer;}
+  .calm-timer-btn.sel{border-color:var(--mint-d);background:rgba(39,201,154,.18);}
   @keyframes calmpulse{0%,100%{transform:scale(1);opacity:.85;}50%{transform:scale(1.12);opacity:1;}}
   .calm-back-row{display:flex;gap:10px;margin-top:26px;}
 
