@@ -2368,7 +2368,7 @@ async function renderCalmLogStats(){
   const el=document.getElementById('calmLogStats'); if(!el) return;
   const log=(await DB.get('cs_calmlog'))??[];
   if(!log.length){ el.innerHTML='<div class="card-sub">עדיין אין שימוש — זה בסדר גמור. הכלי מחכה לרגע שיצטרכו אותו.</div>'; return; }
-  const TOOLS={breathe:'🎈 נשימת בלון',muscle:'🍋 סוחטים לימון',ground:'🖐️ משחק החושים',ocean:'🌊 גלים בים',rain:'🌧️ גשם שקט',visual:'✨ מסך מרגיע'};
+  const TOOLS=CALM_TOOL_NAMES;
   const FEEL=['','😊','😕','😖','😡'];
   const week=log.filter(e=>Date.now()-e.ts<7*24*3600*1000);
   const improved=log.filter(e=>e.before&&e.after&&e.after<e.before).length;
@@ -3630,7 +3630,11 @@ document.getElementById('gearBtn').onclick=openAdmin;
 //   offline, no audio files).
 let _breathTimer=null, _calmNoise=null, _calmActive=null, _muscleTimer=null;
 let _calmSession=null; // {before, tool, ts}
-const CALM_PANES=['calmMenu','calmBreathe','calmSound','calmGround','calmMuscle','calmVisual','calmAfter'];
+const CALM_PANES=['calmMenu','calmBreathe','calmSound','calmGround','calmMuscle','calmHeavy','calmVisual','calmAfter'];
+// Shared display names for cs_calmlog tool ids -- used by the parent-facing
+// stats (renderCalmLogStats) and by calmPickFeeling's personalized-suggestion
+// path (bestToolFor), so a new tool only needs to be added here once.
+const CALM_TOOL_NAMES={breathe:'🎈 נשימת בלון',muscle:'🍋 סוחטים לימון',heavy:'🦸 כוח-על',ground:'🖐️ משחק החושים',ocean:'🌊 גלים בים',rain:'🌧️ גשם שקט',visual:'✨ מסך מרגיע'};
 
 function openCalmBreak(){
   _calmSession={before:null, tool:null, ts:Date.now()};
@@ -3652,14 +3656,14 @@ function showCalmMenu(){
 function calmPickFeeling(level){
   if(_calmSession) _calmSession.before=level;
   document.querySelectorAll('.calm-tile').forEach(t=>t.classList.remove('suggested'));
-  const sug={1:'visual',2:'ground',3:'breathe',4:'muscle'}[level];
+  const sug={1:'visual',2:'ground',3:'breathe',4:'heavy'}[level];
   const el=document.getElementById('tile-'+sug);
   if(el) el.classList.add('suggested');
   document.getElementById('calmSuggest').textContent={
     1:'איזה כיף! אפשר פשוט ליהנות ממשהו נעים ✨',
     2:'בוא ננסה את משחק החושים — הוא עוזר כשמשהו לא נעים',
     3:'נשימת בלון עוזרת הכי מהר כשעצבניים',
-    4:'כשכועסים חזק — לסחוט לימונים זה הכי טוב! ולנשום',
+    4:'כשכועסים ממש חזק — הגוף צריך לעבוד! נסה את כוח-העל 🦸',
   }[level];
   document.querySelectorAll('#feelRowBefore .feel-btn').forEach((b,i)=>b.style.outline=(i+1)===level?'3px solid var(--mint)':'none');
 }
@@ -3672,6 +3676,7 @@ function openCalmActivity(kind){
   else if(kind==='rain'){ calmShowPane('calmSound'); document.getElementById('calmSoundIcon').textContent='🌧️'; document.getElementById('calmSoundLabel').textContent='גשם שקט על החלון...'; startCalmNoise('rain'); }
   else if(kind==='ground'){ calmShowPane('calmGround'); startGrounding(); }
   else if(kind==='muscle'){ calmShowPane('calmMuscle'); startMuscle(); }
+  else if(kind==='heavy'){ calmShowPane('calmHeavy'); startHeavy(); }
   else if(kind==='visual'){ calmShowPane('calmVisual'); renderCalmBubbles(); }
 }
 function stopCalmActivity(){
@@ -3697,6 +3702,7 @@ function startBreathing(){
     ball.style.transition='transform '+p.secs+'s '+(phase===2?'ease-out':'ease-in-out');
     ball.style.transform='scale('+p.to+')';
     calmBreathTone(phase);
+    calmBreathHaptic(phase);
   };
   ball.style.transition='none'; ball.style.transform='scale(.6)';
   requestAnimationFrame(()=>requestAnimationFrame(applyPhase));
@@ -3724,6 +3730,20 @@ function calmBreathTone(phase){
     g.gain.linearRampToValueAtTime(0,actx.currentTime+0.5);
     o.connect(g); g.connect(actx.destination);
     o.start(); o.stop(actx.currentTime+0.55);
+  }catch(e){}
+}
+// C1 (CALM-UPGRADE-PLAN): rhythm through the fingertips, not just eyes/ears --
+// works with eyes closed and doesn't need auditory processing, both of which
+// matter a lot mid-meltdown. Deliberately NOT guarded by state.calmMode (that
+// guard exists to suppress EXCITEMENT haptics like coinFly/mascotReact; this
+// vibration IS the calming tool itself, the same way the breathing tone above
+// isn't muted either).
+function calmBreathHaptic(phase){
+  if(!navigator.vibrate) return;
+  try{
+    if(phase===0) navigator.vibrate([40,120,40,120,40,120,40]); // inhale: short rising pulses
+    else if(phase===1) navigator.vibrate(0); // hold: silence
+    else navigator.vibrate([200,300,150,350,100,400]); // exhale: long, slowing pulses
   }catch(e){}
 }
 
@@ -3794,17 +3814,96 @@ function startMuscle(){
   },1000);
 }
 
+// C2 (CALM-UPGRADE-PLAN): proprioceptive "heavy work" -- wall pushes, chair
+// presses, isometric holds, a self-hug for deep pressure -- is the OT-backed
+// #1 recommendation for discharging anger/big physical energy, a category
+// the toolkit didn't have at all before this (breathing/muscle-release are
+// calming but not discharging). Reuses _muscleTimer -- stopCalmActivity()
+// already clears it, and only one of startMuscle/startHeavy ever runs at once.
+const HEAVY_STEPS=[
+  {ic:'🧱', txt:'לך לקיר ודחוף אותו הכי חזק שאתה יכול — כאילו אתה מזיז את הבית!', secs:10},
+  {ic:'🪑', txt:'שב על כיסא, שים ידיים בצדדים ולחץ למטה להרים את עצמך', secs:8},
+  {ic:'🤲', txt:'הצמד את כפות הידיים חזק אחת לשנייה מול החזה', secs:8},
+  {ic:'🤗', txt:'חבק את עצמך חזק חזק — לחיצה גדולה של אלוף', secs:10},
+];
+function startHeavy(){
+  let step=0, sec=0;
+  const ic=document.getElementById('heavyIc'), txt=document.getElementById('heavyTxt'),
+        fill=document.getElementById('heavyFill'), hint=document.getElementById('heavyHint');
+  const apply=()=>{
+    const s=HEAVY_STEPS[step];
+    ic.textContent=s.ic; txt.textContent=s.txt;
+    hint.textContent='דחוף/לחץ חזק! עוד '+(s.secs-sec)+' שניות';
+    fill.style.width='0%';
+  };
+  apply();
+  _muscleTimer=setInterval(()=>{
+    sec++;
+    const s=HEAVY_STEPS[step];
+    fill.style.width=Math.min(100,(sec/s.secs)*100)+'%';
+    hint.textContent='דחוף/לחץ חזק! עוד '+Math.max(0,s.secs-sec)+' שניות';
+    if(sec>=s.secs){
+      sec=0; step++;
+      if(step>=HEAVY_STEPS.length){
+        clearInterval(_muscleTimer); _muscleTimer=null;
+        ic.textContent='😌'; txt.textContent='וואו! פרקת את כל הכוח. איך ההרגשה?';
+        hint.textContent=''; fill.style.width='100%';
+        return;
+      }
+      apply();
+    }
+  },1000);
+}
+
+// C3 (CALM-UPGRADE-PLAN): a purely passive "calm screen" gives the hands
+// nothing to do -- an interactive pop-it-style fidget (pop + soft tone +
+// tiny vibration + a fresh bubble reborn elsewhere) channels restless energy
+// through the fingertips instead, the same digital-fidget category as
+// Haptic Box. No goal/count target on purpose -- it's a fidget, not a game.
+let _bubbleCount=0;
 function renderCalmBubbles(){
   const box=document.getElementById('calmVisualBox'); box.innerHTML='';
-  for(let i=0;i<7;i++){
-    const b=document.createElement('div'); b.className='calm-bubble';
-    const size=20+Math.random()*40;
-    b.style.width=size+'px'; b.style.height=size+'px';
-    b.style.left=(Math.random()*85)+'%'; b.style.top=(Math.random()*70)+'%';
-    b.style.animationDuration=(5+Math.random()*4)+'s';
-    b.style.animationDelay=(Math.random()*3)+'s';
-    box.appendChild(b);
-  }
+  _bubbleCount=0;
+  updateBubbleCount();
+  for(let i=0;i<10;i++) spawnBubble(box);
+}
+function spawnBubble(box){
+  const b=document.createElement('div'); b.className='calm-bubble';
+  const size=20+Math.random()*40;
+  b.style.width=size+'px'; b.style.height=size+'px';
+  b.style.left=(Math.random()*85)+'%'; b.style.top=(Math.random()*70)+'%';
+  b.style.animationDuration=(5+Math.random()*4)+'s';
+  b.style.animationDelay=(Math.random()*3)+'s';
+  b.onclick=()=>popBubble(b,box);
+  box.appendChild(b);
+}
+function popBubble(b,box){
+  if(b.classList.contains('popping')) return; // ignore a double-tap mid-pop
+  b.classList.add('popping');
+  try{ navigator.vibrate&&navigator.vibrate(15); }catch(e){}
+  calmPopTone();
+  _bubbleCount++; updateBubbleCount();
+  setTimeout(()=>{
+    b.remove();
+    if(_calmActive==='visual') spawnBubble(box); // still on this screen -- respawn
+  },400);
+}
+function updateBubbleCount(){
+  const el=document.getElementById('bubbleCount'); if(el) el.textContent=_bubbleCount;
+}
+function calmPopTone(){
+  try{
+    actx=actx||new (window.AudioContext||window.webkitAudioContext)();
+    if(actx.state==='suspended') actx.resume();
+    const o=actx.createOscillator(), g=actx.createGain();
+    o.type='sine';
+    o.frequency.setValueAtTime(500,actx.currentTime);
+    o.frequency.exponentialRampToValueAtTime(200,actx.currentTime+0.15);
+    g.gain.setValueAtTime(0.06,actx.currentTime);
+    g.gain.linearRampToValueAtTime(0.0001,actx.currentTime+0.15);
+    o.connect(g); g.connect(actx.destination);
+    o.start(); o.stop(actx.currentTime+0.16);
+  }catch(e){}
 }
 
 /* -- soundscapes: filtered-noise synthesis (offline, no audio files) -- */

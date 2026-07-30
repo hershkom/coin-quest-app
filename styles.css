@@ -611,8 +611,10 @@
   .muscle-fill{height:100%;border-radius:20px;background:linear-gradient(90deg,var(--mint),var(--mint-d));width:0%;transition:width .2s linear;}
   .calm-visual{position:relative;width:260px;height:220px;border-radius:26px;overflow:hidden;background:linear-gradient(135deg,#a8e6cf,#dcedc1,#ffd3b6,#a8e6cf);background-size:300% 300%;animation:calmgradient 14s ease-in-out infinite;box-shadow:0 10px 26px rgba(0,0,0,.1);}
   @keyframes calmgradient{0%,100%{background-position:0% 50%;}50%{background-position:100% 50%;}}
-  .calm-bubble{position:absolute;border-radius:50%;background:rgba(255,255,255,.4);animation:calmfloat ease-in-out infinite;}
+  .calm-bubble{position:absolute;border-radius:50%;background:rgba(255,255,255,.4);animation:calmfloat ease-in-out infinite;cursor:pointer;}
   @keyframes calmfloat{0%,100%{transform:translateY(0) scale(1);}50%{transform:translateY(-22px) scale(1.15);}}
+  .calm-bubble.popping{animation:bubblePop .4s ease-out forwards;pointer-events:none;}
+  @keyframes bubblePop{to{transform:scale(1.7);opacity:0;}}
   .calm-music-icon{font-size:4rem;animation:calmpulse 3s ease-in-out infinite;}
   @keyframes calmpulse{0%,100%{transform:scale(1);opacity:.85;}50%{transform:scale(1.12);opacity:1;}}
   .calm-back-row{display:flex;gap:10px;margin-top:26px;}

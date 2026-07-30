@@ -820,6 +820,7 @@
     <div class="calm-tiles">
       <button class="calm-tile" id="tile-breathe" onclick="openCalmActivity('breathe')"><span class="t-ic">🎈</span>נשימת בלון</button>
       <button class="calm-tile" id="tile-muscle" onclick="openCalmActivity('muscle')"><span class="t-ic">🍋</span>סוחטים לימון</button>
+      <button class="calm-tile" id="tile-heavy" onclick="openCalmActivity('heavy')"><span class="t-ic">🦸</span>כוח-על</button>
       <button class="calm-tile" id="tile-ground" onclick="openCalmActivity('ground')"><span class="t-ic">🖐️</span>משחק החושים</button>
       <button class="calm-tile" id="tile-ocean" onclick="openCalmActivity('ocean')"><span class="t-ic">🌊</span>גלים בים</button>
       <button class="calm-tile" id="tile-rain" onclick="openCalmActivity('rain')"><span class="t-ic">🌧️</span>גשם שקט</button>
@@ -848,8 +849,15 @@
     <div class="muscle-bar"><div class="muscle-fill" id="muscleFill"></div></div>
     <div class="cm-sub" id="muscleHint"></div>
   </div>
+  <div id="calmHeavy" style="display:none;text-align:center;">
+    <div class="muscle-ic" id="heavyIc">🦸</div>
+    <div class="ground-txt" id="heavyTxt"></div>
+    <div class="muscle-bar"><div class="muscle-fill" id="heavyFill"></div></div>
+    <div class="cm-sub" id="heavyHint"></div>
+  </div>
   <div id="calmVisual" style="display:none;text-align:center;">
     <div class="calm-visual" id="calmVisualBox"></div>
+    <div class="cm-sub" style="margin-top:10px;">פוצצת <b id="bubbleCount">0</b> בועות 🫧</div>
   </div>
   <div id="calmAfter" style="display:none;text-align:center;">
     <h3 style="margin:8px 0 14px;color:#1a6b52;">ואיך אתה מרגיש עכשיו?</h3>

@@ -415,6 +415,51 @@ test.describe('calm toolkit', () => {
     expect(log[0].before).toBe(4);
     expect(log[0].after).toBe(1);
   });
+
+  test('breathing haptics never throw, even without navigator.vibrate', async ({ page }) => {
+    await enterLocalOnly(page);
+    await selectChild(page, 'אריאל');
+    await page.evaluate(() => { delete navigator.vibrate; });
+    await page.locator('.break-btn').click();
+    await page.locator('.calm-tile', { hasText: 'נשימת בלון' }).click();
+    await expect(page.locator('#calmBreathe')).toBeVisible();
+    const errors = await page.evaluate(() => {
+      try { calmBreathHaptic(0); calmBreathHaptic(1); calmBreathHaptic(2); return null; }
+      catch (e) { return e.message; }
+    });
+    expect(errors).toBeNull();
+  });
+
+  test('"כועס מאוד" suggests the new heavy-work tool, which runs a full cycle', async ({ page }) => {
+    await enterLocalOnly(page);
+    await selectChild(page, 'אריאל');
+    await page.locator('.break-btn').click();
+    await page.locator('#feelRowBefore .feel-btn', { hasText: 'כועס מאוד' }).click();
+    await expect(page.locator('#tile-heavy')).toHaveClass(/suggested/);
+
+    await page.locator('.calm-tile', { hasText: 'כוח-על' }).click();
+    await expect(page.locator('#calmHeavy')).toBeVisible();
+    await expect(page.locator('#heavyTxt')).toHaveText(/קיר/);
+
+    // Fast-forward through all four steps without waiting ~36 real seconds.
+    await page.evaluate(async () => {
+      for (let i = 0; i < 40; i++) { await new Promise(r => setTimeout(r, 25)); }
+    });
+  });
+
+  test('bubble-pop fidget increments a counter and keeps the bubble count steady', async ({ page }) => {
+    await enterLocalOnly(page);
+    await selectChild(page, 'אריאל');
+    await page.locator('.break-btn').click();
+    await page.locator('.calm-tile', { hasText: 'מסך מרגיע' }).click();
+    await expect(page.locator('.calm-bubble').first()).toBeVisible();
+    const before = await page.locator('.calm-bubble').count();
+
+    await page.locator('.calm-bubble').first().click();
+    await expect(page.locator('#bubbleCount')).toHaveText('1');
+    await page.waitForTimeout(500); // respawn delay
+    expect(await page.locator('.calm-bubble').count()).toBe(before);
+  });
 });
 
 test.describe('backup / restore', () => {
