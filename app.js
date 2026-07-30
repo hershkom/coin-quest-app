@@ -1526,11 +1526,17 @@ function renderChores(){
   let tasks=tasksDueNow(state.current);
   if(childUsesSchedule(curChild())&&currentView==='home'){
     tasks=getTasksForTimeOfDay();
-    const timeHour=new Date().getHours();
-    const hour=String(timeHour).padStart(2,'0');
+    // Friendly, period-true wording instead of a raw clock time -- "22:00"
+    // with a daytime-sky emoji read as technical noise, and a child using
+    // this all day orients by day-part words, not by 24h clock digits.
     const greeting=document.createElement('div');
     greeting.style.cssText='font-size:1.1rem;font-weight:800;color:#6B6585;margin-bottom:14px;text-align:center;';
-    greeting.textContent=hour+':00 - 🌤️ מטלות כרגע';
+    greeting.textContent={
+      morning:'🌅 בוקר טוב! המטלות של עכשיו',
+      afternoon:'☀️ צהריים טובים! המטלות של עכשיו',
+      evening:'🌆 ערב טוב! המטלות של עכשיו',
+      sleep:'🌙 לילה טוב! זמן לישון',
+    }[currentPeriodKey()]||'🌤️ המטלות של עכשיו';
     wrap.appendChild(greeting);
   }
   if(tasks.length===0){ wrap.innerHTML='<div class="empty"><span class="e-ic">🧹</span>אין מטלות כרגע</div>'; return; }
@@ -1545,6 +1551,11 @@ function renderChores(){
         <div class="ci-d">${full?'הושלם להיום ✅':(used+'/'+ch.max+' היום')}</div>
       </div>
       <div class="chore-pts">+${ch.points} 🪙</div>`;
+    // Tapping the row's TEXT area reads the task name aloud -- for a child
+    // who can't yet read the label reliably. The scan action stays on the big
+    // icon button only, so hearing the name never accidentally opens the
+    // scanner. Reuses the same read-aloud toggle as the learning questions.
+    row.querySelector('.chore-info').onclick=()=>{ if(ttsEnabled()){ stopSpeaking(); speakWithHighlight(ch.label,null,'he-IL',null); } };
     wrap.appendChild(row);
   });
   renderJourneyMap();
@@ -1688,8 +1699,16 @@ function renderFirstThen(){
   }
   const first=remaining[0], then=remaining[1];
   const ftIcon=t=>t.photo?`<img class="ft-ic" src="${t.photo}" style="width:64px;height:64px;border-radius:16px;object-fit:cover;">`:`<span class="ft-ic">${t.emoji}</span>`;
+  // The "קודם" box is a BUTTON when the task is scannable (a real chore, not
+  // the sleep pseudo-task): the strip already tells the child what to do next
+  // all day long -- tapping it should START doing it (jump straight to the
+  // scanner, pre-hinted to this task), not just describe it.
+  const firstTappable=!!findTaskById(first.id);
+  const firstBox=`<div class="ft-lbl">קודם</div>${ftIcon(first)}<div class="ft-t">${esc(first.label)}</div>`;
   wrap.innerHTML=`<div class="ft-card">
-    <div class="ft-box first"><div class="ft-lbl">קודם</div>${ftIcon(first)}<div class="ft-t">${esc(first.label)}</div></div>
+    ${firstTappable
+      ?`<button class="ft-box first ft-tap" onclick="goScanForChore('${first.id}')">${firstBox}<div class="ft-go">📷 סרוק ←</div></button>`
+      :`<div class="ft-box first">${firstBox}</div>`}
     <div class="ft-arrow">←</div>
     <div class="ft-box then">${then
       ?`<div class="ft-lbl">אחר כך</div>${ftIcon(then)}<div class="ft-t">${esc(then.label)}</div>`

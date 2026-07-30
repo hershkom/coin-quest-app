@@ -122,6 +122,13 @@
            "how many of today's tasks are done"). renderJourneyMap() in app.js. -->
       <div id="journeyMapWrap"></div>
 
+      <!-- The current-period task list is the child's most-repeated glance
+           all day long -- it lives ABOVE the action grid so "what do I do
+           now" never needs a scroll. (The action grid is mostly a launcher;
+           its screens are also one tap away in the fixed bottom nav.) -->
+      <div class="section-title">🧹 המטלות של היום</div>
+      <div id="choresList"></div>
+
       <div class="section-title">⚡ מה עושים?</div>
       <div class="grid2">
         <button class="bigbtn scan" onclick="openScan()"><span class="ic">📷</span>סורק QR<span class="sub">סרוק קוד וקבל מטבעות</span></button>
@@ -136,9 +143,6 @@
       <div id="gameTimeWrap"></div>
       <div id="streakBannerWrap"></div>
       <div id="badgesBannerWrap"></div>
-
-      <div class="section-title">🧹 המטלות של היום</div>
-      <div id="choresList"></div>
     </div>
 
     <div class="view" id="view-badges">
@@ -776,7 +780,11 @@
     <button class="navbtn" data-nav="scan" onclick="openScan()"><span class="ic">📷</span>סריקה</button>
     <button class="navbtn" data-nav="math" onclick="go('math')"><span class="ic">➗</span>חשבון</button>
     <button class="navbtn" data-nav="rewards" onclick="go('rewards')"><span class="ic">🎁</span>פרסים</button>
-    <button class="navbtn" data-nav="history" onclick="go('history')"><span class="ic">📜</span>יומן</button>
+    <!-- Games replaced History here: the games screen is where the whole coin
+         economy funnels (and what the child actually wants to reach), while
+         the history journal is a rare, reflective visit -- it stays one tap
+         away via the "היומן שלי" tile on the home grid. -->
+    <button class="navbtn" data-nav="games" onclick="go('games')"><span class="ic">🎮</span>משחקים</button>
     <button class="navbtn" data-nav="chat" onclick="go('chat')" style="display:none;"><span class="ic">💬</span>צ'אט</button>
   </div>
 

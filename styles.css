@@ -366,7 +366,10 @@
   .btn.coral{background:linear-gradient(135deg,var(--coral),var(--coral-d));color:#fff;}
   .btn.sm{padding:9px 14px;font-size:.85rem;width:auto;border-radius:12px;}
   .btn:disabled{opacity:.45;cursor:not-allowed;}
-  .backbtn{background:none;border:none;font-family:inherit;font-weight:700;color:var(--ink2);font-size:.95rem;cursor:pointer;padding:6px 0;display:flex;align-items:center;gap:6px;margin-bottom:6px;}
+  /* A visible pill (not bare text) with a 44px+ target -- "how do I get
+     back" must never be a hunt for a small grey label. */
+  .backbtn{background:var(--card);border:none;font-family:inherit;font-weight:800;color:var(--ink2);font-size:.95rem;cursor:pointer;padding:10px 18px;min-height:44px;border-radius:16px;display:inline-flex;align-items:center;gap:6px;margin-bottom:10px;box-shadow:0 3px 10px rgba(124,92,252,.12);}
+  .backbtn:active{transform:scale(.96);}
   #scanArea{border-radius:22px;overflow:hidden;background:#000;position:relative;aspect-ratio:1;display:flex;align-items:center;justify-content:center;}
   #scanVideo{width:100%;height:100%;object-fit:cover;}
   .scan-frame{position:absolute;inset:18%;border:3px solid rgba(255,255,255,.85);border-radius:18px;box-shadow:0 0 0 2000px rgba(0,0,0,.35);}
@@ -421,8 +424,10 @@
   .mascot-wrap{position:fixed;bottom:calc(78px + env(safe-area-inset-bottom));left:16px;width:56px;height:56px;border-radius:50%;background:var(--card);box-shadow:0 6px 18px rgba(124,92,252,.22);z-index:41;align-items:center;justify-content:center;font-size:1.9rem;padding:5px;box-sizing:border-box;}
   @keyframes mascotBounce{0%{transform:translateY(0) scale(1);}30%{transform:translateY(-14px) scale(1.08);}55%{transform:translateY(0) scale(.96);}75%{transform:translateY(-5px) scale(1.02);}100%{transform:translateY(0) scale(1);}}
   .mascot-wrap.mascot-bounce{animation:mascotBounce .7s cubic-bezier(.3,.6,.4,1) both;}
-  .navbtn{background:none;border:none;font-family:inherit;display:flex;flex-direction:column;align-items:center;gap:2px;color:var(--muted);cursor:pointer;padding:5px 8px;border-radius:14px;font-size:.68rem;font-weight:700;flex:1;transition:color .15s;}
-  .navbtn .ic{font-size:1.35rem;}
+  /* 48px+ effective height -- the fixed nav is tapped dozens of times a day,
+     often mid-motion; forgiving targets matter more here than anywhere. */
+  .navbtn{background:none;border:none;font-family:inherit;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;color:var(--muted);cursor:pointer;padding:8px 8px;min-height:52px;border-radius:14px;font-size:.72rem;font-weight:700;flex:1;transition:color .15s;}
+  .navbtn .ic{font-size:1.5rem;}
   .navbtn.active{color:var(--purple);}
   .navbtn.active .ic{transform:scale(1.12);}
   .modal-bg{position:fixed;inset:0;background:rgba(42,36,64,.55);backdrop-filter:blur(4px);display:none;align-items:center;justify-content:center;z-index:100;padding:24px;}
@@ -581,6 +586,11 @@
   .ft-box .ft-ic{font-size:1.8rem;display:block;}
   .ft-box .ft-t{font-weight:800;font-size:.85rem;margin-top:4px;}
   .ft-arrow{font-size:1.3rem;color:var(--muted);flex-shrink:0;}
+  /* The tappable "קודם" variant (renderFirstThen) -- a real <button>, so
+     reset browser button chrome to match the plain div version exactly. */
+  .ft-box.ft-tap{border:none;font-family:inherit;cursor:pointer;transition:transform .12s;}
+  .ft-box.ft-tap:active{transform:scale(.96);}
+  .ft-box .ft-go{margin-top:7px;font-size:.72rem;font-weight:800;background:rgba(255,255,255,.25);border-radius:12px;padding:4px 10px;display:inline-block;}
   .ft-done{text-align:center;background:linear-gradient(135deg,#FFE9B0,#FFC55C);border-radius:22px;padding:18px;margin-top:14px;font-weight:800;color:#5a3400;}
 
   /* ---- Calm break button + breathing modal ---- */
