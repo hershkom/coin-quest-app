@@ -534,6 +534,27 @@ test.describe('calm toolkit', () => {
     });
     await expect(page.locator('#calmSoundLabel')).toHaveText(/נגמר בשקט/, { timeout: 2000 });
   });
+
+  test('voice guidance speaks each grounding step and respects the mute toggle, persisting the choice', async ({ page }) => {
+    await enterLocalOnly(page);
+    await selectChild(page, 'אריאל');
+    await page.evaluate(() => {
+      window.__calmSpeakCalls = [];
+      window.speakWithHighlight = (t) => { window.__calmSpeakCalls.push(t); };
+    });
+    await page.locator('.break-btn').click();
+    await expect(page.locator('#calmTtsBtn')).toHaveText('🔊');
+    await page.locator('.calm-tile', { hasText: 'משחק החושים' }).click();
+    await expect(page.locator('#calmGround')).toBeVisible();
+    expect((await page.evaluate(() => window.__calmSpeakCalls)).length).toBeGreaterThan(0);
+
+    await page.evaluate(() => { window.__calmSpeakCalls.length = 0; });
+    await page.locator('#calmTtsBtn').click();
+    await expect(page.locator('#calmTtsBtn')).toHaveText('🔇');
+    await page.locator('#groundNextBtn').click();
+    expect(await page.evaluate(() => window.__calmSpeakCalls.length)).toBe(0);
+    expect(await page.evaluate(() => DB.get('cs_calmtts'))).toBe(false);
+  });
 });
 
 test.describe('backup / restore', () => {

@@ -3636,10 +3636,30 @@ const CALM_PANES=['calmMenu','calmBreathe','calmSound','calmGround','calmMuscle'
 // path (bestToolFor), so a new tool only needs to be added here once.
 const CALM_TOOL_NAMES={breathe:'🎈 נשימת בלון',muscle:'🍋 סוחטים לימון',heavy:'🦸 כוח-על',ground:'🖐️ משחק החושים',ocean:'🌊 גלים בים',rain:'🌧️ גשם שקט',heartbeat:'💓 פעימות לב',purr:'🐱 גרגור חתול',visual:'✨ מסך מרגיע'};
 
-function openCalmBreak(){
+// C7 (CALM-UPGRADE-PLAN): voice guidance for each exercise, gated by its own
+// mute toggle -- separate from state.learning.readAloud, since a parent
+// might want narration off for math/learning but still want it here (or the
+// reverse). Device-local (like the parent PIN), loaded lazily when the modal
+// opens rather than in the main loadState() bootstrap, matching how other
+// device-local settings (e.g. fillCalmToggle) are read on demand.
+let _calmTtsOn=true;
+function calmTtsEnabled(){ return _calmTtsOn!==false && ttsEnabled(); }
+async function toggleCalmTts(){
+  _calmTtsOn=!_calmTtsOn;
+  await DB.set('cs_calmtts',_calmTtsOn);
+  updateCalmTtsBtn();
+  if(!_calmTtsOn) stopSpeaking();
+}
+function updateCalmTtsBtn(){
+  const b=document.getElementById('calmTtsBtn'); if(!b) return;
+  b.textContent=_calmTtsOn?'🔊':'🔇';
+}
+async function openCalmBreak(){
   _calmSession={before:null, tool:null, body:null, ts:Date.now()};
   const bodyRow=document.getElementById('calmBodyRow'); if(bodyRow) bodyRow.style.display='none';
   document.querySelectorAll('.body-chip').forEach(c=>c.classList.remove('sel'));
+  _calmTtsOn=(await DB.get('cs_calmtts'))??true;
+  updateCalmTtsBtn();
   document.getElementById('calmModal').classList.add('show');
   showCalmMenu();
 }
@@ -3733,6 +3753,7 @@ function stopCalmActivity(){
   clearInterval(_breathTimer); _breathTimer=null;
   clearInterval(_muscleTimer); _muscleTimer=null;
   stopCalmNoise();
+  stopSpeaking();
   _calmActive=null;
 }
 
@@ -3753,6 +3774,10 @@ function startBreathing(){
     ball.style.transform='scale('+p.to+')';
     calmBreathTone(phase);
     calmBreathHaptic(phase);
+    // C7: narrate only the first cycle -- after that the child has the
+    // rhythm from the tone/ball/haptics, and repeating the same sentence
+    // every 4-12s forever would just be noise.
+    if(cycles===0&&calmTtsEnabled()) speakWithHighlight(p.label,null,'he-IL',null);
   };
   ball.style.transition='none'; ball.style.transform='scale(.6)';
   requestAnimationFrame(()=>requestAnimationFrame(applyPhase));
@@ -3812,6 +3837,7 @@ function renderGroundStep(){
   document.getElementById('groundNum').textContent=s.n;
   document.getElementById('groundTxt').textContent=s.txt;
   document.getElementById('groundNextBtn').textContent=s.done;
+  if(calmTtsEnabled()) speakWithHighlight(s.txt,null,'he-IL',null);
 }
 function calmGroundNext(){
   if(_groundStep>=GROUND_STEPS.length){ startGrounding(); return; } // "again?" tap restarts
@@ -3841,6 +3867,7 @@ function startMuscle(){
     ic.textContent=s.ic;
     txt.textContent=inTense?s.tense:s.release;
     hint.textContent=inTense?'חזק! עוד '+(TENSE-sec)+' שניות':'לאט... תרגיש את ההבדל';
+    if(calmTtsEnabled()) speakWithHighlight(txt.textContent,null,'he-IL',null);
   };
   apply();
   _muscleTimer=setInterval(()=>{
@@ -3885,6 +3912,7 @@ function startHeavy(){
     ic.textContent=s.ic; txt.textContent=s.txt;
     hint.textContent='דחוף/לחץ חזק! עוד '+(s.secs-sec)+' שניות';
     fill.style.width='0%';
+    if(calmTtsEnabled()) speakWithHighlight(s.txt,null,'he-IL',null);
   };
   apply();
   _muscleTimer=setInterval(()=>{

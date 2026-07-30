@@ -587,6 +587,7 @@
   .break-btn{width:38px;height:38px;border-radius:50%;background:linear-gradient(135deg,var(--mint),var(--mint-d));border:none;display:flex;align-items:center;justify-content:center;font-size:1.05rem;box-shadow:0 4px 12px rgba(39,201,154,.25);cursor:pointer;flex-shrink:0;}
   .break-btn:active{transform:scale(.9);}
   .calm-modal{position:fixed;inset:0;background:linear-gradient(160deg,#DFF5EE,#EAF6FF);display:none;align-items:center;justify-content:center;z-index:250;flex-direction:column;padding:24px;overflow-y:auto;}
+  .calm-tts-btn{position:fixed;top:16px;left:16px;z-index:251;width:44px;height:44px;border-radius:50%;border:none;background:rgba(255,255,255,.85);font-size:1.2rem;cursor:pointer;box-shadow:0 4px 12px rgba(39,201,154,.2);}
   .calm-modal.show{display:flex;animation:fade .3s;}
   /* Paced-breathing ring: the ball's scale is driven from JS so the visual,
      the text, and the count can never drift out of sync. */
