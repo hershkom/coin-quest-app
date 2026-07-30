@@ -555,6 +555,25 @@ test.describe('calm toolkit', () => {
     expect(await page.evaluate(() => window.__calmSpeakCalls.length)).toBe(0);
     expect(await page.evaluate(() => DB.get('cs_calmtts'))).toBe(false);
   });
+
+  test('finger-trace breathing animates a dot along the arc and cleans up on close', async ({ page }) => {
+    await enterLocalOnly(page);
+    await selectChild(page, 'אריאל');
+    await page.locator('.break-btn').click();
+    await page.locator('#feelRowBefore .feel-btn', { hasText: 'עצבני' }).click();
+    await page.locator('.calm-tile', { hasText: 'נשימת קשת' }).click();
+    await expect(page.locator('#calmTrace')).toBeVisible();
+    await expect(page.locator('#traceTxt')).toHaveText(/שאיפה/);
+
+    const startCx = await page.locator('#traceDot').getAttribute('cx');
+    await page.waitForTimeout(1500);
+    const laterCx = await page.locator('#traceDot').getAttribute('cx');
+    expect(laterCx).not.toBe(startCx);
+
+    await page.locator('button', { hasText: 'אני מוכן/ה להמשיך' }).click();
+    await page.locator('#calmAfter .feel-btn', { hasText: 'רגוע וטוב' }).click();
+    expect(await page.evaluate(() => _traceAnim)).toBeNull();
+  });
 });
 
 test.describe('backup / restore', () => {

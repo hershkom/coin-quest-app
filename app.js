@@ -378,6 +378,9 @@ async function loadState(){
   state.learning=(await DB.get('cs_learning'))??DEFAULT_LEARNING;
   state.pin     =(await DB.get('cs_pin'))     ??'1234';
   state.calmMode=(await DB.get('cs_calm'))    ??false;
+  // C9 (CALM-UPGRADE-PLAN): family-synced (like rewards/games), NOT device-
+  // local -- which calm tools a child sees should follow them across devices.
+  state.calmPrefs=(await DB.get('cs_calmprefs'))??{};
   // AN5: device-local like the parent PIN (not synced) -- each Android
   // device with the wrapper installed independently schedules its own OS
   // notification, so there's no shared "family" value to sync.
@@ -3630,11 +3633,11 @@ document.getElementById('gearBtn').onclick=openAdmin;
 //   offline, no audio files).
 let _breathTimer=null, _calmNoise=null, _calmActive=null, _muscleTimer=null;
 let _calmSession=null; // {before, tool, ts}
-const CALM_PANES=['calmMenu','calmBreathe','calmSound','calmGround','calmMuscle','calmHeavy','calmVisual','calmAfter'];
+const CALM_PANES=['calmMenu','calmBreathe','calmSound','calmGround','calmMuscle','calmHeavy','calmTrace','calmVisual','calmAfter'];
 // Shared display names for cs_calmlog tool ids -- used by the parent-facing
 // stats (renderCalmLogStats) and by calmPickFeeling's personalized-suggestion
 // path (bestToolFor), so a new tool only needs to be added here once.
-const CALM_TOOL_NAMES={breathe:'🎈 נשימת בלון',muscle:'🍋 סוחטים לימון',heavy:'🦸 כוח-על',ground:'🖐️ משחק החושים',ocean:'🌊 גלים בים',rain:'🌧️ גשם שקט',heartbeat:'💓 פעימות לב',purr:'🐱 גרגור חתול',visual:'✨ מסך מרגיע'};
+const CALM_TOOL_NAMES={breathe:'🎈 נשימת בלון',muscle:'🍋 סוחטים לימון',heavy:'🦸 כוח-על',ground:'🖐️ משחק החושים',ocean:'🌊 גלים בים',rain:'🌧️ גשם שקט',heartbeat:'💓 פעימות לב',purr:'🐱 גרגור חתול',visual:'✨ מסך מרגיע',trace:'🌈 נשימת קשת'};
 
 // C7 (CALM-UPGRADE-PLAN): voice guidance for each exercise, gated by its own
 // mute toggle -- separate from state.learning.readAloud, since a parent
@@ -3747,11 +3750,13 @@ function openCalmActivity(kind){
   else if(kind==='ground'){ calmShowPane('calmGround'); startGrounding(); }
   else if(kind==='muscle'){ calmShowPane('calmMuscle'); startMuscle(); }
   else if(kind==='heavy'){ calmShowPane('calmHeavy'); startHeavy(); }
+  else if(kind==='trace'){ calmShowPane('calmTrace'); startTrace(); }
   else if(kind==='visual'){ calmShowPane('calmVisual'); renderCalmBubbles(); }
 }
 function stopCalmActivity(){
   clearInterval(_breathTimer); _breathTimer=null;
   clearInterval(_muscleTimer); _muscleTimer=null;
+  stopTrace();
   stopCalmNoise();
   stopSpeaking();
   _calmActive=null;
@@ -3931,6 +3936,47 @@ function startHeavy(){
       apply();
     }
   },1000);
+}
+
+// C4 (CALM-UPGRADE-PLAN): finger-trace breathing -- the child follows a dot
+// along a drawn arc with their own finger instead of only watching a ball
+// scale up/down. The motor+visual channel together helps kids who find a
+// purely visual cue (the balloon) hard to track when already dysregulated.
+// Inhale 4s forward along the arc, exhale 6s back -- no hold, unlike the
+// balloon (a held breath is harder to track visually against a moving path).
+let _traceAnim=null;
+function startTrace(){
+  const path=document.getElementById('traceArcPath'), dot=document.getElementById('traceDot'),
+        txt=document.getElementById('traceTxt');
+  if(!path||!dot) return;
+  const total=path.getTotalLength();
+  let dir=1, cycles=0, startTs=null; // dir: 1=inhale (forward along the arc), -1=exhale (back)
+  const DUR={'1':4000,'-1':6000};
+  const setLabel=()=>{
+    txt.textContent=dir===1?'שאיפה — עקוב עם האצבע אחרי הכדור 👆':'נשיפה ארוכה... חזרה לאט לאט';
+    if(cycles===0&&calmTtsEnabled()) speakWithHighlight(txt.textContent,null,'he-IL',null);
+  };
+  setLabel();
+  try{ navigator.vibrate&&navigator.vibrate(30); }catch(e){}
+  const step=(ts)=>{
+    if(!startTs) startTs=ts;
+    let frac=(ts-startTs)/DUR[dir];
+    if(frac>1) frac=1;
+    const t=dir===1?frac:1-frac;
+    const pt=path.getPointAtLength(t*total);
+    dot.setAttribute('cx',pt.x); dot.setAttribute('cy',pt.y);
+    if(frac>=1){
+      dir=-dir; if(dir===1) cycles++;
+      startTs=ts;
+      setLabel();
+      try{ navigator.vibrate&&navigator.vibrate(30); }catch(e){}
+    }
+    _traceAnim=requestAnimationFrame(step);
+  };
+  _traceAnim=requestAnimationFrame(step);
+}
+function stopTrace(){
+  if(_traceAnim){ cancelAnimationFrame(_traceAnim); _traceAnim=null; }
 }
 
 // C3 (CALM-UPGRADE-PLAN): a purely passive "calm screen" gives the hands

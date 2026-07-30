@@ -649,6 +649,11 @@
           <div class="card-sub" style="margin-top:8px;">מתאים לרגעים של עומס חושי. כפתור 🌿 בראש המסך פתוח לילד תמיד, בלי קשר להגדרה הזו.</div>
         </div>
         <div class="card">
+          <div class="card-h">🌿 כלי רגיעה לכל ילד</div>
+          <div class="card-sub" style="margin-bottom:10px;">בוחרים אילו כלים מופיעים בתפריט 🌿 של כל ילד, ובאיזה סדר. חייב להישאר לפחות 2 כלים.</div>
+          <div id="calmPrefsAdmin"></div>
+        </div>
+        <div class="card">
           <div class="card-h">🔄 רענון מלא (אם משהו נראה תקוע/ישן)</div>
           <div class="card-sub" style="margin-bottom:10px;">מוחק לגמרי את המטמון המקומי של האפליקציה וטוען הכל מחדש מהשרת. לא מוחק את נתוני המשפחה (יתרות, מטלות, רצפים) — הם נשמרים בנפרד.</div>
           <button class="btn coral sm" onclick="hardResetCache()">🔄 רענן הכל עכשיו</button>
@@ -828,15 +833,7 @@
         <button class="body-chip" data-body="heavy" onclick="calmPickBody('heavy')">🗿 הגוף כבד</button>
       </div>
     </div>
-    <div class="calm-tiles" style="margin-top:14px;">
-      <button class="calm-tile" id="tile-breathe" onclick="openCalmActivity('breathe')"><span class="t-ic">🎈</span>נשימת בלון</button>
-      <button class="calm-tile" id="tile-muscle" onclick="openCalmActivity('muscle')"><span class="t-ic">🍋</span>סוחטים לימון</button>
-      <button class="calm-tile" id="tile-heavy" onclick="openCalmActivity('heavy')"><span class="t-ic">🦸</span>כוח-על</button>
-      <button class="calm-tile" id="tile-ground" onclick="openCalmActivity('ground')"><span class="t-ic">🖐️</span>משחק החושים</button>
-      <button class="calm-tile" id="tile-ocean" onclick="openCalmActivity('ocean')"><span class="t-ic">🌊</span>גלים בים</button>
-      <button class="calm-tile" id="tile-rain" onclick="openCalmActivity('rain')"><span class="t-ic">🌧️</span>גשם שקט</button>
-      <button class="calm-tile" id="tile-visual" onclick="openCalmActivity('visual')"><span class="t-ic">✨</span>מסך מרגיע</button>
-    </div>
+    <div class="calm-tiles" id="calmTilesWrap" style="margin-top:14px;"></div>
   </div>
   <div id="calmBreathe" style="display:none;text-align:center;">
     <div class="breath-ring"><div class="breath-ball" id="breathBall"></div></div>
@@ -877,6 +874,17 @@
     <div class="ground-txt" id="heavyTxt"></div>
     <div class="muscle-bar"><div class="muscle-fill" id="heavyFill"></div></div>
     <div class="cm-sub" id="heavyHint"></div>
+  </div>
+  <div id="calmTrace" style="display:none;text-align:center;">
+    <svg viewBox="0 0 300 170" style="width:100%;max-width:300px;">
+      <path d="M20,150 A130,130 0 0 1 280,150" fill="none" stroke="#FFB3BA" stroke-width="10" stroke-linecap="round"/>
+      <path d="M50,150 A100,100 0 0 1 250,150" fill="none" stroke="#FFDFBA" stroke-width="10" stroke-linecap="round"/>
+      <path d="M80,150 A70,70 0 0 1 220,150" fill="none" stroke="#FFFFBA" stroke-width="10" stroke-linecap="round"/>
+      <path d="M110,150 A40,40 0 0 1 190,150" fill="none" stroke="#BAFFC9" stroke-width="10" stroke-linecap="round"/>
+      <path id="traceArcPath" d="M20,150 A130,130 0 0 1 280,150" fill="none" stroke="none"/>
+      <circle id="traceDot" cx="20" cy="150" r="12" fill="#7C5CFC"/>
+    </svg>
+    <div class="cm-sub" id="traceTxt" style="margin-top:10px;font-size:1.05rem;font-weight:800;color:#1a6b52;"></div>
   </div>
   <div id="calmVisual" style="display:none;text-align:center;">
     <div class="calm-visual" id="calmVisualBox"></div>
