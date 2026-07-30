@@ -2367,6 +2367,10 @@ function adminTab(t){
   if(t==='report') renderReportAdmin();
   if(t==='settings'){ fillAccountSettings(); fillCalmToggle(); fillChoreReminderSettings(); renderEnforcementWarning(); updateParentDeviceModeCardVisibility(); renderCalmPrefsAdmin(); }
 }
+// C11 (CALM-UPGRADE-PLAN): reused by the body-sensation chips (C8's log
+// field) here in the parent report -- kept as its own constant rather than
+// inline so it can't drift from the chip labels in index.html.
+const CALM_BODY_NAMES={heart:'💓 הלב דופק מהר',fists:'✊ הידיים קפוצות',stomach:'🌀 הבטן מתהפכת',heavy:'🗿 הגוף כבד'};
 async function renderCalmLogStats(){
   const el=document.getElementById('calmLogStats'); if(!el) return;
   const log=(await DB.get('cs_calmlog'))??[];
@@ -2377,6 +2381,33 @@ async function renderCalmLogStats(){
   const improved=log.filter(e=>e.before&&e.after&&e.after<e.before).length;
   const rated=log.filter(e=>e.before&&e.after).length;
   let html=`<div style="font-weight:800;margin-bottom:8px;">בשבוע האחרון: ${week.length} פעמים · ${rated?Math.round(improved/rated*100)+'% מהפעמים הרגיש יותר טוב אחרי':''}</div>`;
+  // Per-child "what actually works" breakdown -- same effectiveness idea as
+  // bestToolFor() (C5), surfaced here for the parent instead of only driving
+  // the child-facing suggestion. A tool needs >=2 rated uses to be listed at
+  // all (avoids a single lucky/unlucky session reading as a verdict) and
+  // >=3 to be called out as THE standout in the headline line.
+  state.children.forEach(ch=>{
+    const mine=log.filter(e=>e.childId===ch.id&&e.before&&e.after&&e.tool);
+    if(!mine.length) return;
+    const byTool={};
+    mine.forEach(e=>{ (byTool[e.tool]=byTool[e.tool]||[]).push(e.before-e.after); });
+    const rows=Object.keys(byTool).map(tool=>{
+      const arr=byTool[tool];
+      return {tool,uses:arr.length,helpedPct:Math.round(arr.filter(d=>d>0).length/arr.length*100)};
+    }).filter(r=>r.uses>=2).sort((a,b)=>b.helpedPct-a.helpedPct);
+    if(!rows.length) return;
+    const headline=rows.find(r=>r.uses>=3);
+    html+=`<div style="margin-top:10px;padding-top:10px;border-top:2px solid var(--line);">`;
+    if(headline) html+=`<div style="font-weight:800;font-size:.86rem;">💡 הכלי שהכי עוזר ל${esc(ch.name)}: ${TOOLS[headline.tool]||headline.tool}</div>`;
+    rows.forEach(r=>{
+      html+=`<div style="font-size:.78rem;color:var(--ink2);margin-top:2px;">${TOOLS[r.tool]||r.tool} — עזר ב-${r.helpedPct}% מ-${r.uses} פעמים</div>`;
+    });
+    const bodyCounts={};
+    mine.forEach(e=>{ if(e.body) bodyCounts[e.body]=(bodyCounts[e.body]||0)+1; });
+    const topBody=Object.keys(bodyCounts).sort((a,b)=>bodyCounts[b]-bodyCounts[a])[0];
+    if(topBody) html+=`<div style="font-size:.78rem;color:var(--ink2);margin-top:4px;">התחושה הנפוצה לפני: ${CALM_BODY_NAMES[topBody]||topBody}</div>`;
+    html+=`</div>`;
+  });
   log.slice(0,6).forEach(e=>{
     const child=(state.children.find(c=>c.id===e.childId)||{}).name||'';
     html+=`<div style="display:flex;gap:8px;align-items:center;font-size:.82rem;padding:6px 0;border-bottom:1px solid var(--line);">

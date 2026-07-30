@@ -643,6 +643,38 @@ test.describe('calm toolkit', () => {
     await expect(page.locator('#feelRowBefore')).toBeVisible();
     expect(await page.evaluate(() => DB.get('cs_calmintro_ariel'))).toBe(true);
   });
+
+  test('the parent report calls out which tool actually helps this child, with a body-sensation summary', async ({ page }) => {
+    await enterLocalOnly(page);
+    await selectChild(page, 'אריאל');
+    await page.evaluate(async () => {
+      await DB.set('cs_calmlog', [
+        { ts: Date.now() - 1000, childId: 'ariel', before: 4, after: 1, tool: 'heavy', body: 'fists' },
+        { ts: Date.now() - 2000, childId: 'ariel', before: 4, after: 1, tool: 'heavy', body: 'fists' },
+        { ts: Date.now() - 3000, childId: 'ariel', before: 4, after: 2, tool: 'heavy', body: 'heart' },
+        { ts: Date.now() - 4000, childId: 'ariel', before: 3, after: 1, tool: 'breathe' },
+        { ts: Date.now() - 5000, childId: 'ariel', before: 3, after: 3, tool: 'breathe' },
+      ]);
+    });
+    await openAdminWithPin(page);
+    await page.locator('[data-atab="settings"]').click();
+    await expect(page.locator('#calmLogStats')).toContainText('הכלי שהכי עוזר לאריאל: 🦸 כוח-על');
+    await expect(page.locator('#calmLogStats')).toContainText('כוח-על — עזר ב-100% מ-3 פעמים');
+    await expect(page.locator('#calmLogStats')).toContainText('נשימת בלון — עזר ב-50% מ-2 פעמים');
+    await expect(page.locator('#calmLogStats')).toContainText('התחושה הנפוצה לפני: ✊ הידיים קפוצות');
+  });
+
+  test('a single unrated/low-count session never crashes the report and shows no premature verdict', async ({ page }) => {
+    await enterLocalOnly(page);
+    await selectChild(page, 'נועה');
+    await page.evaluate(async () => {
+      await DB.set('cs_calmlog', [{ ts: Date.now(), childId: 'noa', before: 2, after: 2, tool: 'ocean' }]);
+    });
+    await openAdminWithPin(page);
+    await page.locator('[data-atab="settings"]').click();
+    await expect(page.locator('#calmLogStats')).toBeVisible();
+    await expect(page.locator('#calmLogStats')).not.toContainText('הכלי שהכי עוזר');
+  });
 });
 
 test.describe('backup / restore', () => {
