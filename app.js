@@ -3807,8 +3807,23 @@ async function openCalmBreak(){
   document.getElementById('calmModal').classList.add('show');
   await maybeShowCalmIntro();
 }
+// C12 (CALM-UPGRADE-PLAN): a soft cross-fade instead of a hard display swap
+// between panes -- a jarring instant cut doesn't fit a screen whose whole
+// point is calm. The double-rAF forces the browser to paint opacity:0 first
+// (same trick startBreathing() uses to reset the ball) so the fade-in
+// actually plays instead of the transition being skipped. Automatically
+// becomes instant under prefers-reduced-motion via the existing global
+// `transition-duration:.01ms` override -- no extra guard needed here.
 function calmShowPane(id){
-  CALM_PANES.forEach(p=>document.getElementById(p).style.display=p===id?'block':'none');
+  CALM_PANES.forEach(p=>{
+    const el=document.getElementById(p);
+    if(p===id){
+      el.style.display='block'; el.style.opacity='0';
+      requestAnimationFrame(()=>requestAnimationFrame(()=>{ el.style.opacity='1'; }));
+    }else{
+      el.style.display='none'; el.style.opacity='';
+    }
+  });
   document.getElementById('calmBackBtn').style.display=(id==='calmMenu'||id==='calmAfter'||id==='calmIntro')?'none':'block';
   document.getElementById('calmBackRow').style.display=(id==='calmAfter'||id==='calmIntro')?'none':'flex';
 }
@@ -4097,15 +4112,32 @@ function startTrace(){
     txt.textContent=dir===1?'שאיפה — עקוב עם האצבע אחרי הכדור 👆':'נשיפה ארוכה... חזרה לאט לאט';
     if(cycles===0&&calmTtsEnabled()) speakWithHighlight(txt.textContent,null,'he-IL',null);
   };
+  const placeAt=(t)=>{ const pt=path.getPointAtLength(t*total); dot.setAttribute('cx',pt.x); dot.setAttribute('cy',pt.y); };
   setLabel();
   try{ navigator.vibrate&&navigator.vibrate(30); }catch(e){}
+  // C12: this dot's motion is driven by JS (setAttribute per rAF frame), not
+  // a CSS animation/transition -- the global prefers-reduced-motion rule
+  // (which only forces animation/transition DURATIONS to ~0) has no effect
+  // on it. Jump straight to each endpoint and hold via setTimeout instead of
+  // animating every frame; the exercise still works (label/TTS/vibration
+  // cues), just without continuous motion.
+  if(window.matchMedia&&window.matchMedia('(prefers-reduced-motion: reduce)').matches){
+    placeAt(dir===1?1:0);
+    const tick=()=>{
+      dir=-dir; if(dir===1) cycles++;
+      placeAt(dir===1?1:0);
+      setLabel();
+      try{ navigator.vibrate&&navigator.vibrate(30); }catch(e){}
+      _traceAnim=setTimeout(tick,DUR[dir]);
+    };
+    _traceAnim=setTimeout(tick,DUR[dir]);
+    return;
+  }
   const step=(ts)=>{
     if(!startTs) startTs=ts;
     let frac=(ts-startTs)/DUR[dir];
     if(frac>1) frac=1;
-    const t=dir===1?frac:1-frac;
-    const pt=path.getPointAtLength(t*total);
-    dot.setAttribute('cx',pt.x); dot.setAttribute('cy',pt.y);
+    placeAt(dir===1?frac:1-frac);
     if(frac>=1){
       dir=-dir; if(dir===1) cycles++;
       startTs=ts;
@@ -4117,7 +4149,7 @@ function startTrace(){
   _traceAnim=requestAnimationFrame(step);
 }
 function stopTrace(){
-  if(_traceAnim){ cancelAnimationFrame(_traceAnim); _traceAnim=null; }
+  if(_traceAnim){ cancelAnimationFrame(_traceAnim); clearTimeout(_traceAnim); _traceAnim=null; }
 }
 
 // C3 (CALM-UPGRADE-PLAN): a purely passive "calm screen" gives the hands

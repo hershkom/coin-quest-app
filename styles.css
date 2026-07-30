@@ -588,6 +588,7 @@
   .break-btn:active{transform:scale(.9);}
   .calm-modal{position:fixed;inset:0;background:linear-gradient(160deg,#DFF5EE,#EAF6FF);display:none;align-items:center;justify-content:center;z-index:250;flex-direction:column;padding:24px;overflow-y:auto;}
   .calm-tts-btn{position:fixed;top:16px;left:16px;z-index:251;width:44px;height:44px;border-radius:50%;border:none;background:rgba(255,255,255,.85);font-size:1.2rem;cursor:pointer;box-shadow:0 4px 12px rgba(39,201,154,.2);}
+  .calm-modal>div{transition:opacity .3s ease;}
   .calm-modal.show{display:flex;animation:fade .3s;}
   /* Paced-breathing ring: the ball's scale is driven from JS so the visual,
      the text, and the count can never drift out of sync. */
@@ -597,7 +598,7 @@
   .breath-count{font-size:2rem;font-weight:900;color:#27C99A;min-height:44px;}
   .calm-modal .cm-sub{margin-top:8px;color:#3a7d68;font-size:.92rem;font-weight:700;}
   .feel-row{display:flex;gap:8px;justify-content:center;margin-top:10px;flex-wrap:wrap;max-width:340px;margin-left:auto;margin-right:auto;}
-  .feel-btn{border:none;background:rgba(255,255,255,.8);border-radius:16px;padding:10px 8px;width:72px;font-family:inherit;font-weight:800;font-size:.72rem;color:#1a6b52;cursor:pointer;box-shadow:0 4px 12px rgba(39,201,154,.12);transition:transform .12s;}
+  .feel-btn{border:none;background:rgba(255,255,255,.8);border-radius:16px;padding:10px 8px;width:72px;min-height:64px;display:flex;flex-direction:column;align-items:center;justify-content:center;font-family:inherit;font-weight:800;font-size:.72rem;color:#1a6b52;cursor:pointer;box-shadow:0 4px 12px rgba(39,201,154,.12);transition:transform .12s;}
   .feel-btn:active{transform:scale(.92);}
   .feel-btn .f-ic{display:block;font-size:1.7rem;margin-bottom:3px;}
   /* C8 (CALM-UPGRADE-PLAN): Zones-of-Regulation color coding -- a soft tint per
@@ -614,7 +615,7 @@
   .body-chip{border:2px solid transparent;background:rgba(255,255,255,.8);border-radius:14px;padding:7px 11px;font-family:inherit;font-weight:700;font-size:.74rem;color:#1a6b52;cursor:pointer;}
   .body-chip.sel{border-color:var(--mint-d);background:rgba(39,201,154,.18);}
   .calm-tiles{display:grid;grid-template-columns:repeat(2,132px);gap:10px;justify-content:center;}
-  .calm-tile{border:none;background:rgba(255,255,255,.78);border-radius:20px;padding:14px 8px;font-family:inherit;font-weight:800;font-size:.88rem;color:#1a6b52;cursor:pointer;box-shadow:0 6px 16px rgba(39,201,154,.15);transition:transform .12s;}
+  .calm-tile{border:none;background:rgba(255,255,255,.78);border-radius:20px;padding:14px 8px;min-height:64px;display:flex;flex-direction:column;align-items:center;justify-content:center;font-family:inherit;font-weight:800;font-size:.88rem;color:#1a6b52;cursor:pointer;box-shadow:0 6px 16px rgba(39,201,154,.15);transition:transform .12s;}
   .calm-tile:active{transform:scale(.94);}
   .calm-tile .t-ic{display:block;font-size:1.9rem;margin-bottom:4px;}
   .calm-tile.suggested{outline:3px solid var(--mint);background:#fff;}

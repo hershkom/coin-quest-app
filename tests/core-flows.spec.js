@@ -584,6 +584,21 @@ test.describe('calm toolkit', () => {
     expect(await page.evaluate(() => _traceAnim)).toBeNull();
   });
 
+  test('finger-trace still moves the dot under prefers-reduced-motion (via a held jump, not continuous rAF motion)', async ({ page }) => {
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    await enterLocalOnly(page);
+    await selectChild(page, 'אריאל');
+    await openCalmModal(page);
+    await page.locator('#feelRowBefore .feel-btn', { hasText: 'עצבני' }).click();
+    await page.locator('.calm-tile', { hasText: 'נשימת קשת' }).click();
+    const startCx = await page.locator('#traceDot').getAttribute('cx');
+    // The held-jump path only moves again once DUR[dir] elapses (4-6s) --
+    // wait past the shorter (4s) inhale leg to see the jump to the far end.
+    await page.waitForTimeout(4300);
+    const laterCx = await page.locator('#traceDot').getAttribute('cx');
+    expect(laterCx).not.toBe(startCx);
+  });
+
   test('per-child tool selection: removing a tool hides its tile only for that child, reordering and the 2-tool minimum both hold', async ({ page }) => {
     await enterLocalOnly(page);
     await selectChild(page, 'אריאל');
