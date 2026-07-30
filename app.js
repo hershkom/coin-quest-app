@@ -1161,6 +1161,17 @@ function nativeTtsAvailable(){
   return !!(window.CoinQuestNative && typeof window.CoinQuestNative.ttsAvailable==='function' && window.CoinQuestNative.ttsAvailable());
 }
 function ttsEnabled(){ return (WEB_TTS_SUPPORTED||nativeTtsAvailable()) && state.learning.readAloud!==false; }
+// Emoji are a purely visual icon vocabulary in this app's UI text (see A8) --
+// reading "balloon emoji" or "raised fist emoji" out loud is just noise for a
+// sighted child, not an accessibility need, so every TTS entry point strips
+// them before speaking. \p{Extended_Pictographic} covers the individual
+// symbols; U+FE0F (variation selector) and U+200D (ZWJ, glues multi-part
+// sequences together) are stripped alongside it since they're not
+// pictographic themselves but only ever appear attached to one.
+const EMOJI_RE=/\p{Extended_Pictographic}|\uFE0F|\u200D/gu;
+function stripEmojiForSpeech(text){
+  return (text||'').replace(EMOJI_RE,'').replace(/\s+/g,' ').trim();
+}
 // Bumped by stopSpeaking() and by every new speakWithHighlight() call. A
 // cancelled/interrupted utterance's `error` event still fires and would
 // otherwise call finish()->onEnd, which for the question->choices chain
@@ -1196,6 +1207,7 @@ function highlightWordAt(el,words,charIndex){
 // hypothetical) -- via a duration-based safety-net timeout, same
 // belt-and-suspenders pattern as coinFly()/coinBurst().
 function speakWithHighlight(text,el,lang,onEnd){
+  text=stripEmojiForSpeech(text);
   const myGen=++_ttsGen;
   const words=[]; const re=/\S+/g; let m;
   while((m=re.exec(text))) words.push({start:m.index,end:m.index+m[0].length,text:m[0]});
@@ -4532,6 +4544,7 @@ function speakText(text,btn){
   if(window.CoinQuestNative&&typeof window.CoinQuestNative.ttsStop==='function'){ try{ window.CoinQuestNative.ttsStop(); }catch(e){} }
   document.querySelectorAll('.chat-speak-btn.playing').forEach(b=>{b.classList.remove('playing');b.textContent='🔊';});
   if(wasThisPlaying) return;
+  text=stripEmojiForSpeech(text);
   // Prefer Android's own TTS engine: inside the WebView a Hebrew speechSynthesis
   // voice is frequently just not installed, so the web path below stays silent
   // (this is exactly why the native bridge exists -- see AN1).
