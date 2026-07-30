@@ -26,6 +26,15 @@ async function openAdminWithPin(page) {
   await expect(page.locator('#view-admin')).toHaveClass(/active/);
 }
 
+// Opens the 🌿 calm break modal straight to the feeling check-in, skipping
+// the one-time first-open social story (C10) -- pre-marks it as already seen
+// for the CURRENTLY selected child, matching how a returning child (not
+// their first-ever open) experiences the modal. Call after selectChild().
+async function openCalmModal(page) {
+  await page.evaluate(() => DB.set('cs_calmintro_' + state.current, true));
+  await page.locator('.break-btn').click();
+}
+
 // Earning the first coin ever awards the "first_coin" badge, which pops a
 // full celebration modal (see queueBadgeCelebration) that blocks further
 // clicks until dismissed — close it if one is showing.
@@ -402,7 +411,7 @@ test.describe('calm toolkit', () => {
   test('using a calming tool logs the before/after feeling', async ({ page }) => {
     await enterLocalOnly(page);
     await selectChild(page, 'אריאל');
-    await page.locator('.break-btn').click();
+    await openCalmModal(page);
     await page.locator('#feelRowBefore .feel-btn', { hasText: 'כועס מאוד' }).click();
     await page.locator('.calm-tile', { hasText: 'נשימת בלון' }).click();
     await expect(page.locator('#calmBreathe')).toBeVisible();
@@ -420,7 +429,7 @@ test.describe('calm toolkit', () => {
     await enterLocalOnly(page);
     await selectChild(page, 'אריאל');
     await page.evaluate(() => { delete navigator.vibrate; });
-    await page.locator('.break-btn').click();
+    await openCalmModal(page);
     await page.locator('.calm-tile', { hasText: 'נשימת בלון' }).click();
     await expect(page.locator('#calmBreathe')).toBeVisible();
     const errors = await page.evaluate(() => {
@@ -433,7 +442,7 @@ test.describe('calm toolkit', () => {
   test('"כועס מאוד" suggests the new heavy-work tool, which runs a full cycle', async ({ page }) => {
     await enterLocalOnly(page);
     await selectChild(page, 'אריאל');
-    await page.locator('.break-btn').click();
+    await openCalmModal(page);
     await page.locator('#feelRowBefore .feel-btn', { hasText: 'כועס מאוד' }).click();
     await expect(page.locator('#tile-heavy')).toHaveClass(/suggested/);
 
@@ -450,7 +459,7 @@ test.describe('calm toolkit', () => {
   test('bubble-pop fidget increments a counter and keeps the bubble count steady', async ({ page }) => {
     await enterLocalOnly(page);
     await selectChild(page, 'אריאל');
-    await page.locator('.break-btn').click();
+    await openCalmModal(page);
     await page.locator('.calm-tile', { hasText: 'מסך מרגיע' }).click();
     await expect(page.locator('.calm-bubble').first()).toBeVisible();
     const before = await page.locator('.calm-bubble').count();
@@ -474,7 +483,7 @@ test.describe('calm toolkit', () => {
       ];
       await DB.set('cs_calmlog', log);
     });
-    await page.locator('.break-btn').click();
+    await openCalmModal(page);
     await page.locator('#feelRowBefore .feel-btn', { hasText: 'עצבני' }).click();
     await expect(page.locator('#tile-ocean')).toHaveClass(/suggested/);
     await expect(page.locator('#tile-breathe')).not.toHaveClass(/suggested/);
@@ -484,7 +493,7 @@ test.describe('calm toolkit', () => {
   test('with no history at a feeling level, the generic suggestion still applies', async ({ page }) => {
     await enterLocalOnly(page);
     await selectChild(page, 'אריאל');
-    await page.locator('.break-btn').click();
+    await openCalmModal(page);
     await page.locator('#feelRowBefore .feel-btn', { hasText: 'כועס מאוד' }).click();
     await expect(page.locator('#tile-heavy')).toHaveClass(/suggested/);
   });
@@ -492,7 +501,7 @@ test.describe('calm toolkit', () => {
   test('the new "sad or tired" zone shows the body-sensation row, suggests ocean, and logs both', async ({ page }) => {
     await enterLocalOnly(page);
     await selectChild(page, 'אריאל');
-    await page.locator('.break-btn').click();
+    await openCalmModal(page);
     await page.locator('#feelRowBefore .feel-btn', { hasText: 'עצוב או עייף' }).click();
     await expect(page.locator('#tile-ocean')).toHaveClass(/suggested/);
     await expect(page.locator('#calmBodyRow')).toBeVisible();
@@ -513,7 +522,7 @@ test.describe('calm toolkit', () => {
   test('switching between the 4 soundscapes updates the label, and the sleep timer stops the sound', async ({ page }) => {
     await enterLocalOnly(page);
     await selectChild(page, 'אריאל');
-    await page.locator('.break-btn').click();
+    await openCalmModal(page);
     await page.locator('.calm-tile', { hasText: 'גלים בים' }).click();
     await expect(page.locator('.calm-sound-switch[data-sound="ocean"]')).toHaveClass(/sel/);
 
@@ -542,7 +551,7 @@ test.describe('calm toolkit', () => {
       window.__calmSpeakCalls = [];
       window.speakWithHighlight = (t) => { window.__calmSpeakCalls.push(t); };
     });
-    await page.locator('.break-btn').click();
+    await openCalmModal(page);
     await expect(page.locator('#calmTtsBtn')).toHaveText('🔊');
     await page.locator('.calm-tile', { hasText: 'משחק החושים' }).click();
     await expect(page.locator('#calmGround')).toBeVisible();
@@ -559,7 +568,7 @@ test.describe('calm toolkit', () => {
   test('finger-trace breathing animates a dot along the arc and cleans up on close', async ({ page }) => {
     await enterLocalOnly(page);
     await selectChild(page, 'אריאל');
-    await page.locator('.break-btn').click();
+    await openCalmModal(page);
     await page.locator('#feelRowBefore .feel-btn', { hasText: 'עצבני' }).click();
     await page.locator('.calm-tile', { hasText: 'נשימת קשת' }).click();
     await expect(page.locator('#calmTrace')).toBeVisible();
@@ -573,6 +582,66 @@ test.describe('calm toolkit', () => {
     await page.locator('button', { hasText: 'אני מוכן/ה להמשיך' }).click();
     await page.locator('#calmAfter .feel-btn', { hasText: 'רגוע וטוב' }).click();
     expect(await page.evaluate(() => _traceAnim)).toBeNull();
+  });
+
+  test('per-child tool selection: removing a tool hides its tile only for that child, reordering and the 2-tool minimum both hold', async ({ page }) => {
+    await enterLocalOnly(page);
+    await selectChild(page, 'אריאל');
+    await page.evaluate(async () => {
+      await toggleCalmTool('ariel', 'visual', false);
+      await moveCalmTool('ariel', 'ocean', -1);
+    });
+    await openCalmModal(page);
+    await expect(page.locator('#tile-visual')).toHaveCount(0);
+    const order = await page.evaluate(() => calmToolsForChild('ariel'));
+    expect(order.indexOf('ocean')).toBeLessThan(order.indexOf('ground'));
+
+    // Noa (untouched) still sees the full default set, including 'visual'.
+    await page.evaluate(() => closeCalmBreak());
+    await page.locator('#profileSwitch').click();
+    await selectChild(page, 'נועה');
+    await openCalmModal(page);
+    await expect(page.locator('#tile-visual')).toBeVisible();
+
+    // Down to the floor of 2 -- one more removal must be blocked, not silently accepted.
+    await page.evaluate(async () => {
+      await saveCalmPrefs('noa', ['breathe', 'trace']);
+      await toggleCalmTool('noa', 'breathe', false);
+    });
+    expect(await page.evaluate(() => calmToolsForChild('noa'))).toHaveLength(2);
+  });
+
+  test('a first-ever open shows the 3-card social story before the feeling check-in; a later open skips straight to it', async ({ page }) => {
+    await enterLocalOnly(page);
+    await selectChild(page, 'אריאל');
+    await page.locator('.break-btn').click(); // deliberately NOT openCalmModal(page) -- this IS the first-open case
+    await expect(page.locator('#calmIntro')).toBeVisible();
+    await expect(page.locator('#feelRowBefore')).not.toBeVisible();
+
+    await page.locator('#calmIntroNextBtn').click();
+    await page.locator('#calmIntroNextBtn').click();
+    await expect(page.locator('#calmIntroNextBtn')).toHaveText(/התחלה/);
+    await page.locator('#calmIntroNextBtn').click(); // 3rd/last card -> finishes the intro
+    await expect(page.locator('#calmMenu')).toBeVisible();
+    await expect(page.locator('#feelRowBefore')).toBeVisible();
+
+    expect(await page.evaluate(() => DB.get('cs_calmintro_ariel'))).toBe(true);
+
+    // Closing and reopening (still the same session) must never show it again.
+    await page.evaluate(() => closeCalmBreak());
+    await page.locator('.break-btn').click();
+    await expect(page.locator('#calmIntro')).not.toBeVisible();
+    await expect(page.locator('#feelRowBefore')).toBeVisible();
+  });
+
+  test('skipping the social story mid-way marks it seen just like finishing it', async ({ page }) => {
+    await enterLocalOnly(page);
+    await selectChild(page, 'אריאל');
+    await page.locator('.break-btn').click();
+    await expect(page.locator('#calmIntro')).toBeVisible();
+    await page.locator('#calmIntro button', { hasText: 'דלג' }).click();
+    await expect(page.locator('#feelRowBefore')).toBeVisible();
+    expect(await page.evaluate(() => DB.get('cs_calmintro_ariel'))).toBe(true);
   });
 });
 

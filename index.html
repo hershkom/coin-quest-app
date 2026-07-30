@@ -813,6 +813,13 @@
 </div>
 <div class="calm-modal" id="calmModal">
   <button class="calm-tts-btn" id="calmTtsBtn" title="הפעל/כבה הקראה" onclick="toggleCalmTts()">🔊</button>
+  <div id="calmIntro" style="display:none;text-align:center;">
+    <div class="cm-sub" id="calmIntroTxt" style="font-size:1.15rem;font-weight:800;color:#1a6b52;line-height:1.7;max-width:320px;margin:0 auto;"></div>
+    <div style="display:flex;gap:8px;justify-content:center;margin-top:26px;">
+      <button class="btn ghost" onclick="skipCalmIntro()">דלג</button>
+      <button class="btn mint" id="calmIntroNextBtn" onclick="calmIntroNext()">הבא ←</button>
+    </div>
+  </div>
   <div id="calmMenu">
     <div style="font-size:2.6rem;text-align:center;">🌿</div>
     <h3 style="margin:8px 0 4px;color:#1a6b52;text-align:center;">איך אתה מרגיש עכשיו?</h3>

@@ -2365,7 +2365,7 @@ function adminTab(t){
   if(t==='events') renderEventsAdmin();
   if(t==='badges') renderBadgesAdmin();
   if(t==='report') renderReportAdmin();
-  if(t==='settings'){ fillAccountSettings(); fillCalmToggle(); fillChoreReminderSettings(); renderEnforcementWarning(); updateParentDeviceModeCardVisibility(); }
+  if(t==='settings'){ fillAccountSettings(); fillCalmToggle(); fillChoreReminderSettings(); renderEnforcementWarning(); updateParentDeviceModeCardVisibility(); renderCalmPrefsAdmin(); }
 }
 async function renderCalmLogStats(){
   const el=document.getElementById('calmLogStats'); if(!el) return;
@@ -3633,7 +3633,7 @@ document.getElementById('gearBtn').onclick=openAdmin;
 //   offline, no audio files).
 let _breathTimer=null, _calmNoise=null, _calmActive=null, _muscleTimer=null;
 let _calmSession=null; // {before, tool, ts}
-const CALM_PANES=['calmMenu','calmBreathe','calmSound','calmGround','calmMuscle','calmHeavy','calmTrace','calmVisual','calmAfter'];
+const CALM_PANES=['calmIntro','calmMenu','calmBreathe','calmSound','calmGround','calmMuscle','calmHeavy','calmTrace','calmVisual','calmAfter'];
 // Shared display names for cs_calmlog tool ids -- used by the parent-facing
 // stats (renderCalmLogStats) and by calmPickFeeling's personalized-suggestion
 // path (bestToolFor), so a new tool only needs to be added here once.
@@ -3657,19 +3657,129 @@ function updateCalmTtsBtn(){
   const b=document.getElementById('calmTtsBtn'); if(!b) return;
   b.textContent=_calmTtsOn?'🔊':'🔇';
 }
+// C9 (CALM-UPGRADE-PLAN): the full catalog of top-level calm tools a parent
+// can toggle/reorder per child. heartbeat/purr are deliberately excluded --
+// those live as in-panel switches under ocean/rain (see C6), never their
+// own top-level tile, so they're not part of this list either.
+const CALM_TOOLS_ALL=[
+  {id:'breathe',emoji:'🎈',label:'נשימת בלון'},
+  {id:'trace',emoji:'🌈',label:'נשימת קשת'},
+  {id:'muscle',emoji:'🍋',label:'סוחטים לימון'},
+  {id:'heavy',emoji:'🦸',label:'כוח-על'},
+  {id:'ground',emoji:'🖐️',label:'משחק החושים'},
+  {id:'ocean',emoji:'🌊',label:'גלים בים'},
+  {id:'rain',emoji:'🌧️',label:'גשם שקט'},
+  {id:'visual',emoji:'✨',label:'מסך מרגיע'},
+];
+function calmToolsForChild(childId){
+  const prefs=(state.calmPrefs||{})[childId];
+  if(!prefs||!prefs.tools||!prefs.tools.length) return CALM_TOOLS_ALL.map(t=>t.id);
+  return prefs.tools;
+}
+function renderCalmTiles(){
+  const wrap=document.getElementById('calmTilesWrap'); if(!wrap) return;
+  const ids=calmToolsForChild(state.current);
+  wrap.innerHTML=ids.map(id=>{
+    const t=CALM_TOOLS_ALL.find(x=>x.id===id); if(!t) return '';
+    return `<button class="calm-tile" id="tile-${t.id}" onclick="openCalmActivity('${t.id}')"><span class="t-ic">${t.emoji}</span>${esc(t.label)}</button>`;
+  }).join('');
+}
+// C9 admin: per-child checkbox+reorder list in Settings. A parent curates
+// which tools show (and in what order) for each kid -- also trims choice
+// overload in the moment a child is already dysregulated.
+function renderCalmPrefsAdmin(){
+  const c=document.getElementById('calmPrefsAdmin'); if(!c) return;
+  c.innerHTML=state.children.map(ch=>{
+    const ids=calmToolsForChild(ch.id);
+    const rows=ids.map((id,i)=>{
+      const t=CALM_TOOLS_ALL.find(x=>x.id===id); if(!t) return '';
+      return `<div class="cp-row">
+        <span class="cp-label">${t.emoji} ${esc(t.label)}</span>
+        <button class="icon-btn" title="למעלה" onclick="moveCalmTool('${ch.id}','${id}',-1)" ${i===0?'disabled':''}>▲</button>
+        <button class="icon-btn" title="למטה" onclick="moveCalmTool('${ch.id}','${id}',1)" ${i===ids.length-1?'disabled':''}>▼</button>
+        <button class="icon-btn" title="הסר" onclick="toggleCalmTool('${ch.id}','${id}',false)" ${ids.length<=2?'disabled':''}>🗑️</button>
+      </div>`;
+    }).join('');
+    const missing=CALM_TOOLS_ALL.filter(t=>!ids.includes(t.id));
+    const addRow=missing.length?`<div class="field" style="margin-top:8px;"><select onchange="if(this.value){toggleCalmTool('${ch.id}',this.value,true);this.value='';}" style="width:100%;border:2px solid var(--line);border-radius:10px;padding:8px;font-family:inherit;">
+      <option value="">➕ הוסף כלי...</option>
+      ${missing.map(t=>`<option value="${t.id}">${t.emoji} ${esc(t.label)}</option>`).join('')}
+    </select></div>`:'';
+    return `<div class="cp-child"><div class="cp-child-h">${ch.emoji} ${esc(ch.name)}</div>${rows}${addRow}</div>`;
+  }).join('');
+}
+async function moveCalmTool(childId,toolId,dir){
+  const ids=calmToolsForChild(childId).slice();
+  const i=ids.indexOf(toolId), j=i+dir;
+  if(i<0||j<0||j>=ids.length) return;
+  [ids[i],ids[j]]=[ids[j],ids[i]];
+  await saveCalmPrefs(childId,ids);
+}
+async function toggleCalmTool(childId,toolId,add){
+  let ids=calmToolsForChild(childId).slice();
+  if(add){ if(!ids.includes(toolId)) ids.push(toolId); }
+  else{
+    if(ids.length<=2){ toast('צריך לפחות 2 כלים'); return; }
+    ids=ids.filter(id=>id!==toolId);
+  }
+  await saveCalmPrefs(childId,ids);
+}
+async function saveCalmPrefs(childId,ids){
+  state.calmPrefs=state.calmPrefs||{};
+  state.calmPrefs[childId]={tools:ids};
+  await DB.set('cs_calmprefs',state.calmPrefs);
+  renderCalmPrefsAdmin();
+  toast('נשמר ✓');
+}
+// C10 (CALM-UPGRADE-PLAN): a one-time, per-child social story -- a standard
+// evidence-based technique for autism -- explaining what this screen is and
+// that using it is a sign of strength, not a problem. Shown once ever per
+// child (synced like any other per-child flag, so it doesn't reappear on a
+// second device either), before the normal feeling check-in.
+const CALM_INTRO_CARDS=[
+  '🌿 זה המקום השקט שלך. אפשר לבוא לכאן מתי שרוצים — זה תמיד בסדר.',
+  '💪 כשמרגישים כעס או עצב בגוף, יש כאן כלים שעוזרים להרגיש טוב יותר.',
+  '🧑‍🤝‍🧑 לבוא לכאן זה סימן של כוח, לא של בעיה. גיבורים יודעים מתי לנוח.',
+];
+let _introStep=0;
+async function maybeShowCalmIntro(){
+  const seen=await DB.get('cs_calmintro_'+state.current);
+  if(seen){ showCalmMenu(); return; }
+  _introStep=0;
+  renderCalmIntroStep();
+}
+function renderCalmIntroStep(){
+  calmShowPane('calmIntro');
+  const txt=CALM_INTRO_CARDS[_introStep];
+  document.getElementById('calmIntroTxt').textContent=txt;
+  document.getElementById('calmIntroNextBtn').textContent=_introStep<CALM_INTRO_CARDS.length-1?'הבא ←':'התחלה 🌿';
+  if(calmTtsEnabled()) speakWithHighlight(txt,null,'he-IL',null);
+}
+async function calmIntroNext(){
+  _introStep++;
+  if(_introStep>=CALM_INTRO_CARDS.length){ await finishCalmIntro(); return; }
+  renderCalmIntroStep();
+}
+async function skipCalmIntro(){ await finishCalmIntro(); }
+async function finishCalmIntro(){
+  stopSpeaking();
+  await DB.set('cs_calmintro_'+state.current,true);
+  showCalmMenu();
+}
 async function openCalmBreak(){
   _calmSession={before:null, tool:null, body:null, ts:Date.now()};
   const bodyRow=document.getElementById('calmBodyRow'); if(bodyRow) bodyRow.style.display='none';
   document.querySelectorAll('.body-chip').forEach(c=>c.classList.remove('sel'));
   _calmTtsOn=(await DB.get('cs_calmtts'))??true;
   updateCalmTtsBtn();
+  renderCalmTiles();
   document.getElementById('calmModal').classList.add('show');
-  showCalmMenu();
+  await maybeShowCalmIntro();
 }
 function calmShowPane(id){
   CALM_PANES.forEach(p=>document.getElementById(p).style.display=p===id?'block':'none');
-  document.getElementById('calmBackBtn').style.display=(id==='calmMenu'||id==='calmAfter')?'none':'block';
-  document.getElementById('calmBackRow').style.display=(id==='calmAfter')?'none':'flex';
+  document.getElementById('calmBackBtn').style.display=(id==='calmMenu'||id==='calmAfter'||id==='calmIntro')?'none':'block';
+  document.getElementById('calmBackRow').style.display=(id==='calmAfter'||id==='calmIntro')?'none':'flex';
 }
 function showCalmMenu(){
   stopCalmActivity();
