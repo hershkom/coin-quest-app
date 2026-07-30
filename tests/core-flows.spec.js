@@ -455,10 +455,38 @@ test.describe('calm toolkit', () => {
     await expect(page.locator('.calm-bubble').first()).toBeVisible();
     const before = await page.locator('.calm-bubble').count();
 
-    await page.locator('.calm-bubble').first().click();
+    // force:true -- bubbles are randomly positioned and can visually overlap,
+    // so the "first" one in DOM order isn't always the topmost at its own
+    // coordinates; a real fingertip would just hit whichever is on top.
+    await page.locator('.calm-bubble').first().click({ force: true });
     await expect(page.locator('#bubbleCount')).toHaveText('1');
     await page.waitForTimeout(500); // respawn delay
     expect(await page.locator('.calm-bubble').count()).toBe(before);
+  });
+
+  test('a tool that helped twice before at the same feeling level is suggested over the generic default', async ({ page }) => {
+    await enterLocalOnly(page);
+    await selectChild(page, 'אריאל');
+    await page.evaluate(async () => {
+      const log = [
+        { ts: Date.now() - 1000, childId: state.current, before: 3, after: 1, tool: 'ocean' },
+        { ts: Date.now() - 2000, childId: state.current, before: 3, after: 1, tool: 'ocean' },
+      ];
+      await DB.set('cs_calmlog', log);
+    });
+    await page.locator('.break-btn').click();
+    await page.locator('#feelRowBefore .feel-btn', { hasText: 'עצבני' }).click();
+    await expect(page.locator('#tile-ocean')).toHaveClass(/suggested/);
+    await expect(page.locator('#tile-breathe')).not.toHaveClass(/suggested/);
+    await expect(page.locator('#calmSuggest')).toHaveText(/בפעם שעברה/);
+  });
+
+  test('with no history at a feeling level, the generic suggestion still applies', async ({ page }) => {
+    await enterLocalOnly(page);
+    await selectChild(page, 'אריאל');
+    await page.locator('.break-btn').click();
+    await page.locator('#feelRowBefore .feel-btn', { hasText: 'כועס מאוד' }).click();
+    await expect(page.locator('#tile-heavy')).toHaveClass(/suggested/);
   });
 });
 

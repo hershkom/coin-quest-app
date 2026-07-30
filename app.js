@@ -3650,22 +3650,44 @@ function showCalmMenu(){
   stopCalmActivity();
   calmShowPane('calmMenu');
 }
+// C5 (CALM-UPGRADE-PLAN): learns from THIS child's own cs_calmlog history --
+// Zones of Regulation stresses matching tools to what actually works for a
+// specific kid, not a generic map. Requires >=2 rated sessions that started
+// at this same feeling level so one lucky session can't dominate the pick;
+// returns null (falls back to the static map below) otherwise.
+async function bestToolFor(level){
+  const log=(await DB.get('cs_calmlog'))??[];
+  const mine=log.filter(e=>e.childId===state.current&&e.before===level&&e.after&&e.tool);
+  const scores={};
+  mine.forEach(e=>{ (scores[e.tool]=scores[e.tool]||[]).push(e.before-e.after); }); // positive = calmer after
+  let best=null, bestAvg=0;
+  for(const t in scores){
+    const arr=scores[t]; if(arr.length<2) continue;
+    const avg=arr.reduce((a,b)=>a+b,0)/arr.length;
+    if(avg>bestAvg){ best=t; bestAvg=avg; }
+  }
+  return best;
+}
 // Feeling → suggested tool: anger/tension responds best to motor discharge
-// (muscle work) and paced breathing; anxiety/unease to grounding; the
+// (heavy work) and paced breathing; anxiety/unease to grounding; the
 // suggestion is a highlight, never a restriction — the child always chooses.
-function calmPickFeeling(level){
+async function calmPickFeeling(level){
   if(_calmSession) _calmSession.before=level;
+  document.querySelectorAll('#feelRowBefore .feel-btn').forEach((b,i)=>b.style.outline=(i+1)===level?'3px solid var(--mint)':'none');
   document.querySelectorAll('.calm-tile').forEach(t=>t.classList.remove('suggested'));
-  const sug={1:'visual',2:'ground',3:'breathe',4:'heavy'}[level];
+  const staticSug={1:'visual',2:'ground',3:'breathe',4:'heavy'}[level];
+  const personal=await bestToolFor(level);
+  const sug=personal||staticSug;
   const el=document.getElementById('tile-'+sug);
   if(el) el.classList.add('suggested');
-  document.getElementById('calmSuggest').textContent={
-    1:'איזה כיף! אפשר פשוט ליהנות ממשהו נעים ✨',
-    2:'בוא ננסה את משחק החושים — הוא עוזר כשמשהו לא נעים',
-    3:'נשימת בלון עוזרת הכי מהר כשעצבניים',
-    4:'כשכועסים ממש חזק — הגוף צריך לעבוד! נסה את כוח-העל 🦸',
-  }[level];
-  document.querySelectorAll('#feelRowBefore .feel-btn').forEach((b,i)=>b.style.outline=(i+1)===level?'3px solid var(--mint)':'none');
+  document.getElementById('calmSuggest').textContent=personal
+    ? 'בפעם שעברה '+CALM_TOOL_NAMES[personal]+' עזר לך הכי הרבה — רוצה שוב?'
+    : {
+        1:'איזה כיף! אפשר פשוט ליהנות ממשהו נעים ✨',
+        2:'בוא ננסה את משחק החושים — הוא עוזר כשמשהו לא נעים',
+        3:'נשימת בלון עוזרת הכי מהר כשעצבניים',
+        4:'כשכועסים ממש חזק — הגוף צריך לעבוד! נסה את כוח-העל 🦸',
+      }[level];
 }
 function openCalmActivity(kind){
   stopCalmActivity();
