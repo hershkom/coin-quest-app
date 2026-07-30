@@ -595,10 +595,23 @@
   .breath-txt{margin-top:22px;font-size:1.35rem;font-weight:900;color:#1a6b52;}
   .breath-count{font-size:2rem;font-weight:900;color:#27C99A;min-height:44px;}
   .calm-modal .cm-sub{margin-top:8px;color:#3a7d68;font-size:.92rem;font-weight:700;}
-  .feel-row{display:flex;gap:8px;justify-content:center;margin-top:10px;}
+  .feel-row{display:flex;gap:8px;justify-content:center;margin-top:10px;flex-wrap:wrap;max-width:340px;margin-left:auto;margin-right:auto;}
   .feel-btn{border:none;background:rgba(255,255,255,.8);border-radius:16px;padding:10px 8px;width:72px;font-family:inherit;font-weight:800;font-size:.72rem;color:#1a6b52;cursor:pointer;box-shadow:0 4px 12px rgba(39,201,154,.12);transition:transform .12s;}
   .feel-btn:active{transform:scale(.92);}
   .feel-btn .f-ic{display:block;font-size:1.7rem;margin-bottom:3px;}
+  /* C8 (CALM-UPGRADE-PLAN): Zones-of-Regulation color coding -- a soft tint per
+     zone, not just the emoji, since color is itself part of the framework
+     (children learn to say "I'm in the blue zone" as shorthand for a whole
+     cluster of feelings/body states). */
+  .feel-btn.zone-green{background:rgba(200,245,225,.9);}
+  .feel-btn.zone-blue{background:rgba(203,226,250,.9);color:#1a4a7d;}
+  .feel-btn.zone-yellow{background:rgba(255,240,190,.9);color:#7d5a1a;}
+  .feel-btn.zone-orange{background:rgba(255,215,180,.9);color:#7d3a1a;}
+  .feel-btn.zone-red{background:rgba(255,205,205,.9);color:#7d1a1a;}
+  .calm-body-row{max-width:340px;margin:0 auto;}
+  .body-chips{display:flex;flex-wrap:wrap;gap:6px;justify-content:center;}
+  .body-chip{border:2px solid transparent;background:rgba(255,255,255,.8);border-radius:14px;padding:7px 11px;font-family:inherit;font-weight:700;font-size:.74rem;color:#1a6b52;cursor:pointer;}
+  .body-chip.sel{border-color:var(--mint-d);background:rgba(39,201,154,.18);}
   .calm-tiles{display:grid;grid-template-columns:repeat(2,132px);gap:10px;justify-content:center;}
   .calm-tile{border:none;background:rgba(255,255,255,.78);border-radius:20px;padding:14px 8px;font-family:inherit;font-weight:800;font-size:.88rem;color:#1a6b52;cursor:pointer;box-shadow:0 6px 16px rgba(39,201,154,.15);transition:transform .12s;}
   .calm-tile:active{transform:scale(.94);}

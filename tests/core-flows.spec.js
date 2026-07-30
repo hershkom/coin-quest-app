@@ -488,6 +488,27 @@ test.describe('calm toolkit', () => {
     await page.locator('#feelRowBefore .feel-btn', { hasText: 'כועס מאוד' }).click();
     await expect(page.locator('#tile-heavy')).toHaveClass(/suggested/);
   });
+
+  test('the new "sad or tired" zone shows the body-sensation row, suggests ocean, and logs both', async ({ page }) => {
+    await enterLocalOnly(page);
+    await selectChild(page, 'אריאל');
+    await page.locator('.break-btn').click();
+    await page.locator('#feelRowBefore .feel-btn', { hasText: 'עצוב או עייף' }).click();
+    await expect(page.locator('#tile-ocean')).toHaveClass(/suggested/);
+    await expect(page.locator('#calmBodyRow')).toBeVisible();
+
+    await page.locator('.body-chip', { hasText: 'הלב דופק מהר' }).click();
+    await expect(page.locator('.body-chip', { hasText: 'הלב דופק מהר' })).toHaveClass(/sel/);
+
+    await page.locator('.calm-tile', { hasText: 'גלים בים' }).click();
+    await page.locator('button', { hasText: 'אני מוכן/ה להמשיך' }).click();
+    await page.locator('#calmAfter .feel-btn', { hasText: 'רגוע וטוב' }).click();
+
+    const entry = await page.evaluate(async () => (await DB.get('cs_calmlog'))[0]);
+    expect(entry.before).toBe(5);
+    expect(entry.tool).toBe('ocean');
+    expect(entry.body).toBe('heart');
+  });
 });
 
 test.describe('backup / restore', () => {

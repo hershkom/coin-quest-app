@@ -2369,7 +2369,7 @@ async function renderCalmLogStats(){
   const log=(await DB.get('cs_calmlog'))??[];
   if(!log.length){ el.innerHTML='<div class="card-sub">עדיין אין שימוש — זה בסדר גמור. הכלי מחכה לרגע שיצטרכו אותו.</div>'; return; }
   const TOOLS=CALM_TOOL_NAMES;
-  const FEEL=['','😊','😕','😖','😡'];
+  const FEEL=['','😊','😕','😖','😡','😔'];
   const week=log.filter(e=>Date.now()-e.ts<7*24*3600*1000);
   const improved=log.filter(e=>e.before&&e.after&&e.after<e.before).length;
   const rated=log.filter(e=>e.before&&e.after).length;
@@ -3637,7 +3637,9 @@ const CALM_PANES=['calmMenu','calmBreathe','calmSound','calmGround','calmMuscle'
 const CALM_TOOL_NAMES={breathe:'🎈 נשימת בלון',muscle:'🍋 סוחטים לימון',heavy:'🦸 כוח-על',ground:'🖐️ משחק החושים',ocean:'🌊 גלים בים',rain:'🌧️ גשם שקט',visual:'✨ מסך מרגיע'};
 
 function openCalmBreak(){
-  _calmSession={before:null, tool:null, ts:Date.now()};
+  _calmSession={before:null, tool:null, body:null, ts:Date.now()};
+  const bodyRow=document.getElementById('calmBodyRow'); if(bodyRow) bodyRow.style.display='none';
+  document.querySelectorAll('.body-chip').forEach(c=>c.classList.remove('sel'));
   document.getElementById('calmModal').classList.add('show');
   showCalmMenu();
 }
@@ -3673,9 +3675,16 @@ async function bestToolFor(level){
 // suggestion is a highlight, never a restriction — the child always chooses.
 async function calmPickFeeling(level){
   if(_calmSession) _calmSession.before=level;
-  document.querySelectorAll('#feelRowBefore .feel-btn').forEach((b,i)=>b.style.outline=(i+1)===level?'3px solid var(--mint)':'none');
+  // Matched by data-level, not DOM position -- C8 reordered the buttons
+  // visually (green/blue/yellow/orange/red) so position no longer lines up
+  // with the numeric feeling level.
+  document.querySelectorAll('#feelRowBefore .feel-btn').forEach(b=>b.style.outline=(+b.dataset.level===level)?'3px solid var(--mint)':'none');
   document.querySelectorAll('.calm-tile').forEach(t=>t.classList.remove('suggested'));
-  const staticSug={1:'visual',2:'ground',3:'breathe',4:'heavy'}[level];
+  // C8: optional body-sensation chips -- reset any previous pick each time a
+  // (possibly different) feeling is chosen, and reveal the row.
+  document.querySelectorAll('.body-chip').forEach(c=>c.classList.remove('sel'));
+  const bodyRow=document.getElementById('calmBodyRow'); if(bodyRow) bodyRow.style.display='block';
+  const staticSug={1:'visual',2:'ground',3:'breathe',4:'heavy',5:'ocean'}[level];
   const personal=await bestToolFor(level);
   const sug=personal||staticSug;
   const el=document.getElementById('tile-'+sug);
@@ -3687,7 +3696,14 @@ async function calmPickFeeling(level){
         2:'בוא ננסה את משחק החושים — הוא עוזר כשמשהו לא נעים',
         3:'נשימת בלון עוזרת הכי מהר כשעצבניים',
         4:'כשכועסים ממש חזק — הגוף צריך לעבוד! נסה את כוח-העל 🦸',
+        5:'כשעצובים או עייפים — צליל נעים וחיבוק עוזרים 💙',
       }[level];
+}
+// C8: which body sensation goes with the feeling -- optional, logged for the
+// parent (see cs_calmlog's `body` field), never required to pick a tool.
+function calmPickBody(b){
+  if(_calmSession) _calmSession.body=b;
+  document.querySelectorAll('.body-chip').forEach(c=>c.classList.toggle('sel',c.dataset.body===b));
 }
 function openCalmActivity(kind){
   stopCalmActivity();
@@ -3929,6 +3945,10 @@ function calmPopTone(){
 }
 
 /* -- soundscapes: filtered-noise synthesis (offline, no audio files) -- */
+// C6 (CALM-UPGRADE-PLAN): heartbeat doesn't fit the shared noise-buffer model
+// below (it's a rhythmic double-thump, not continuous filtered noise), so it
+// gets its own path; ocean/rain/purr all share the same brown-noise buffer
+// with different filter/LFO settings.
 function startCalmNoise(kind){
   stopCalmNoise();
   try{
@@ -3936,6 +3956,7 @@ function startCalmNoise(kind){
     // Mobile browsers auto-suspend an AudioContext on backgrounding and it
     // stays suspended silently; resume() here runs inside the tap gesture.
     if(actx.state==='suspended') actx.resume();
+    if(kind==='heartbeat'){ startHeartbeat(); return; }
     // 4s looped brown-noise buffer — the 1/f² spectrum is the "deep" noise
     // used in sensory-room sound machines (white noise reads as harsh hiss).
     const len=actx.sampleRate*4, buf=actx.createBuffer(1,len,actx.sampleRate);
@@ -3945,34 +3966,75 @@ function startCalmNoise(kind){
     const src=actx.createBufferSource(); src.buffer=buf; src.loop=true;
     const filter=actx.createBiquadFilter();
     const master=actx.createGain();
+    const lfo=actx.createOscillator(), lfoGain=actx.createGain();
     if(kind==='ocean'){
       // waves = deep rumble whose loudness swells and recedes ~every 9s
-      filter.type='lowpass'; filter.frequency.value=420;
-      master.gain.value=0.12;
-      const lfo=actx.createOscillator(), lfoGain=actx.createGain();
+      filter.type='lowpass'; filter.frequency.value=420; master.gain.value=0.12;
       lfo.frequency.value=0.11; lfoGain.gain.value=0.08;
-      lfo.connect(lfoGain); lfoGain.connect(master.gain);
-      lfo.start();
-      src.connect(filter); filter.connect(master); master.connect(actx.destination);
-      src.start();
-      _calmNoise={nodes:[src,lfo],master};
-    }else{
+    }else if(kind==='rain'){
       // rain = brighter patter, steady with a slight natural flutter
-      filter.type='bandpass'; filter.frequency.value=1800; filter.Q.value=0.6;
-      master.gain.value=0.07;
-      const lfo=actx.createOscillator(), lfoGain=actx.createGain();
+      filter.type='bandpass'; filter.frequency.value=1800; filter.Q.value=0.6; master.gain.value=0.07;
       lfo.frequency.value=0.5; lfoGain.gain.value=0.012;
-      lfo.connect(lfoGain); lfoGain.connect(master.gain);
-      lfo.start();
-      src.connect(filter); filter.connect(master); master.connect(actx.destination);
-      src.start();
-      _calmNoise={nodes:[src,lfo],master};
+    }else{
+      // purr = warm low rumble with a fast buzz (the cat's actual purr rate)
+      filter.type='lowpass'; filter.frequency.value=150; master.gain.value=0.1;
+      lfo.frequency.value=25; lfoGain.gain.value=0.03;
+    }
+    lfo.connect(lfoGain); lfoGain.connect(master.gain);
+    lfo.start();
+    src.connect(filter); filter.connect(master); master.connect(actx.destination);
+    src.start();
+    _calmNoise={nodes:[src,lfo],master};
+    if(kind==='purr'){
+      // second, slower LFO layered on top -- the gentle rise/fall of the
+      // purring cat's own breathing, under the fast buzz above.
+      const lfo2=actx.createOscillator(), lfo2Gain=actx.createGain();
+      lfo2.frequency.value=0.4; lfo2Gain.gain.value=0.02;
+      lfo2.connect(lfo2Gain); lfo2Gain.connect(master.gain);
+      lfo2.start();
+      _calmNoise.nodes.push(lfo2);
     }
   }catch(e){
     document.getElementById('calmSoundLabel').textContent='⚠️ הקול לא זמין במכשיר הזה כרגע';
   }
 }
+// A resting heart rate ~66bpm, "lub-dub" double-thump per beat.
+function startHeartbeat(){
+  const beat=()=>{
+    try{
+      const thump=(delay,peak)=>{
+        const o=actx.createOscillator(), g=actx.createGain();
+        o.type='sine'; o.frequency.value=55;
+        g.gain.setValueAtTime(0,actx.currentTime+delay);
+        g.gain.linearRampToValueAtTime(peak,actx.currentTime+delay+0.05);
+        g.gain.linearRampToValueAtTime(0,actx.currentTime+delay+0.18);
+        o.connect(g); g.connect(actx.destination);
+        o.start(actx.currentTime+delay); o.stop(actx.currentTime+delay+0.2);
+      };
+      thump(0,0.22); thump(0.22,0.14); // lub, dub
+    }catch(e){}
+  };
+  beat();
+  _calmNoise={interval:setInterval(beat,900),nodes:[]};
+}
+// C6: optional auto-stop, useful at bedtime -- clearing any PREVIOUS timer
+// first means switching sounds (which calls stopCalmNoise -> here) never
+// leaves a stale timer silently cutting off the newly-chosen sound early.
+let _calmSoundTimeout=null;
+function setCalmSoundTimer(minutes){
+  if(_calmSoundTimeout){ clearTimeout(_calmSoundTimeout); _calmSoundTimeout=null; }
+  document.querySelectorAll('.calm-timer-btn').forEach(b=>b.classList.toggle('sel',+b.dataset.min===minutes));
+  if(minutes>0){
+    _calmSoundTimeout=setTimeout(()=>{
+      stopCalmNoise();
+      const lbl=document.getElementById('calmSoundLabel'); if(lbl) lbl.textContent='הצליל נגמר בשקט... לילה טוב 🌙';
+      document.querySelectorAll('.calm-timer-btn').forEach(b=>b.classList.remove('sel'));
+    },minutes*60000);
+  }
+}
 function stopCalmNoise(){
+  if(_calmSoundTimeout){ clearTimeout(_calmSoundTimeout); _calmSoundTimeout=null; }
+  if(_calmNoise&&_calmNoise.interval){ clearInterval(_calmNoise.interval); _calmNoise=null; return; }
   if(!_calmNoise) return;
   _calmNoise.nodes.forEach(n=>{ try{ n.stop(); }catch(e){} });
   _calmNoise=null;
@@ -3994,13 +4056,15 @@ async function calmFinish(after){
   stopCalmActivity();
   if(_calmSession&&_calmSession.tool){
     const log=(await DB.get('cs_calmlog'))??[];
-    log.unshift({ts:_calmSession.ts, childId:state.current, before:_calmSession.before, after:after, tool:_calmSession.tool, secs:Math.round((Date.now()-_calmSession.ts)/1000)});
+    log.unshift({ts:_calmSession.ts, childId:state.current, before:_calmSession.before, after:after, tool:_calmSession.tool, body:_calmSession.body||null, secs:Math.round((Date.now()-_calmSession.ts)/1000)});
     if(log.length>60) log.length=60;
     await DB.set('cs_calmlog',log);
   }
   _calmSession=null;
   document.querySelectorAll('#feelRowBefore .feel-btn').forEach(b=>b.style.outline='none');
   document.querySelectorAll('.calm-tile').forEach(t=>t.classList.remove('suggested'));
+  document.querySelectorAll('.body-chip').forEach(c=>c.classList.remove('sel'));
+  const bodyRow=document.getElementById('calmBodyRow'); if(bodyRow) bodyRow.style.display='none';
   document.getElementById('calmSuggest').textContent='בחר מה יעזור לך עכשיו';
 }
 function closeCalmBreak(){ calmFinish(null); }

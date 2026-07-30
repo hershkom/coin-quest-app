@@ -811,13 +811,23 @@
     <div style="font-size:2.6rem;text-align:center;">🌿</div>
     <h3 style="margin:8px 0 4px;color:#1a6b52;text-align:center;">איך אתה מרגיש עכשיו?</h3>
     <div class="feel-row" id="feelRowBefore">
-      <button class="feel-btn" onclick="calmPickFeeling(1)"><span class="f-ic">😊</span>רגוע</button>
-      <button class="feel-btn" onclick="calmPickFeeling(2)"><span class="f-ic">😕</span>לא נעים</button>
-      <button class="feel-btn" onclick="calmPickFeeling(3)"><span class="f-ic">😖</span>עצבני</button>
-      <button class="feel-btn" onclick="calmPickFeeling(4)"><span class="f-ic">😡</span>כועס מאוד</button>
+      <button class="feel-btn zone-green" data-level="1" onclick="calmPickFeeling(1)"><span class="f-ic">😊</span>רגוע וטוב</button>
+      <button class="feel-btn zone-blue" data-level="5" onclick="calmPickFeeling(5)"><span class="f-ic">😔</span>עצוב או עייף</button>
+      <button class="feel-btn zone-yellow" data-level="2" onclick="calmPickFeeling(2)"><span class="f-ic">😕</span>לא נעים</button>
+      <button class="feel-btn zone-orange" data-level="3" onclick="calmPickFeeling(3)"><span class="f-ic">😖</span>עצבני</button>
+      <button class="feel-btn zone-red" data-level="4" onclick="calmPickFeeling(4)"><span class="f-ic">😡</span>כועס מאוד</button>
     </div>
-    <div class="cm-sub" id="calmSuggest" style="margin:10px 0 14px;text-align:center;">בחר מה יעזור לך עכשיו</div>
-    <div class="calm-tiles">
+    <div class="cm-sub" id="calmSuggest" style="margin:10px 0 6px;text-align:center;">בחר מה יעזור לך עכשיו</div>
+    <div class="calm-body-row" id="calmBodyRow" style="display:none;">
+      <div class="cm-sub" style="text-align:center;margin-bottom:6px;">איפה אתה מרגיש את זה בגוף? (אופציונלי)</div>
+      <div class="body-chips">
+        <button class="body-chip" data-body="heart" onclick="calmPickBody('heart')">💓 הלב דופק מהר</button>
+        <button class="body-chip" data-body="fists" onclick="calmPickBody('fists')">✊ הידיים קפוצות</button>
+        <button class="body-chip" data-body="stomach" onclick="calmPickBody('stomach')">🌀 הבטן מתהפכת</button>
+        <button class="body-chip" data-body="heavy" onclick="calmPickBody('heavy')">🗿 הגוף כבד</button>
+      </div>
+    </div>
+    <div class="calm-tiles" style="margin-top:14px;">
       <button class="calm-tile" id="tile-breathe" onclick="openCalmActivity('breathe')"><span class="t-ic">🎈</span>נשימת בלון</button>
       <button class="calm-tile" id="tile-muscle" onclick="openCalmActivity('muscle')"><span class="t-ic">🍋</span>סוחטים לימון</button>
       <button class="calm-tile" id="tile-heavy" onclick="openCalmActivity('heavy')"><span class="t-ic">🦸</span>כוח-על</button>
@@ -862,10 +872,11 @@
   <div id="calmAfter" style="display:none;text-align:center;">
     <h3 style="margin:8px 0 14px;color:#1a6b52;">ואיך אתה מרגיש עכשיו?</h3>
     <div class="feel-row">
-      <button class="feel-btn" onclick="calmFinish(1)"><span class="f-ic">😊</span>רגוע</button>
-      <button class="feel-btn" onclick="calmFinish(2)"><span class="f-ic">😕</span>לא נעים</button>
-      <button class="feel-btn" onclick="calmFinish(3)"><span class="f-ic">😖</span>עצבני</button>
-      <button class="feel-btn" onclick="calmFinish(4)"><span class="f-ic">😡</span>כועס מאוד</button>
+      <button class="feel-btn zone-green" onclick="calmFinish(1)"><span class="f-ic">😊</span>רגוע וטוב</button>
+      <button class="feel-btn zone-blue" onclick="calmFinish(5)"><span class="f-ic">😔</span>עצוב או עייף</button>
+      <button class="feel-btn zone-yellow" onclick="calmFinish(2)"><span class="f-ic">😕</span>לא נעים</button>
+      <button class="feel-btn zone-orange" onclick="calmFinish(3)"><span class="f-ic">😖</span>עצבני</button>
+      <button class="feel-btn zone-red" onclick="calmFinish(4)"><span class="f-ic">😡</span>כועס מאוד</button>
     </div>
     <button class="btn ghost" style="margin-top:14px;width:auto;padding:12px 22px;" onclick="calmFinish(null)">דלג</button>
   </div>
