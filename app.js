@@ -992,6 +992,7 @@ function initMath(){
   document.getElementById('mathActive').style.display='block';
   document.getElementById('mathTarget').textContent=state.math.daily;
   _mathStreak=0; // fresh per session/child, so one kid's run doesn't carry to another
+  _mathCapModalShown=false; // re-announce the cap once per visit, not once per answer
   newProblem();
 }
 // Adaptive difficulty: the parent's maxNum is the CEILING; each child works up
@@ -1000,6 +1001,7 @@ function initMath(){
 // after 4 correct in a row, eases after 2 wrong in a row (tracked in
 // _mathStreak), and persists per kid in cs_mathlvl_<id>.
 let _mathStreak=0; // >0 = consecutive correct, <0 = consecutive wrong
+let _mathCapModalShown=false; // see initMath()/mathCheck() -- one blocking modal per visit, then quiet toasts
 function effectiveMaxNum(){
   const k=cur(); const N=state.math.maxNum;
   const lvl=Math.max(1,Math.min(5,(k&&k.mathLevel)||1));
@@ -1036,12 +1038,19 @@ function mathCheck(){
     // adaptive: 4 correct in a row -> level up
     _mathStreak=_mathStreak>0?_mathStreak+1:1;
     if(_mathStreak>=4){ bumpMathLevel(1); _mathStreak=0; }
-    if(k.mathDaily.done>=state.math.daily){ modalMsg('🏆','סיימת להיום!','פתרת את כל '+state.math.daily+' התרגילים המזכים. כל הכבוד!'); newProblem(); return; }
+    if(k.mathDaily.done>=state.math.daily){
+      // Practicing past the daily coin cap is welcome -- but a BLOCKING modal
+      // on every single extra correct answer punished exactly that. Say it
+      // once per visit, then stay out of the way with a light toast.
+      if(_mathCapModalShown) toast('נכון! ✓ (סיימת את המזכים להיום)');
+      else { _mathCapModalShown=true; modalMsg('🏆','סיימת להיום!','פתרת את כל '+state.math.daily+' התרגילים המזכים. כל הכבוד!\nאפשר להמשיך להתאמן בכיף 😊'); }
+      newProblem(); return;
+    }
     k.mathDaily.done++; DB.set('cs_mathd_'+state.current,k.mathDaily);
     k.mathTotal=(k.mathTotal||0)+1; DB.set('cs_matht_'+state.current,k.mathTotal);
     addPoints(state.math.pts,'תרגיל חשבון','math',document.querySelector('.key.ok'));
     toast('נכון! +'+state.math.pts+' 🪙');
-    if(k.mathDaily.done>=state.math.daily){ setTimeout(()=>modalMsg('🏆','כל הכבוד!','סיימת את כל התרגילים המזכים להיום!'),300); }
+    if(k.mathDaily.done>=state.math.daily){ _mathCapModalShown=true; setTimeout(()=>modalMsg('🏆','כל הכבוד!','סיימת את כל התרגילים המזכים להיום!'),300); }
     newProblem();
   }else{
     // adaptive: 2 wrong in a row -> ease down so the child isn't stuck failing
@@ -2328,7 +2337,12 @@ function renderRewards(){
     // make the concrete "almost there" moment obvious without reading text.
     row.innerHTML=`<div class="emoji">${rw.emoji}</div><div class="info"><div class="t">${esc(rw.label)}</div><div class="d">${bal} / ${rw.cost} מטבעות</div>${can?'':`<div class="rw-progress${pct>=70?' near':''}"><div class="fill" style="width:${pct}%"></div></div><div class="rw-pct">${pct}%</div>`}</div>`;
     const btn=document.createElement('button');
-    btn.className='btn '+(can?'gold':'ghost')+' sm'; btn.textContent=can?'החלף':'אין מספיק'; btn.disabled=!can; btn.onclick=()=>redeemReward(rw);
+    // Same lesson as renderGamesView's .locked rows: a real `disabled`
+    // attribute swallows the tap that should EXPLAIN why it's locked. Keep
+    // the button tappable and answer the child's actual question ("why
+    // not?") with the concrete number still missing.
+    btn.className='btn '+(can?'gold':'ghost')+' sm'; btn.textContent=can?'החלף':'אין מספיק';
+    btn.onclick=()=>{ if(can) redeemReward(rw); else toast('חסרים עוד '+(rw.cost-bal)+' מטבעות 🪙 — אפשר להרוויח בסריקות ובתרגילים!'); };
     row.appendChild(btn); c.appendChild(row);
   });
 }
@@ -2369,7 +2383,7 @@ function renderHistory(){
   const h=cur().history;
   if(h.length===0){ c.innerHTML='<div class="empty"><span class="e-ic">📜</span>עוד לא הרווחת מטבעות.<br>סרוק קוד או פתור תרגיל!</div>'; return; }
   h.forEach(x=>{
-    const spend=x.points<0, ic=x.type==='scan'?'📷':x.type==='math'?'➗':x.type==='spend'?'🎁':'⭐';
+    const spend=x.points<0, ic=x.type==='scan'?'📷':x.type==='math'?'➗':x.type==='spend'?'🎁':x.type==='learn'?'⛏️':'⭐';
     const row=document.createElement('div'); row.className='row';
     row.innerHTML=`<div class="emoji">${ic}</div><div class="info"><div class="t">${esc(x.label)}</div><div class="d">${timeAgo(x.ts)}</div></div>
       <div class="pts" style="color:${spend?'var(--coral-d)':'var(--gold-d)'}">${spend?'':'+'}${x.points} <span class="mini"></span></div>`;

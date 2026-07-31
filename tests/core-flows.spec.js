@@ -139,9 +139,15 @@ test.describe('rewards', () => {
     await iceCreamRow.getByRole('button', { name: 'החלף' }).click();
     await page.locator('#mYes').click();
     await expect(page.locator('#balTop')).toHaveText('0');
+    await page.evaluate(() => closeModal()); // dismiss the "מזל טוב" success modal
 
+    // Unaffordable rewards are tappable-but-explanatory (see the rewards shop
+    // describe below), so the real invariant here is that tapping one opens
+    // NO confirm dialog and the balance stays exactly 0.
     const movieBtn = page.locator('.row', { hasText: 'ערב סרט' }).getByRole('button'); // cost 80, balance 0
-    await expect(movieBtn).toBeDisabled();
+    await movieBtn.click();
+    await expect(page.locator('#modalBg')).not.toHaveClass(/show/);
+    await expect(page.locator('#balTop')).toHaveText('0');
   });
 
   // A cash reward ("שקל אחד") can't rely on a parent being right there to
@@ -341,6 +347,40 @@ test.describe('math (adaptive)', () => {
     }
     const levelAfter = await page.evaluate(() => cur().mathLevel || 1);
     expect(levelAfter).toBe(levelBefore + 1);
+  });
+
+  test('past the daily cap: blocking modal shows once per visit, extra correct answers get only a toast', async ({ page }) => {
+    await enterLocalOnly(page);
+    await selectChild(page, 'נועה');
+    await page.evaluate(() => go('math'));
+    // Simulate an already-capped day, then answer correctly twice.
+    await page.evaluate(() => { cur().mathDaily.done = state.math.daily; });
+    await page.evaluate(() => { mathStr = String(mathCur.ans); mathCheck(); });
+    await expect(page.locator('#modalBg')).toHaveClass(/show/);
+    await page.evaluate(() => closeModal());
+
+    await page.evaluate(() => { mathStr = String(mathCur.ans); mathCheck(); });
+    await expect(page.locator('#modalBg')).not.toHaveClass(/show/); // no modal spam
+    await expect(page.locator('#toast')).toHaveClass(/show/);      // quiet toast instead
+
+    // Re-entering the view re-arms the single announcement.
+    await page.evaluate(() => { go('home'); go('math'); });
+    await page.evaluate(() => { cur().mathDaily.done = state.math.daily; mathStr = String(mathCur.ans); mathCheck(); });
+    await expect(page.locator('#modalBg')).toHaveClass(/show/);
+  });
+});
+
+test.describe('rewards shop', () => {
+  test('an unaffordable reward explains how many coins are missing instead of swallowing the tap', async ({ page }) => {
+    await enterLocalOnly(page);
+    await selectChild(page, 'נועה');
+    await page.evaluate(() => go('rewards'));
+    const row = page.locator('#rewardsList .row').first();
+    const btn = row.locator('button', { hasText: 'אין מספיק' });
+    await expect(btn).toBeEnabled(); // deliberately NOT disabled
+    await btn.click();
+    await expect(page.locator('#toast')).toHaveClass(/show/);
+    await expect(page.locator('#toast')).toContainText('חסרים עוד');
   });
 });
 
