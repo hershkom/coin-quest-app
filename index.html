@@ -102,6 +102,9 @@
     </div>
 
     <div class="view" id="view-home">
+      <!-- Once-per-day, dismissible -- NOT a blocking screen -- see
+           maybeShowDailyGreeting()/renderDailyGreetingCard() in app.js. -->
+      <div id="dailyGreetingWrap"></div>
       <div class="hero" id="hero">
         <div class="hi"><span class="av" id="heroAv">🦊</span>שלום, <span id="childName">—</span>! 👋</div>
         <!-- G4 (ANDROID-APP-PLAN.md): the glyph inside changes with balance
@@ -174,6 +177,9 @@
       <div class="card" id="gtWalletCard" style="text-align:center;">
         <div style="font-size:2.2rem;font-weight:900;color:var(--gold-d);" id="gtWalletBig">—</div>
         <div class="card-sub">זמן משחק שנשאר לך. מרוויחים עוד בחנות הפרסים! 🎁</div>
+        <!-- Shown by renderGamesView() only while the bedtime gate is active,
+             so the 🌙 lock on every row below is never unexplained. -->
+        <div id="gtBedtimeNote" style="display:none;margin-top:10px;background:#EEF0FF;border-radius:14px;padding:10px 12px;font-weight:700;font-size:.86rem;color:#4A4560;">🌙 עכשיו זמן שינה — המשחקים חוזרים בבוקר. הזמן ששמרת נשאר שלך!</div>
       </div>
       <div id="gamesList"></div>
     </div>
@@ -560,6 +566,15 @@
       </div>
       <div class="admin-pane" id="pane-games" style="display:none;">
         <div class="card"><div class="card-h">🎮 משחקים ברשת</div><div class="card-sub">משחקי דפדפן שהילד יכול לשחק בתוך האפליקציה עם זמן שקנה במטבעות. הזמן נאכף אוטומטית — טיימר צף, התראות לפני הסוף, וסגירה כשנגמר.</div></div>
+        <div class="card">
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;">
+            <div style="flex:1;min-width:0;">
+              <div class="card-h" style="margin-bottom:2px;">🌙 חסימת משחקים בשעת השינה</div>
+              <div class="card-sub">אחרי שעת השינה (נקבעת בלשונית 🧹 מטלות) אי אפשר להתחיל משחק חדש. זמן שנצבר לא נמחק — הוא ממתין לבוקר.</div>
+            </div>
+            <button class="btn sm ghost" id="gameBedtimeToggle" onclick="toggleGameBedtime()">כבוי</button>
+          </div>
+        </div>
         <div id="gamesAdmin"></div>
         <div class="card">
           <div class="card-h" style="margin-bottom:10px;">➕ הוסף משחק</div>

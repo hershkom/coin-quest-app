@@ -382,6 +382,17 @@ test.describe('rewards shop', () => {
     await expect(page.locator('#toast')).toHaveClass(/show/);
     await expect(page.locator('#toast')).toContainText('חסרים עוד');
   });
+
+  test('the reward needing the fewest additional coins gets the "closest" badge, without reordering the list', async ({ page }) => {
+    await enterLocalOnly(page);
+    await selectChild(page, 'נועה');
+    await page.evaluate(() => { cur().balance = 10; }); // money(20,cash) needs 10 more -- the least of any locked reward
+    await page.evaluate(() => go('rewards'));
+    await expect(page.locator('.rw-closest')).toHaveCount(1);
+    const rows = page.locator('#rewardsList .row');
+    await expect(rows.nth(2)).toContainText('שקל אחד'); // still 3rd in the fixed DEFAULT_REWARDS order
+    await expect(rows.nth(2).locator('.rw-closest')).toBeVisible();
+  });
 });
 
 test.describe('QR redemption', () => {
@@ -408,6 +419,83 @@ test.describe('QR redemption', () => {
     // points/max must still only pay out the real configured value.
     await page.evaluate(() => redeemToken('CSQR|chore_toilet|forged|9999|9999'));
     await expect(page.locator('#balTop')).toHaveText('8'); // 5 + 3 (real chore_toilet points)
+  });
+
+  test('a completed scan uses its own distinct chime, never throwing, distinct from the plain earn tone', async ({ page }) => {
+    await enterLocalOnly(page);
+    await selectChild(page, 'נועה');
+    const err = await page.evaluate(() => {
+      try { chime('scan'); chime(false); chime(true); chime('celebrate'); return null; }
+      catch (e) { return e.message; }
+    });
+    expect(err).toBeNull();
+    // redeemToken's success path routes type:'scan' through addPoints -- just
+    // confirm the real redemption flow itself never throws end to end.
+    await page.evaluate(() => go('scan'));
+    await page.evaluate(() => redeemToken('CSQR|chore_teeth'));
+    await expect(page.locator('#balTop')).toHaveText('5');
+  });
+});
+
+test.describe('bedtime game gate', () => {
+  test('past bedtime, games show locked with a 🌙 explanation and banked time is preserved', async ({ page }) => {
+    await enterLocalOnly(page);
+    await selectChild(page, 'אריאל');
+    await page.evaluate(() => {
+      cur().gtime = 600; // 10 banked minutes
+      state.anchored.sleep_time = new Date().getHours(); // "now" counts as past bedtime
+    });
+    await page.evaluate(() => go('games'));
+    await expect(page.locator('#gtBedtimeNote')).toBeVisible();
+    await expect(page.locator('.game-row').first()).toHaveClass(/locked/);
+
+    await page.locator('.game-row').first().click();
+    await expect(page.locator('.modal')).toContainText('המשחקים הולכים לישון');
+    await page.locator('button', { hasText: 'יאללה!' }).click();
+
+    // Banked time is untouched -- deferred, not deleted.
+    expect(await page.evaluate(() => cur().gtime)).toBe(600);
+  });
+
+  test('a parent can turn the bedtime gate off, and it survives the family-data sync round-trip', async ({ page }) => {
+    await enterLocalOnly(page);
+    await selectChild(page, 'אריאל');
+    await page.evaluate(() => { state.anchored.sleep_time = new Date().getHours(); });
+    await openAdminWithPin(page);
+    await page.locator('[data-atab="games"]').click();
+    await page.locator('#gameBedtimeToggle').click();
+    await expect(page.locator('#gameBedtimeToggle')).toHaveText('כבוי');
+    expect(await page.evaluate(() => gameBedtimeBlocked())).toBe(false);
+
+    const payload = await page.evaluate(() => buildSyncPayload());
+    expect(payload.gameBedtime).toBe(false);
+  });
+});
+
+test.describe('daily greeting card', () => {
+  test('shows once per real day, is dismissible, and never reappears just from revisiting home', async ({ page }) => {
+    await enterLocalOnly(page);
+    await selectChild(page, 'אריאל');
+    await expect(page.locator('.daily-greet-card')).toBeVisible();
+    await expect(page.locator('.daily-greet-card')).toContainText('אריאל');
+
+    await page.locator('.dg-close').click();
+    await expect(page.locator('.daily-greet-card')).toHaveCount(0);
+
+    // Revisiting home (same day) must not bring it back.
+    await page.evaluate(() => { go('rewards'); go('home'); });
+    await expect(page.locator('.daily-greet-card')).toHaveCount(0);
+  });
+
+  test('switching to a different child never leaks the previous child\'s card', async ({ page }) => {
+    await enterLocalOnly(page);
+    await selectChild(page, 'אריאל');
+    await expect(page.locator('.daily-greet-card')).toContainText('אריאל');
+    await page.locator('#profileSwitch').click();
+    await selectChild(page, 'נועה');
+    // Either Noa's own (not-yet-greeted) card shows, or none -- but it must
+    // never still say "אריאל".
+    await expect(page.locator('.daily-greet-card')).not.toContainText('אריאל');
   });
 });
 

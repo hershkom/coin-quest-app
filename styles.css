@@ -298,6 +298,10 @@
   .kid-card .kc-av{width:74px;height:74px;border-radius:50%;background:var(--kc,var(--purple));display:flex;align-items:center;justify-content:center;font-size:2.6rem;box-shadow:0 6px 16px rgba(0,0,0,.16);}
   .kid-card .kc-name{font-weight:800;font-size:1.15rem;color:var(--ink);}
   .kid-card .kc-bal{font-size:.85rem;color:var(--gold-d);font-weight:800;background:#FFF6E0;border-radius:20px;padding:4px 12px;}
+  .daily-greet-card{position:relative;background:var(--card);border-radius:20px;padding:14px 40px 14px 16px;margin:4px 0 12px;box-shadow:0 6px 18px rgba(124,92,252,.14);animation:pop .3s cubic-bezier(.2,1.2,.4,1) both;}
+  .daily-greet-card .dg-title{font-weight:800;font-size:1rem;color:var(--ink);}
+  .daily-greet-card .dg-sub{font-size:.85rem;color:var(--ink2);margin-top:3px;font-weight:600;}
+  .daily-greet-card .dg-close{position:absolute;top:10px;left:10px;background:none;border:none;color:var(--muted);font-size:1rem;font-weight:800;cursor:pointer;padding:6px;min-width:32px;min-height:32px;}
   .hero{border-radius:28px;padding:24px 22px 22px;text-align:center;color:#fff;box-shadow:0 14px 34px rgba(124,92,252,.3);position:relative;overflow:hidden;margin-top:4px;background:linear-gradient(140deg,var(--purple),var(--sky));}
   .hero::after{content:'';position:absolute;inset:0;background:radial-gradient(circle at 80% -10%,rgba(255,255,255,.25),transparent 55%);pointer-events:none;}
   .hero .hi{font-size:.95rem;opacity:.95;font-weight:500;display:flex;align-items:center;justify-content:center;gap:7px;}
@@ -699,3 +703,4 @@
   .rw-progress.near{box-shadow:0 0 10px rgba(245,184,46,.55);}
   .rw-progress .fill{height:100%;border-radius:20px;background:linear-gradient(90deg,var(--gold),var(--gold-d));transition:width .3s ease-out;}
   .rw-pct{font-size:.72rem;font-weight:800;color:var(--gold-d);margin-top:3px;}
+  .rw-closest{display:inline-block;background:linear-gradient(135deg,var(--gold),var(--gold-d));color:#fff;font-size:.68rem;font-weight:800;padding:2px 9px;border-radius:10px;margin-bottom:4px;}

@@ -378,6 +378,10 @@ async function loadState(){
   state.learning=(await DB.get('cs_learning'))??DEFAULT_LEARNING;
   state.pin     =(await DB.get('cs_pin'))     ??'1234';
   state.calmMode=(await DB.get('cs_calm'))    ??false;
+  // Bedtime game gate (parent-controlled, on by default): banked game time is
+  // otherwise spendable at any hour, so a child with a full wallet could play
+  // straight through bedtime. See gameBedtimeBlocked().
+  state.gameBedtime=(await DB.get('cs_gamebedtime'))??true;
   // C9 (CALM-UPGRADE-PLAN): family-synced (like rewards/games), NOT device-
   // local -- which calm tools a child sees should follow them across devices.
   state.calmPrefs=(await DB.get('cs_calmprefs'))??{};
@@ -622,7 +626,11 @@ async function addPoints(n,label,type,srcEl){
   if(type==='spend'){ k.rewardsTotal=(k.rewardsTotal||0)+1; await DB.set('cs_rwt_'+id,k.rewardsTotal); }
   renderBalance();
   if(srcRect && n>0) coinFly(srcRect); else coinBurst();
-  chime(type==='spend');
+  // A completed real-world task (scan) gets its OWN recognizable chime+buzz,
+  // distinct from math/learning's plain earn tone -- "I actually did the
+  // chore" is a bigger, more physical moment than answering a question, and
+  // a consistent, distinctive anchor for it helps it register as a habit.
+  chime(type==='spend'?true:type==='scan'?'scan':false);
   if(n>0){
     mascotReact(); // G1: the companion reacts to something earned, not to a purchase
     // G8 (ANDROID-APP-PLAN.md): one short, gentle pulse on anything earned
@@ -630,7 +638,9 @@ async function addPoints(n,label,type,srcEl){
     // calm mode, same as every other sensory-intensity dial in the app; not
     // given its own separate settings toggle since the OS already lets a
     // parent disable vibration device-wide if calm mode isn't enough.
-    if(!state.calmMode&&navigator.vibrate){ try{ navigator.vibrate(20); }catch(e){} }
+    if(!state.calmMode&&navigator.vibrate){
+      try{ navigator.vibrate(type==='scan'?[25,60,25]:20); }catch(e){}
+    }
   }
   scheduleSync();
   checkBadges();
@@ -696,6 +706,7 @@ function go(v){
   if(v==='picker') renderPicker();
   if(v==='home'){
     renderChores(); renderStreakBanner(); renderGameTimeBanner(); renderEventsHome(); renderDayStrip(); renderBadgesBanner(); renderRequiredTaskAlert();
+    maybeShowDailyGreeting();
   }
   renderFirstThen(); // A1: now runs for every view renderFirstThen() itself allows, not just home
   renderMascot(); // G1: same "which views" rule as the strip above (reuses FIRSTTHEN_HIDDEN_VIEWS)
@@ -1620,6 +1631,20 @@ function currentPeriodKey(){
   if(hour>=state.anchored.sleep_time||hour<5) return 'sleep';
   return getTimeOfDay(hour);
 }
+// Same bedtime window the day-schedule already uses (sleep_time..05:00), but
+// applied to game LAUNCHES for every child, not just schedule children --
+// banked minutes were previously spendable at 2am. Never destroys banked time
+// (that would be a punishment for a rule the child didn't set); it only defers
+// it to the morning, and a parent can turn the whole gate off.
+function isPastBedtime(){
+  if(!state.anchored) return false;
+  const hour=new Date().getHours();
+  return hour>=state.anchored.sleep_time||hour<5;
+}
+function gameBedtimeBlocked(){ return state.gameBedtime!==false && isPastBedtime(); }
+function showBedtimeGameMsg(){
+  modalMsg('🌙','המשחקים הולכים לישון','עכשיו זמן שינה, אז המשחקים נחים עד מחר בבוקר.\nכל הזמן ששמרת נשאר שלך — הוא מחכה לך ⏱️');
+}
 // Tasks marked `required` that must be done before the child is allowed to
 // actually PLAY a game -- distinct from just being eligible to earn coins.
 // Doesn't block earning/banking coins or buying game-time with them, only
@@ -1680,6 +1705,39 @@ function renderDayStrip(){
     html+=`<div class="day-step ${cls}"><span class="ds-ic">${labels[p][0]}</span><span class="ds-lbl">${labels[p][1]}</span></div>`;
   });
   wrap.innerHTML=html+'</div>';
+}
+// Once-per-day, dismissible orientation card -- NOT a blocking interstitial
+// screen the child has to get past (that would just be one more tap on the
+// way to what they actually opened the app for). Gated by a per-child,
+// device-local "last shown" date so it appears exactly once per real day,
+// re-arms on the next calendar day, and never reappears just from switching
+// views back to home.
+async function maybeShowDailyGreeting(){
+  const wrap=document.getElementById('dailyGreetingWrap'); if(!wrap) return;
+  wrap.innerHTML=''; // always start clean -- avoids a stale card from whichever child was previously selected
+  if(!cur()||!curChild()) return;
+  const key='cs_greeted_'+state.current;
+  const today=effectiveToday();
+  const last=await DB.get(key);
+  if(last===today) return;
+  await DB.set(key,today);
+  renderDailyGreetingCard();
+}
+function renderDailyGreetingCard(){
+  const wrap=document.getElementById('dailyGreetingWrap'); if(!wrap) return;
+  const c=curChild(), k=cur(); if(!c||!k) return;
+  const tasks=todaysTaskList();
+  const done=tasks.filter(t=>(k.daily.counts[t.id]||0)>=t.max).length;
+  const hour=new Date().getHours();
+  const dayGreet=hour<5?'לילה טוב':hour<12?'בוקר טוב':hour<18?'צהריים טובים':'ערב טוב';
+  const sub=tasks.length===0?'אין מטלות היום — תיהנה! 😊'
+    :done>=tasks.length?'כל המטלות של היום כבר בוצעו! כל הכבוד 🌟'
+    :'היום יש לך '+tasks.length+' מטלות'+(done>0?' ('+done+' כבר בוצעו)':'')+' 🧹';
+  wrap.innerHTML=`<div class="daily-greet-card">
+    <button class="dg-close" onclick="document.getElementById('dailyGreetingWrap').innerHTML=''" title="סגור">✕</button>
+    <div class="dg-title">${dayGreet}, ${esc(c.name)}! 👋</div>
+    <div class="dg-sub">${sub}</div>
+  </div>`;
 }
 // A1 (ANDROID-APP-PLAN.md): visible on every kid-facing screen now (moved to
 // shared chrome in index.html), not just home -- explicitly hidden on
@@ -1891,6 +1949,9 @@ function renderGamesView(){
   const list=document.getElementById('gamesList'); list.innerHTML='';
   if(!state.games.length){ list.innerHTML='<div class="empty"><span class="e-ic">🎮</span>אין משחקים עדיין — אמא או אבא יכולים להוסיף בהגדרות</div>'; return; }
   const has=(k.gtime||0)>0;
+  const bedtime=gameBedtimeBlocked();
+  const bedNote=document.getElementById('gtBedtimeNote');
+  if(bedNote) bedNote.style.display=bedtime?'':'none';
   state.games.forEach(g=>{
     const row=document.createElement('button'); row.className='game-row';
     const nativeUnavailable=g.native&&!isNativeGameAvailable();
@@ -1898,10 +1959,13 @@ function renderGamesView(){
     // ALL clicks (native browser behavior) -- including the tap that's
     // supposed to explain WHY it's locked. Use a CSS-only look-disabled
     // class instead so the explanatory tap always works.
-    if(!has||nativeUnavailable) row.classList.add('locked');
-    const statusIc=nativeUnavailable?'📱':(has?'▶ שחק':'🔒');
+    if(!has||nativeUnavailable||bedtime) row.classList.add('locked');
+    const statusIc=bedtime?'🌙':(nativeUnavailable?'📱':(has?'▶ שחק':'🔒'));
     row.innerHTML=`<span class="g-emoji">${g.emoji}</span><span class="g-label">${esc(g.label)}</span><span style="font-weight:800;color:var(--mint-d);">${statusIc}</span>`;
     row.onclick=()=>{
+      // Bedtime first: telling a child to go finish chores (or to go buy more
+      // time) is misleading when nothing can be launched right now anyway.
+      if(bedtime){ showBedtimeGameMsg(); return; }
       if(nativeUnavailable){ modalMsg('📱','זמין רק באפליקציה','המשחק הזה עובד רק כשפותחים את כספת המטבעות מתוך אפליקציית האנדרואיד, לא בדפדפן.'); return; }
       if(!has){ toast('אין זמן משחק — המר מטבעות בפרסים 🎁'); return; }
       beginGameLaunch(g);
@@ -1930,6 +1994,10 @@ const GT_WARN_STEPS=[300,120,30]; // seconds-left marks that trigger a warning
 // coinsPerCorrect still applies via the normal answerLearningQuestion path.
 let _gateSession=null; // {questions, idx, onDone}
 function beginGameLaunch(g){
+  // Also guarded in renderGamesView's row handler; repeated here because this
+  // is the single funnel every launch path (web row, native row, gate resume)
+  // goes through, so the rule can't be bypassed by a caller that forgot it.
+  if(gameBedtimeBlocked()){ showBedtimeGameMsg(); return; }
   const missing=pendingRequiredTasks(state.current);
   if(missing.length){
     const names=missing.map(t=>t.emoji+' '+t.label).join(', ');
@@ -2327,6 +2395,13 @@ function renderRewards(){
   const c=document.getElementById('rewardsList'); c.innerHTML='';
   if(state.rewards.length===0){ c.innerHTML='<div class="empty"><span class="e-ic">🎁</span>אין פרסים עדיין</div>'; return; }
   const bal=cur().balance;
+  // The shop keeps a fixed, predictable order (no re-sorting by "closeness")
+  // -- Ariel benefits from a list that never reshuffles under him. Instead,
+  // the single unaffordable reward needing the FEWEST more coins gets a
+  // one-time badge, so "almost there" is still obvious at a glance without
+  // moving anything.
+  const locked=state.rewards.filter(rw=>bal<rw.cost);
+  const closestId=locked.length?locked.reduce((a,b)=>(b.cost-bal)<(a.cost-bal)?b:a).id:null;
   state.rewards.forEach(rw=>{
     const can=bal>=rw.cost;
     const pct=Math.min(100,Math.round((bal/rw.cost)*100));
@@ -2335,7 +2410,8 @@ function renderRewards(){
     // am I" at a glance for a 7-year-old, not just a thin decorative bar --
     // the percentage number and a gold glow once it's genuinely close (70%+)
     // make the concrete "almost there" moment obvious without reading text.
-    row.innerHTML=`<div class="emoji">${rw.emoji}</div><div class="info"><div class="t">${esc(rw.label)}</div><div class="d">${bal} / ${rw.cost} מטבעות</div>${can?'':`<div class="rw-progress${pct>=70?' near':''}"><div class="fill" style="width:${pct}%"></div></div><div class="rw-pct">${pct}%</div>`}</div>`;
+    const closestBadge=rw.id===closestId?'<div class="rw-closest">⭐ הכי קרוב!</div>':'';
+    row.innerHTML=`<div class="emoji">${rw.emoji}</div><div class="info">${closestBadge}<div class="t">${esc(rw.label)}</div><div class="d">${bal} / ${rw.cost} מטבעות</div>${can?'':`<div class="rw-progress${pct>=70?' near':''}"><div class="fill" style="width:${pct}%"></div></div><div class="rw-pct">${pct}%</div>`}</div>`;
     const btn=document.createElement('button');
     // Same lesson as renderGamesView's .locked rows: a real `disabled`
     // attribute swallows the tap that should EXPLAIN why it's locked. Keep
@@ -3391,7 +3467,20 @@ async function addReward(){
 }
 
 /* ===== GAMES ADMIN ===== */
+async function toggleGameBedtime(){
+  state.gameBedtime=!state.gameBedtime;
+  await DB.set('cs_gamebedtime',state.gameBedtime);
+  scheduleSync();
+  fillGameBedtimeToggle();
+}
+function fillGameBedtimeToggle(){
+  const btn=document.getElementById('gameBedtimeToggle'); if(!btn) return;
+  const on=state.gameBedtime!==false;
+  btn.textContent=on?'פעיל ✓':'כבוי';
+  btn.className='btn sm '+(on?'mint':'ghost');
+}
 function renderGamesAdmin(){
+  fillGameBedtimeToggle();
   const c=document.getElementById('gamesAdmin'); c.innerHTML='';
   if(!state.games.length) c.innerHTML='<div class="empty"><span class="e-ic">🎮</span>אין משחקים</div>';
   state.games.forEach((g,i)=>{
@@ -4451,6 +4540,16 @@ function chime(mode){
     // context (e.g. after screen lock) so coin-earn sounds don't silently stop
     // working. Safe no-op if already running.
     if(actx.state==='suspended') actx.resume();
+    // 'scan' -- a completed real-world task -- gets its own bright, quick
+    // rising chime (sine, not triangle: a cleaner "ding" than the softer
+    // earn/spend tones), so it reads as a distinct, memorable anchor rather
+    // than the same generic tone every other coin gain uses.
+    if(mode==='scan'){
+      const vol=state.calmMode?0.08:0.2;
+      [660,880].forEach((f,i)=>{ const o=actx.createOscillator(),g=actx.createGain(); o.type='sine'; o.frequency.value=f; o.connect(g); g.connect(actx.destination);
+        const t=actx.currentTime+i*0.1; g.gain.setValueAtTime(0,t); g.gain.linearRampToValueAtTime(vol,t+.015); g.gain.exponentialRampToValueAtTime(.001,t+.3); o.start(t); o.stop(t+.32); });
+      return;
+    }
     const notes=mode==='celebrate'?[523,659,784,1047]:(mode?[392,330]:[523,659,784]);
     const vol=state.calmMode?0.07:0.18; // quieter in calm mode — less sensory intensity
     notes.forEach((f,i)=>{ const o=actx.createOscillator(),g=actx.createGain(); o.type='triangle'; o.frequency.value=f; o.connect(g); g.connect(actx.destination);
@@ -4739,6 +4838,7 @@ function buildSyncPayload(){
   const payload={children:state.children,chores:state.chores,actions:state.actions,
     rewards:state.rewards,math:state.math,streaks:state.streaks,badgeDefs:state.badgeDefs,
     anchored:state.anchored,events:state.events||[],hwmDate:_hwmDate,calmMode:state.calmMode,
+    gameBedtime:state.gameBedtime,
     games:state.games,auditLog:state.auditLog||[],learning:state.learning,kids:{}};
   for(const ch of state.children){
     const k=state.kid[ch.id];
@@ -4870,6 +4970,10 @@ async function applyRemoteSnapshot(data){
     if(data.calmMode!==undefined){
       state.calmMode=data.calmMode; await DB.set('cs_calm',data.calmMode); applyCalmModeClass();
       fillCalmToggle();
+    }
+    if(data.gameBedtime!==undefined){
+      state.gameBedtime=data.gameBedtime; await DB.set('cs_gamebedtime',data.gameBedtime);
+      fillGameBedtimeToggle();
     }
     // PIN is never synced (see buildSyncPayload). The high-water-mark date IS
     // synced so wiping/reinstalling the app on one device can't roll back the
