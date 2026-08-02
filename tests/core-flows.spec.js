@@ -370,6 +370,77 @@ test.describe('math (adaptive)', () => {
   });
 });
 
+test.describe('age-graded math difficulty', () => {
+  async function sampleProblems(page, n = 40) {
+    return page.evaluate((count) => {
+      const out = [];
+      for (let i = 0; i < count; i++) { newProblem(); out.push({ op: mathCur.op, a: mathCur.a, b: mathCur.b }); }
+      return { sample: out, max: effectiveMaxNum(), ops: effectiveMathOps() };
+    }, n);
+  }
+
+  test('a young child never gets multiplication or numbers past their band, even with every operation enabled family-wide', async ({ page }) => {
+    await enterLocalOnly(page);
+    await selectChild(page, 'נועה');
+    await page.evaluate(async () => {
+      state.math.ops = ['+', '-', '×', '÷']; await DB.set('cs_math', state.math);
+      curChild().age = 6; await DB.set('cs_children', state.children);
+      cur().mathLevel = 5; // top of the band, so its ceiling is actually exercised
+      go('math');
+    });
+    const { sample, max, ops } = await sampleProblems(page);
+    expect(ops).toEqual(['+', '-']);   // the band narrows the parent's global chips
+    expect(max).toBe(10);
+    expect(sample.every(p => p.op === '+' || p.op === '-')).toBe(true);
+    expect(sample.every(p => p.a <= 10 && p.b <= 10)).toBe(true);
+  });
+
+  test('an older child gets the harder band from the same family settings', async ({ page }) => {
+    await enterLocalOnly(page);
+    await selectChild(page, 'נועה');
+    await page.evaluate(async () => {
+      state.math.ops = ['+', '-', '×', '÷']; await DB.set('cs_math', state.math);
+      curChild().age = 10; await DB.set('cs_children', state.children);
+      cur().mathLevel = 5;
+      go('math');
+    });
+    const { max, ops } = await sampleProblems(page, 5);
+    expect(max).toBe(200);
+    expect(ops).toEqual(['+', '-', '×', '÷']);
+  });
+
+  test('a manual parent override beats the age-derived band and resets the adaptive level', async ({ page }) => {
+    await enterLocalOnly(page);
+    await selectChild(page, 'נועה');
+    await page.evaluate(async () => {
+      state.math.ops = ['+', '-', '×', '÷']; await DB.set('cs_math', state.math);
+      curChild().age = 6; await DB.set('cs_children', state.children);
+      cur().mathLevel = 4;
+      await setChildMathTier(curChild().id, 't5'); // parent overrides upward
+      cur().mathLevel = 5; go('math');
+    });
+    const { max, ops } = await sampleProblems(page, 5);
+    expect(max).toBe(100);
+    expect(ops).toContain('×');
+    // Level must restart: 4/5 of "up to 10" is nothing like 4/5 of "up to 100".
+    expect(await page.evaluate(() => DB.get('cs_mathlvl_noa'))).toBe(1);
+  });
+
+  test('a child with no age set keeps the legacy family-wide settings exactly', async ({ page }) => {
+    await enterLocalOnly(page);
+    await selectChild(page, 'נועה');
+    await page.evaluate(async () => {
+      state.math.maxNum = 20; state.math.ops = ['+', '-']; await DB.set('cs_math', state.math);
+      delete curChild().age; delete curChild().mathTier;
+      await DB.set('cs_children', state.children);
+      cur().mathLevel = 5; go('math');
+    });
+    const { max, ops } = await sampleProblems(page, 5);
+    expect(max).toBe(20);
+    expect(ops).toEqual(['+', '-']);
+  });
+});
+
 test.describe('rewards shop', () => {
   test('an unaffordable reward explains how many coins are missing instead of swallowing the tap', async ({ page }) => {
     await enterLocalOnly(page);

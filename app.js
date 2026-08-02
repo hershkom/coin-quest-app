@@ -110,6 +110,36 @@ const DEFAULT_REWARDS=[
   {id:'movie', label:'ערב סרט', emoji:'🍿', cost:80},
 ];
 const DEFAULT_MATH={enabled:true, ops:['+','-'], maxNum:20, pts:2, daily:10};
+// Age-graded difficulty bands, roughly following the Israeli curriculum. A
+// single family-wide maxNum can't serve siblings years apart -- a 6-year-old
+// and a 10-year-old sharing one setting means one is bored and the other is
+// failing. The band sets BOTH the number ceiling and which operations are
+// allowed at all (no multiplication for a 6-year-old, however the parent set
+// the global op chips). The existing silent adaptive level (A5) still runs
+// INSIDE the band, so difficulty ramps within an age-appropriate ceiling
+// rather than across the whole range.
+const MATH_TIERS=[
+  {id:'t1', minAge:4,  short:'עד 5',   label:'גן (4-5) — חיבור וחיסור עד 5',            maxNum:5,   ops:['+','-']},
+  {id:'t2', minAge:6,  short:'עד 10',  label:'כיתה א׳ (6) — חיבור וחיסור עד 10',        maxNum:10,  ops:['+','-']},
+  {id:'t3', minAge:7,  short:'עד 20',  label:'כיתה א׳-ב׳ (7) — חיבור וחיסור עד 20',     maxNum:20,  ops:['+','-']},
+  {id:'t4', minAge:8,  short:'עד 50',  label:'כיתה ב׳-ג׳ (8) — עד 50, תחילת כפל',       maxNum:50,  ops:['+','-','×']},
+  {id:'t5', minAge:9,  short:'עד 100', label:'כיתה ג׳-ד׳ (9) — עד 100, כפל וחילוק',     maxNum:100, ops:['+','-','×','÷']},
+  {id:'t6', minAge:10, short:'עד 200', label:'כיתה ה׳ ומעלה (10+) — כל הפעולות',        maxNum:200, ops:['+','-','×','÷']},
+];
+function tierById(id){ return MATH_TIERS.find(t=>t.id===id)||null; }
+function tierForAge(age){
+  const a=parseInt(age); if(!Number.isFinite(a)) return null;
+  let found=MATH_TIERS[0];
+  for(const t of MATH_TIERS) if(a>=t.minAge) found=t;
+  return found;
+}
+// Explicit parent override wins over the age-derived band; a child with
+// neither falls back to the family-wide state.math settings, so families set
+// up before this existed keep exactly the behaviour they had.
+function childMathTier(ch){
+  if(!ch) return null;
+  return (ch.mathTier&&tierById(ch.mathTier))||tierForAge(ch.age)||null;
+}
 // "מכרה הידע" (Knowledge Mine) — block-world-themed learning quiz (math/english/
 // science) that earns coins and, optionally, game-time minutes. Family-wide
 // settings live in state.learning (this section); per-kid progress/level/
@@ -1015,10 +1045,25 @@ function initMath(){
 let _mathStreak=0; // >0 = consecutive correct, <0 = consecutive wrong
 let _mathCapModalShown=false; // see initMath()/mathCheck() -- one blocking modal per visit, then quiet toasts
 function effectiveMaxNum(){
-  const k=cur(); const N=state.math.maxNum;
+  const k=cur(); const tier=childMathTier(curChild());
+  // The age band is the ceiling when there is one; otherwise the legacy
+  // family-wide number (see childMathTier for why both paths exist).
+  const N=tier?tier.maxNum:state.math.maxNum;
   const lvl=Math.max(1,Math.min(5,(k&&k.mathLevel)||1));
-  // level 5 == full parent cap; lower levels use a fraction, min 5
-  return Math.max(5,Math.round(N*lvl/5));
+  // level 5 == the full band ceiling; lower levels use a fraction. Floor of 3
+  // (not 5) so the youngest band can actually start below its own ceiling.
+  return Math.max(3,Math.round(N*lvl/5));
+}
+// Which operations this child may actually get. The parent's global op chips
+// still apply, but they can only ever NARROW the age band -- enabling ÷
+// family-wide must not start handing division to a six-year-old. If the
+// intersection is empty (parent enabled only ops the band forbids), the band
+// wins, because a child with no solvable operations has a broken screen.
+function effectiveMathOps(){
+  const tier=childMathTier(curChild());
+  if(!tier) return state.math.ops;
+  const allowed=state.math.ops.filter(o=>tier.ops.includes(o));
+  return allowed.length?allowed:tier.ops;
 }
 // A5 (ANDROID-APP-PLAN.md): silent in both directions, same reasoning as
 // bumpLearningLevel above -- an announced level change turns an invisible
@@ -1032,7 +1077,7 @@ async function bumpMathLevel(dir){
   }
 }
 function newProblem(){
-  const m=state.math, op=m.ops[Math.floor(Math.random()*m.ops.length)]; let a,b,ans; const N=effectiveMaxNum();
+  const ops=effectiveMathOps(), op=ops[Math.floor(Math.random()*ops.length)]; let a,b,ans; const N=effectiveMaxNum();
   if(op==='+'){ a=rnd(0,N); b=rnd(0,N); ans=a+b; }
   else if(op==='-'){ a=rnd(0,N); b=rnd(0,a); ans=a-b; }
   else if(op==='×'){ const M=Math.min(12,Math.max(2,Math.floor(N/2))); a=rnd(2,M); b=rnd(2,M); ans=a*b; }
@@ -2660,10 +2705,15 @@ async function addChild(){
   if(!name){ toast('צריך שם'); return; }
   const emoji=document.getElementById('newKidEmoji').value.trim()||'🙂';
   const color=document.getElementById('newKidColor').value||KID_PALETTE[state.children.length%KID_PALETTE.length];
-  state.children.push({id:'k'+Date.now().toString(36),name,emoji,color});
+  // Age drives the math difficulty band (see MATH_TIERS); optional, and a
+  // child without one simply keeps the family-wide math settings.
+  const age=parseInt(document.getElementById('newKidAge').value);
+  const kid={id:'k'+Date.now().toString(36),name,emoji,color};
+  if(Number.isFinite(age)&&age>0) kid.age=age;
+  state.children.push(kid);
   await DB.set('cs_children',state.children);
   document.getElementById('newKidName').value=''; document.getElementById('newKidEmoji').value='';
-  document.getElementById('newKidColor').value='';
+  document.getElementById('newKidColor').value=''; document.getElementById('newKidAge').value='';
   document.querySelectorAll('#newKidColorSwatches .kid-swatch').forEach(b=>b.classList.remove('sel'));
   renderChildrenAdmin(); toast('נוסף! ✓');
 }
@@ -2675,6 +2725,9 @@ function editChild(id){
   modalContent.innerHTML=`<div class="m-emoji">${ch.emoji}</div><h3>עריכת ${esc(ch.name)}</h3>
     <div class="field" style="text-align:right;"><label>שם</label><input id="ecName" value="${esc(ch.name)}" style="width:100%;border:2px solid var(--line);border-radius:13px;padding:11px;font-family:inherit;"></div>
     <div class="field" style="text-align:right;"><label>אימוג'י</label><input id="ecEmoji" value="${ch.emoji}" maxlength="2" style="width:100%;border:2px solid var(--line);border-radius:13px;padding:11px;font-family:inherit;"></div>
+    <div class="field" style="text-align:right;"><label>גיל (קובע את רמת תרגילי החשבון)</label>
+      <input id="ecAge" type="number" min="3" max="18" value="${ch.age||''}" placeholder="לא הוגדר" style="width:100%;border:2px solid var(--line);border-radius:13px;padding:11px;font-family:inherit;">
+    </div>
     <div class="field" style="text-align:right;"><label>צבע (הסמל/הדמות)</label>
       <input type="hidden" id="ecColor" value="${ch.color}">
       <div id="ecColorSwatches" style="display:flex;gap:8px;">${colorSwatchesHtml('ecColor',ch.color)}</div>
@@ -2700,6 +2753,8 @@ function editChild(id){
     ch.name=document.getElementById('ecName').value.trim()||ch.name;
     ch.emoji=document.getElementById('ecEmoji').value.trim()||ch.emoji;
     ch.color=document.getElementById('ecColor').value||ch.color;
+    const newAge=parseInt(document.getElementById('ecAge').value);
+    if(Number.isFinite(newAge)&&newAge>0) ch.age=newAge; else delete ch.age;
     ch.useSchedule=scheduleOn;
     ch.theme=document.getElementById('ecTheme').value;
     await DB.set('cs_children',state.children);
@@ -3331,12 +3386,40 @@ async function renderMathLevels(){
   const rows=[];
   for(const ch of state.children){
     const lvl=(await DB.get('cs_mathlvl_'+ch.id))??1;
-    rows.push(`<div style="display:flex;align-items:center;gap:8px;font-size:.82rem;padding:3px 0;">
-      <span>${ch.emoji} ${esc(ch.name)}</span>
-      <span style="flex:1;">${'⭐'.repeat(lvl)}${'·'.repeat(5-lvl)} רמה ${lvl}/5</span>
-      <button class="icon-btn" title="אפס רמה" onclick="resetMathLevel('${ch.id}')">↺</button></div>`);
+    const auto=tierForAge(ch.age);
+    const tier=childMathTier(ch);
+    const autoLabel=auto?('אוטומטי לפי גיל — '+auto.short):'אוטומטי לפי גיל (לא הוגדר גיל)';
+    const opts=[`<option value="" ${ch.mathTier?'':'selected'}>${esc(autoLabel)}</option>`]
+      .concat(MATH_TIERS.map(t=>`<option value="${t.id}" ${ch.mathTier===t.id?'selected':''}>${esc(t.label)}</option>`)).join('');
+    // Shows the RESULT of the tier+ops resolution, not just the setting -- a
+    // parent shouldn't have to reason about how the band and the global op
+    // chips combine to know what their child will actually be asked.
+    const effOps=tier?(state.math.ops.filter(o=>tier.ops.includes(o)).length?state.math.ops.filter(o=>tier.ops.includes(o)):tier.ops):state.math.ops;
+    const effMax=tier?tier.maxNum:state.math.maxNum;
+    rows.push(`<div style="padding:10px 0;border-bottom:1px solid var(--line);">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
+        <span style="font-weight:800;">${ch.emoji} ${esc(ch.name)}</span>
+        <span style="font-size:.76rem;color:var(--muted);">${ch.age?('גיל '+ch.age):'גיל לא הוגדר — ערוך בלשונית 👧 ילדים'}</span>
+      </div>
+      <select style="width:100%;border:2px solid var(--line);border-radius:10px;padding:7px;font-family:inherit;font-size:.8rem;margin-bottom:6px;" onchange="setChildMathTier('${ch.id}',this.value)">${opts}</select>
+      <div style="font-size:.76rem;color:var(--ink2);margin-bottom:6px;">בפועל: מספרים עד ${effMax} · פעולות ${effOps.join(' ')}</div>
+      <div style="display:flex;align-items:center;gap:8px;font-size:.8rem;">
+        <span style="flex:1;">${'⭐'.repeat(lvl)}${'·'.repeat(5-lvl)} רמה מסתגלת ${lvl}/5</span>
+        <button class="icon-btn" title="אפס רמה" onclick="resetMathLevel('${ch.id}')">↺</button>
+      </div></div>`);
   }
   el.innerHTML=rows.join('');
+}
+async function setChildMathTier(id,tierId){
+  const ch=state.children.find(c=>c.id===id); if(!ch) return;
+  if(tierId) ch.mathTier=tierId; else delete ch.mathTier;
+  await DB.set('cs_children',state.children);
+  // Reset the adaptive level with the band: level 4/5 of "up to 20" means
+  // something completely different in "up to 200", and carrying it across
+  // would drop a child straight into problems far past the new band's start.
+  await DB.set('cs_mathlvl_'+id,1);
+  if(state.kid[id]) state.kid[id].mathLevel=1;
+  renderMathLevels(); toast('עודכן ✓');
 }
 async function resetMathLevel(id){
   await DB.set('cs_mathlvl_'+id,1);

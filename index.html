@@ -319,7 +319,11 @@
                 <button type="button" class="emoji-pick-trigger" onclick="openEmojiPicker('newKidEmoji')">😀</button>
               </div>
             </div>
+            <div class="field" style="max-width:110px;"><label>גיל</label>
+              <input id="newKidAge" type="number" min="3" max="18" placeholder="7">
+            </div>
           </div>
+          <div class="card-sub" style="margin-bottom:12px;">הגיל קובע אוטומטית את רמת תרגילי החשבון (טווח המספרים והפעולות). אפשר לשנות ידנית בלשונית ➗ חשבון.</div>
           <div class="field" style="margin-bottom:12px;">
             <label>צבע (הסמל/הדמות של הילד/ה באפליקציה)</label>
             <input type="hidden" id="newKidColor">
@@ -477,11 +481,12 @@
             </div>
           </div>
           <div class="inline-row" style="margin-bottom:12px;">
-            <div class="field"><label>מספר מקסימלי</label><input id="mathMax" type="number" value="20" min="5"></div>
+            <div class="field"><label>מספר מקסימלי (רק לילד ללא גיל)</label><input id="mathMax" type="number" value="20" min="5"></div>
             <div class="field"><label>מטבעות לתשובה</label><input id="mathPts" type="number" value="2" min="1"></div>
           </div>
           <div class="field"><label>כמה תרגילים מזכים ביום</label><input id="mathDaily" type="number" value="10" min="1"></div>
-          <div class="card-sub" style="margin-bottom:10px;">💡 הקושי מסתגל אוטומטית: כל ילד מתחיל קל ומטפס עד ל"מספר המקסימלי" לפי ההצלחות שלו. הרמות של הילדים מוצגות למטה.</div>
+          <div class="card-h" style="margin:16px 0 6px;">🎚️ רמת קושי לכל ילד/ה</div>
+          <div class="card-sub" style="margin-bottom:10px;">כשמוגדר גיל, הרמה נקבעת אוטומטית לפי שכבת הגיל — טווח המספרים והפעולות המותרות. אפשר לעקוף ידנית לכל ילד/ה. סוגי התרגילים שסימנתם למעלה יכולים רק לצמצם את שכבת הגיל, לא להרחיב אותה (כפל לא יופיע לילד בן 6 גם אם סומן).<br>💡 בתוך כל שכבה הקושי עדיין מטפס לבד לפי ההצלחות — זו "הרמה המסתגלת".</div>
           <div id="mathLevels" style="margin-bottom:10px;"></div>
           <button class="btn primary" onclick="saveMathConfig()">שמור הגדרות חשבון</button>
         </div>
