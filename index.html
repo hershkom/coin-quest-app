@@ -716,11 +716,29 @@
           </div>
         </div>
         <div class="card">
-          <div class="card-h">🤖 הגדרה מתקדמת: צ'אט עם איזי (AI חיצוני, כבוי כברירת מחדל)</div>
-          <div class="card-sub" style="margin-bottom:10px;">אופציונלי להורה בלבד. אחרי הזנת מפתח מ-console.groq.com תופיע לילד/ה לשונית צ'אט חדשה. הודעות הצ'אט נשלחות ישירות לשירות AI חיצוני (Groq) שאינו בשליטתנו ואינו מיועד/מסונן במיוחד לילדים — כדאי לשקול לפני הפעלה.</div>
-          <div id="groqKeyStatus" style="font-size:.8rem;color:var(--mint);margin-bottom:8px;font-weight:700;"></div>
+          <div class="card-h">🤖 איזי — עוזר ה-AI של הילד/ה (כבוי כברירת מחדל)</div>
+          <div class="card-sub" style="margin-bottom:10px;">אופציונלי, להורה בלבד. אחרי הזנת מפתח מ-console.groq.com תופיע לילד/ה לשונית צ'אט. ההודעות נשלחות לשירות AI חיצוני (Groq) שאינו בשליטתנו — לכן האפליקציה מוסיפה שכבת הגנה משלה: נושאים רגישים (פגיעה עצמית, מישהו שפוגע בילד/ה) <b>לעולם לא נשלחים החוצה</b>, אלא נענים בהודעה קבועה שמפנה למבוגר אחראי ומסומנים לכם ביומן למטה. גם נושאים למבוגרים ושיתוף פרטים אישיים נחסמים.</div>
+          <div class="card-sub" style="margin-bottom:10px;">המפתח והשיחות נשמרים <b>במכשיר הזה בלבד</b> ואינם מסונכרנים לענן.</div>
+          <div id="groqKeyStatus" style="font-size:.8rem;margin-bottom:8px;font-weight:700;"></div>
           <div class="field"><input id="setGroqKey" type="password" placeholder="gsk_..."></div>
-          <button class="btn primary" onclick="saveGroqKey()">שמור מפתח</button>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px;">
+            <button class="btn primary sm" onclick="saveGroqKey()">שמור מפתח</button>
+            <button class="btn ghost sm" onclick="clearGroqKey()">מחק מפתח</button>
+            <button class="btn ghost sm" onclick="testChatConnection()">בדוק חיבור</button>
+          </div>
+          <div id="chatTestStatus" style="font-size:.8rem;font-weight:700;margin-bottom:10px;min-height:18px;"></div>
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:10px;">
+            <label style="margin:0;font-weight:700;font-size:.86rem;">הצ'אט זמין לילד/ה</label>
+            <button class="btn sm ghost" id="chatEnabledToggle" onclick="toggleChatEnabled()">כבוי</button>
+          </div>
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;">
+            <label style="margin:0;font-weight:700;font-size:.86rem;flex:1;">מקסימום הודעות ביום</label>
+            <input id="chatCapInput" type="number" min="1" style="width:78px;border:2px solid var(--line);border-radius:10px;padding:7px;text-align:center;font-family:inherit;font-weight:700;" onchange="saveChatCap(this.value)">
+          </div>
+          <div class="card-h" style="margin-bottom:6px;">📖 יומן השיחות</div>
+          <div class="card-sub" style="margin-bottom:8px;">20 ההודעות האחרונות לכל ילד/ה. הודעות שדורשות תשומת לב מסומנות באדום.</div>
+          <div id="chatLogAdmin"></div>
+          <button class="btn ghost sm" style="margin-top:10px;" onclick="clearChatLog()">מחק היסטוריית שיחות</button>
         </div>
         <!-- Native-only: shown when game-time enforcement is broken (the
              accessibility/overlay permission was revoked -- see
@@ -813,6 +831,11 @@
           <div style="font-size:.82rem;color:#6B6585;margin-top:3px;">שאל אותי כל דבר! 💬🎤</div>
         </div>
         <div id="chatMessages" style="height:340px;overflow-y:auto;margin-bottom:10px;background:#F7F6FC;border-radius:18px;padding:14px;display:flex;flex-direction:column;gap:10px;"></div>
+        <!-- One-tap conversation starters: opening an open-ended chat is the
+             hardest step for the child this app is built around. Filled by
+             initChatView() from CHAT_STARTERS. -->
+        <div id="chatStarters" class="chat-chips"></div>
+        <div id="chatCapNote" style="display:none;text-align:center;font-size:.78rem;color:var(--muted);font-weight:700;margin-bottom:6px;"></div>
         <div class="chat-input-row">
           <button id="micBtn" class="chat-mic-btn" onclick="toggleMic()" title="הקלט שאלה">🎤</button>
           <input id="chatInput" type="text" placeholder="כתוב או הקלט שאלה..." style="flex:1;padding:12px 14px;border:2px solid var(--line);border-radius:16px;font-family:inherit;font-size:.95rem;outline:none;background:#fff;" onkeydown="if(event.key==='Enter') sendChatMessage()"/>

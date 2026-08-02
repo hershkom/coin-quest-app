@@ -729,6 +729,7 @@ function go(v){
   }
   if(v==='scan'){ startCamera(); applyScanIntentHint(); }
   if(v==='math') initMath();
+  if(v==='chat') initChatView();
   if(v==='rewards') renderRewards();
   if(v==='history') renderHistory();
   if(v==='streak') renderStreakView();
@@ -2486,7 +2487,7 @@ function adminTab(t){
   if(t==='events') renderEventsAdmin();
   if(t==='badges') renderBadgesAdmin();
   if(t==='report') renderReportAdmin();
-  if(t==='settings'){ fillAccountSettings(); fillCalmToggle(); fillChoreReminderSettings(); renderEnforcementWarning(); updateParentDeviceModeCardVisibility(); renderCalmPrefsAdmin(); }
+  if(t==='settings'){ fillAccountSettings(); fillCalmToggle(); fillChoreReminderSettings(); renderEnforcementWarning(); updateParentDeviceModeCardVisibility(); renderCalmPrefsAdmin(); fillChatAdmin(); }
 }
 // C11 (CALM-UPGRADE-PLAN): reused by the body-sensation chips (C8's log
 // field) here in the parent report -- kept as its own constant rather than
@@ -3710,7 +3711,100 @@ async function importBackup(ev){
     setTimeout(()=>location.reload(),800);
   });
 }
-async function saveGroqKey(){ const v=document.getElementById('setGroqKey').value.trim(); if(!v){ toast('הכנס מפתח'); return; } GROQ_API_KEY=v; localStorage.setItem('cs_groq_key',v); document.getElementById('setGroqKey').value=''; document.getElementById('groqKeyStatus').textContent='✅ מפתח שמור'; toast('מפתח Groq נשמר ✓'); updateChatNavVisibility(); }
+async function saveGroqKey(){ const v=document.getElementById('setGroqKey').value.trim(); if(!v){ toast('הכנס מפתח'); return; } GROQ_API_KEY=v; localStorage.setItem('cs_groq_key',v); document.getElementById('setGroqKey').value=''; toast('מפתח Groq נשמר ✓'); updateChatNavVisibility(); fillChatAdmin(); }
+async function clearGroqKey(){
+  modalConfirm('🗑️','למחוק את המפתח?','הצ\'אט עם איזי ייעלם מהמסך של הילד/ה. אפשר להזין מפתח חדש בכל עת.',()=>{
+    GROQ_API_KEY=''; localStorage.removeItem('cs_groq_key');
+    updateChatNavVisibility(); fillChatAdmin(); toast('נמחק ✓');
+  });
+}
+function toggleChatEnabled(){
+  localStorage.setItem('cs_chat_enabled',chatEnabled()?'0':'1');
+  updateChatNavVisibility(); fillChatAdmin();
+}
+function saveChatCap(v){
+  const n=parseInt(v);
+  if(!Number.isFinite(n)||n<1){ toast('מספר לא תקין'); return; }
+  localStorage.setItem('cs_chat_cap',String(n)); toast('נשמר ✓');
+}
+// Verifies the key AND the model in one real round-trip, so a parent finds out
+// here -- not from a frustrated child -- that the key is wrong or the model id
+// has been retired.
+async function testChatConnection(){
+  const el=document.getElementById('chatTestStatus'); if(!el) return;
+  if(!GROQ_API_KEY){ el.textContent='אין מפתח שמור.'; el.style.color='var(--coral-d)'; return; }
+  el.textContent='בודק...'; el.style.color='var(--ink2)';
+  try{
+    const r=await fetch('https://api.groq.com/openai/v1/chat/completions',{
+      method:'POST',
+      headers:{'Content-Type':'application/json','Authorization':'Bearer '+GROQ_API_KEY},
+      body:JSON.stringify({model:chatModel(),messages:[{role:'user',content:'שלום'}],max_tokens:5})
+    });
+    if(r.ok){ el.textContent='✅ הכול עובד (מודל: '+chatModel()+')'; el.style.color='var(--mint-d)'; return; }
+    let msg='שגיאה '+r.status;
+    try{ const e=await r.json(); if(e?.error?.message) msg=e.error.message; }catch(e){}
+    // Offer the self-heal explicitly rather than waiting for a child to hit it.
+    if(/model/i.test(msg)&&chatModel()!==CHAT_MODEL_FALLBACK){
+      localStorage.setItem('cs_chat_model',CHAT_MODEL_FALLBACK);
+      el.textContent='המודל הישן הוסר — עברנו אוטומטית ל-'+CHAT_MODEL_FALLBACK+'. לחץ/י שוב לבדיקה.';
+      el.style.color='var(--gold-d)'; return;
+    }
+    el.textContent='❌ '+msg; el.style.color='var(--coral-d)';
+  }catch(e){ el.textContent='❌ אין חיבור לאינטרנט'; el.style.color='var(--coral-d)'; }
+}
+// Parent-facing transcript. Flagged turns (crisis/blocked/PII) are pulled to
+// the top as a summary AND highlighted in place -- the whole point of keeping
+// this log is that a parent shouldn't have to scroll a week of chat to notice
+// the one message that mattered.
+const CHAT_FLAG_LABELS={crisis:'🚨 נושא רגיש — כדאי לדבר',blocked:'⚠️ נושא חסום',pii:'🛑 ניסה לשתף פרטים אישיים','blocked-output':'⚠️ תשובה נחסמה',cap:'מכסה יומית',error:'שגיאת שירות'};
+async function renderChatLogAdmin(){
+  const el=document.getElementById('chatLogAdmin'); if(!el) return;
+  let html='';
+  for(const ch of state.children){
+    const log=(await DB.get('cs_chatlog_'+ch.id))??[];
+    if(!log.length) continue;
+    const alerts=log.filter(e=>e.flag==='crisis'||e.flag==='pii'||e.flag==='blocked');
+    html+=`<div style="margin-top:12px;padding-top:10px;border-top:2px solid var(--line);">
+      <div style="font-weight:800;">${esc(ch.name)} · ${log.length} הודעות</div>`;
+    if(alerts.length){
+      html+=`<div style="background:#FFE9E4;border-radius:12px;padding:8px 10px;margin:6px 0;font-size:.8rem;font-weight:700;color:#8a3410;">
+        ${alerts.length} הודעות שדורשות תשומת לב — מסומנות למטה</div>`;
+    }
+    log.slice(-20).reverse().forEach(e=>{
+      const who=e.role==='child'?esc(ch.name):'איזי';
+      const flagTxt=e.flag?CHAT_FLAG_LABELS[e.flag]||e.flag:'';
+      const hot=e.flag==='crisis'||e.flag==='pii';
+      html+=`<div style="font-size:.8rem;padding:5px 0;border-bottom:1px solid var(--line);${hot?'background:#FFF3F0;border-radius:8px;padding:6px 8px;':''}">
+        <b>${who}:</b> ${esc(e.text)}
+        ${flagTxt?`<span style="color:${hot?'#c0392b':'var(--muted)'};font-weight:700;"> · ${esc(flagTxt)}</span>`:''}
+        <span style="color:var(--muted);"> · ${timeAgo(e.ts)}</span></div>`;
+    });
+    html+='</div>';
+  }
+  el.innerHTML=html||'<div class="card-sub">עדיין לא היו שיחות.</div>';
+}
+async function clearChatLog(){
+  modalConfirm('🗑️','למחוק את היסטוריית השיחות?','כל השיחות של כל הילדים במכשיר הזה יימחקו.',async()=>{
+    for(const ch of state.children) await DB.del('cs_chatlog_'+ch.id);
+    renderChatLogAdmin(); toast('נמחק ✓');
+  });
+}
+function fillChatAdmin(){
+  const st=document.getElementById('groqKeyStatus');
+  if(st){
+    st.textContent=GROQ_API_KEY?'✅ מפתח שמור':'לא הוזן מפתח — הצ\'אט מוסתר מהילד/ה';
+    st.style.color=GROQ_API_KEY?'var(--mint-d)':'var(--muted)';
+  }
+  const tg=document.getElementById('chatEnabledToggle');
+  if(tg){
+    tg.textContent=chatEnabled()?'פעיל ✓':'כבוי';
+    tg.className='btn sm '+(chatEnabled()?'mint':'ghost');
+    tg.style.display=GROQ_API_KEY?'':'none';
+  }
+  const cap=document.getElementById('chatCapInput');
+  if(cap) cap.value=chatDailyCap();
+  renderChatLogAdmin();
+}
 // S8a (store-release prep): this is a genuinely unmoderated third-party AI
 // chat -- keep the nav tab itself hidden from the child's bottom nav until a
 // parent has actually configured a key in Admin Settings, instead of showing
@@ -3719,7 +3813,10 @@ async function saveGroqKey(){ const v=document.getElementById('setGroqKey').valu
 // guard above still exists as defense in depth.
 function updateChatNavVisibility(){
   const btn=document.querySelector('[data-nav="chat"]');
-  if(btn) btn.style.display=GROQ_API_KEY?'':'none';
+  // Key present AND not explicitly switched off -- a parent can hide the
+  // assistant for a while (a rough week, a consequence, a holiday) without
+  // having to delete and re-enter the API key to get it back.
+  if(btn) btn.style.display=chatEnabled()?'':'none';
 }
 
 /* ===== MODALS ===== */
@@ -4648,6 +4745,102 @@ let micRecognition=null;
 let isMicRecording=false;
 let currentSpeech=null;
 
+/* ---- "איזי" the assistant: config ----
+   The API key and every setting here are DEVICE-LOCAL (localStorage), never
+   synced: a key pushed into the family cloud record would be readable by any
+   device that ever joins the family, and the chat log is the most private
+   thing in the app -- it stays on the device the child actually typed it on,
+   reviewable by a parent there, and never leaves for Firebase. */
+const CHAT_MODEL_DEFAULT='llama-3.3-70b-versatile';
+// Groq retires models on its own schedule; a hard-coded id that gets
+// decommissioned would turn the whole feature into an error message with no
+// clue why. On a model-specific failure we retry once with this and remember
+// the switch, so the assistant keeps working without a parent touching it.
+const CHAT_MODEL_FALLBACK='openai/gpt-oss-120b';
+const CHAT_DAILY_CAP_DEFAULT=30;
+const CHAT_LOG_MAX=60;
+function chatKeySet(){ return !!GROQ_API_KEY; }
+function chatEnabled(){ return chatKeySet() && localStorage.getItem('cs_chat_enabled')!=='0'; }
+function chatModel(){ return localStorage.getItem('cs_chat_model')||CHAT_MODEL_DEFAULT; }
+function chatDailyCap(){ const n=parseInt(localStorage.getItem('cs_chat_cap')); return Number.isFinite(n)&&n>0?n:CHAT_DAILY_CAP_DEFAULT; }
+
+/* ---- safety layer ----
+   A general-purpose LLM is not a children's product, and a system prompt is a
+   request, not a guarantee. These patterns run BEFORE anything is sent, so the
+   most sensitive things a child could type never reach a third-party server at
+   all, and the child gets a steady, caring, human answer instead of whatever
+   the model would improvise.
+
+   CRISIS: self-harm, or someone hurting them. Never routed to the model --
+   answered with a fixed message pointing at a trusted adult, and surfaced to
+   the parent in the log. Deliberately mentions adults beyond the parent
+   (teacher/family) rather than only "tell mum or dad".
+   BLOCKED: adult/violent/substance topics -- gently redirected, also logged.
+   PII: teaches "don't share where you live" rather than silently allowing it. */
+const CHAT_CRISIS_PATTERNS=[
+  /להרוג את עצמ/i,/לפגוע בעצמ/i,/לא רוצה לחיות/i,/רוצה למות/i,/שאמות/i,/להתאבד/i,/אתאבד/i,
+  /מכה אותי/i,/מרביץ לי/i,/פוגע ב/i,/נוגע לי/i,/הטריד/i,/מפחיד אותי כל/i,
+  /kill myself/i,/hurt myself/i,/want to die/i,/suicide/i,/abuse/i
+];
+const CHAT_BLOCKED_PATTERNS=[
+  /סמים|קוקאין|מריחואנה|drugs|cocaine/i,
+  /אקדח|רובה|נשק|לדקור|סכין|gun|weapon|stab/i,
+  /סקס|מין|עירום|פורנו|sex|porn|nude/i,
+  /אלכוהול|וודקה|בירה|שיכור|alcohol|vodka|beer|drunk/i
+];
+const CHAT_PII_PATTERNS=[
+  /\b0\d{1,2}-?\d{7}\b/,               // Israeli phone number
+  /\b\d{9}\b/,                          // ID-length digit run
+  /גר ב(רחוב|כתובת)|הכתובת שלי|רחוב .+ \d+/i
+];
+function chatSafetyCheck(text){
+  if(CHAT_CRISIS_PATTERNS.some(re=>re.test(text))) return 'crisis';
+  if(CHAT_BLOCKED_PATTERNS.some(re=>re.test(text))) return 'blocked';
+  if(CHAT_PII_PATTERNS.some(re=>re.test(text))) return 'pii';
+  return null;
+}
+const CHAT_SAFE_REPLIES={
+  crisis:'אני שמח מאוד שסיפרת לי, וזה נשמע ממש קשה 💙\nהדבר הזה גדול מדי בשבילי — חשוב שתספר/י על זה עכשיו למבוגר שאת/ה סומך/ת עליו: אמא, אבא, מורה, או מישהו אחר במשפחה. הם ירצו לעזור לך.\nאני כאן איתך בינתיים, ואפשר גם ללחוץ על הכפתור הירוק 🌿 למעלה כדי להירגע יחד.',
+  blocked:'זה נושא למבוגרים, ואני לא הכתובת בשבילו 🙂\nאם מעניין אותך לדעת — שאל/י את אמא או אבא, הם יסבירו טוב ממני.\nרוצה שנדבר על משהו אחר? אני יודע המון דברים מעניינים!',
+  pii:'רגע! 🛑 פרטים כמו כתובת, טלפון או תעודת זהות הם סוד — לא משתפים אותם באינטרנט, גם לא איתי.\nבוא/י נדבר על משהו אחר 😊'
+};
+// Defense in depth on the way back: the prompt asks the model to stay
+// child-appropriate, this makes sure a bad generation never reaches the screen.
+function chatOutputAllowed(reply){ return !CHAT_BLOCKED_PATTERNS.some(re=>re.test(reply)); }
+
+/* ---- per-child persistence + daily budget (both device-local) ---- */
+function chatLogKey(){ return 'cs_chatlog_'+state.current; }
+async function chatLogGet(){ return (await DB.get(chatLogKey()))??[]; }
+async function chatLogAdd(entry){
+  const log=await chatLogGet();
+  log.push(entry);
+  if(log.length>CHAT_LOG_MAX) log.splice(0,log.length-CHAT_LOG_MAX);
+  await DB.set(chatLogKey(),log);
+}
+async function chatUsedToday(){
+  const u=(await DB.get('cs_chatused_'+state.current))??{date:'',n:0};
+  return u.date===effectiveToday()?u.n:0;
+}
+async function chatBumpUsed(){
+  const n=(await chatUsedToday())+1;
+  await DB.set('cs_chatused_'+state.current,{date:effectiveToday(),n});
+  return n;
+}
+// Grounds the assistant in what's actually happening in the child's app right
+// now, so "מה אני צריך לעשות?" / "כמה מטבעות יש לי?" get a real answer instead
+// of a guess. Deliberately minimal -- first name and app state only, no
+// surname, no birthday, nothing that identifies the family to the provider.
+function chatAppContext(){
+  const k=cur(), c=curChild(); if(!k||!c) return '';
+  const period={morning:'בוקר',afternoon:'צהריים',evening:'ערב',sleep:'לילה (זמן שינה)'}[currentPeriodKey()]||'';
+  const due=tasksDueNow(state.current).filter(t=>(k.daily.counts[t.id]||0)<t.max).map(t=>t.label);
+  return `מידע עדכני מהאפליקציה (השתמש בו רק אם הילד/ה שואל/ת על זה):
+- עכשיו ${period}.
+- מטבעות בארנק: ${k.balance}.
+- זמן משחק שנשאר: ${Math.round((k.gtime||0)/60)} דקות.
+- מטלות שנשארו לעכשיו: ${due.length?due.join(', '):'אין, הכול הושלם'}.`;
+}
+
 function displayMessage(text,isUser){
   const wrap=document.createElement('div');
   wrap.style.cssText='display:flex;align-items:flex-end;gap:6px;'+(isUser?'flex-direction:row-reverse;':'flex-direction:row;');
@@ -4748,9 +4941,42 @@ async function sendChatMessage(){
   const input=document.getElementById('chatInput');
   const text=input.value.trim();
   if(!text) return;
+  if(!chatEnabled()){ displayMessage('הצ\'אט כבוי כרגע. אמא או אבא יכולים להפעיל אותו בהגדרות 🙂',false); return; }
   _chatBusy=true;
   input.value='';
   displayMessage(text,true);
+  await chatLogAdd({ts:Date.now(),role:'child',text});
+
+  // --- safety gate: never leaves the device on a crisis/blocked/PII match ---
+  const flag=chatSafetyCheck(text);
+  if(flag){
+    const reply=CHAT_SAFE_REPLIES[flag];
+    displayMessage(reply,false);
+    await chatLogAdd({ts:Date.now(),role:'izzy',text:reply,flag});
+    if(flag==='crisis'){
+      // Make it trivially easy to move from "I said something heavy" to a
+      // regulating activity, without forcing it on them.
+      const wrap=document.createElement('div');
+      wrap.innerHTML='<button class="btn mint sm" style="margin:4px 0 0;" onclick="openCalmBreak()">🌿 בוא/י נירגע יחד</button>';
+      document.getElementById('chatMessages').appendChild(wrap);
+    }
+    const sb=document.querySelectorAll('.chat-speak-btn');
+    if(sb.length) speakText(reply,sb[sb.length-1]);
+    _chatBusy=false;
+    return;
+  }
+
+  // --- daily budget: a runaway loop of taps shouldn't burn a parent's credit ---
+  const used=await chatUsedToday();
+  if(used>=chatDailyCap()){
+    const capMsg='דיברנו הרבה היום! 😊 נמשיך מחר — אני אהיה כאן.';
+    displayMessage(capMsg,false);
+    await chatLogAdd({ts:Date.now(),role:'izzy',text:capMsg,flag:'cap'});
+    _chatBusy=false;
+    return;
+  }
+  await chatBumpUsed();
+
   const childName=curChild()?.name||'אריאל';
   const thinkingWrap=document.createElement('div');
   thinkingWrap.style.cssText='display:flex;align-items:flex-start;gap:6px;';
@@ -4764,58 +4990,135 @@ async function sendChatMessage(){
     // a stiff translation)" measurably helps, but a parent who finds it still
     // lacking may want to swap in a different provider's API key instead
     // (would need its own request/response wiring, not just this prompt).
-    const systemPrompt=`אתה "איזי", עוזר חכם ואוהב לילד בשם ${childName} בן 7, שנמצא על הספקטרום האוטיסטי בתפקוד גבוה.
+    const systemPrompt=`אתה "איזי", עוזר חכם, סבלני ואוהב, שמדבר עם ילד/ה בשם ${childName} (בן/בת 7 בערך), שנמצא/ת על הספקטרום האוטיסטי בתפקוד גבוה. אתה חלק מאפליקציה משפחתית בשם "כספת המטבעות".
 
 חוקים שאסור לשבור:
-- תמיד קרא לילד בשמו: ${childName}. אסור לומר "בני", "יקירי", או כינויים אחרים.
-- ענה תמיד בעברית תקנית, שוטפת וטבעית — לא תרגום מילולי מאנגלית, לא ניסוח מאולץ.
-- תשובות קצרות: 2-3 משפטים בלבד.
-- השתמש ב-1-2 emojis רלוונטיים בלבד.
-- מילים פשוטות ברמת כיתה א'-ב'.
-- אם אתה לא בטוח בעובדה מסוימת, אמור זאת בפשטות במקום לנחש.
+- תמיד פנה בשם הפרטי: ${childName}. אסור "בני", "יקירי", "מותק" או כינויים אחרים.
+- עברית תקנית, שוטפת וטבעית בלבד — לא תרגום מילולי מאנגלית, לא ניסוח מאולץ.
+- תשובות קצרות מאוד: 2-3 משפטים. משפטים קצרים, מילים ברמת כיתה א'-ב'.
+- 1-2 אימוג'ים לכל היותר.
+- שאלה אחת לכל היותר בסוף תשובה — לא להציף.
+- אם אינך בטוח בעובדה: אמור זאת בפשטות ("אני לא בטוח") במקום לנחש.
+- אתה תוכנה, לא אדם. אם שואלים — אמור זאת בפשטות ובלי דרמה.
+- לעולם אל תבקש פרטים אישיים (כתובת, טלפון, בית ספר, סיסמאות).
+- אל תיתן עצות רפואיות, תזונתיות, או על תרופות. הפנה להורים.
+- אל תבטיח פרסים, מטבעות או זמן משחק — רק ההורים קובעים אותם.
+- נושאים למבוגרים (אלימות, סמים, מין): סרב בעדינות והפנה להורים.
 
-כשהילד משועמם: הצע פעילות יצירתית כמו ציור, בניית לגו, משחק דמיון — לא אוכל.
-כשהילד עצוב/כועס: הכר ברגש שלו קודם ("זה נשמע קשה"), ואז הצע פתרון אחד פשוט.
-כשהילד שואל שאלת ידע: תסביר בצורה מעניינת, מדויקת ונכונה עובדתית, עם דוגמה מהחיים.
-אל תיתן עצות על אכילה, ממתקים, או דברים לא בריאים.`;
+איך לענות לפי מצב:
+- משועמם/ת: הצע פעילות יצירתית קונקרטית אחת (ציור, לגו, משחק דמיון, ניסוי פשוט) — לא אוכל, לא מסכים.
+- עצוב/כועס/מתוסכל: קודם כל שקף את הרגש ("זה נשמע ממש מעצבן"), רק אחר כך הצע צעד אחד קטן. הזכר שאפשר ללחוץ על הכפתור הירוק 🌿 באפליקציה כדי להירגע (יש שם נשימות, בועות ותרגילים).
+- שאלת ידע: הסבר מדויק, מעניין, עם דוגמה אחת מהחיים.
+- שאלה על האפליקציה (מטלות, מטבעות, זמן משחק): השתמש במידע העדכני שקיבלת.
+- קושי חברתי: תן צעד מעשי אחד ופשוט, בלי הטפות.
+
+${chatAppContext()}`;
+    // Recent turns only: enough for continuity, bounded so a long day of
+    // chatting can't grow the request (and its cost) without limit.
     const messages=[
       {role:'system',content:systemPrompt},
       ...chatHistory.slice(-10).map(m=>({role:m.isUser?'user':'assistant',content:m.text})),
       {role:'user',content:text}
     ];
     if(!GROQ_API_KEY){ thinkingWrap.remove(); displayMessage('⚙️ הכנס מפתח Groq בהגדרות הורים (לשונית הגדרות)',false); return; }
-    const response=await fetch('https://api.groq.com/openai/v1/chat/completions',{
+    const callGroq=(model)=>fetch('https://api.groq.com/openai/v1/chat/completions',{
       method:'POST',
       headers:{'Content-Type':'application/json','Authorization':'Bearer '+GROQ_API_KEY},
-      body:JSON.stringify({model:'llama-3.3-70b-versatile',messages,max_tokens:220,temperature:0.4})
+      body:JSON.stringify({model,messages,max_tokens:220,temperature:0.4})
     });
+    let response=await callGroq(chatModel());
+    // A decommissioned/renamed model id answers 400/404 with "model" in the
+    // message. Retry once on the fallback and REMEMBER it, so the feature
+    // self-heals instead of dying the day Groq retires a model.
+    if(!response.ok&&(response.status===400||response.status===404)&&chatModel()!==CHAT_MODEL_FALLBACK){
+      let looksLikeModelIssue=false;
+      try{ const e=await response.clone().json(); looksLikeModelIssue=/model/i.test(e?.error?.message||''); }catch(e){}
+      if(looksLikeModelIssue){
+        const retry=await callGroq(CHAT_MODEL_FALLBACK);
+        if(retry.ok){ localStorage.setItem('cs_chat_model',CHAT_MODEL_FALLBACK); response=retry; }
+      }
+    }
     // A non-2xx (bad/expired key, rate limit, server error) can still carry a
     // non-JSON or empty body; guard so response.json() doesn't throw an opaque
     // "Unexpected token" that surfaces to the child as a scary raw error.
     if(!response.ok){
       let msg='שגיאת שרת ('+response.status+')';
       try{ const err=await response.json(); if(err&&err.error&&err.error.message) msg=err.error.message; }catch(e){}
-      thinkingWrap.remove(); displayMessage('אופס, לא הצלחתי לענות כרגע 😔 ('+msg+')',false); return;
+      console.error('Groq HTTP error:',msg);
+      thinkingWrap.remove();
+      // The child never sees the raw provider error (it's English, technical,
+      // and sometimes leaks key/billing details) -- it goes to the console and
+      // the parent-facing log instead.
+      displayMessage('אופס, לא הצלחתי לענות כרגע 😔 נסה/י שוב עוד רגע.',false);
+      await chatLogAdd({ts:Date.now(),role:'izzy',text:'[שגיאת שירות] '+msg,flag:'error'});
+      return;
     }
     const data=await response.json();
     if(data.error){
       console.error('Groq error:',data.error);
       thinkingWrap.remove();
-      displayMessage('שגיאה: '+data.error.message,false);
+      displayMessage('אופס, לא הצלחתי לענות כרגע 😔 נסה/י שוב עוד רגע.',false);
+      await chatLogAdd({ts:Date.now(),role:'izzy',text:'[שגיאת שירות] '+data.error.message,flag:'error'});
       return;
     }
-    const reply=data.choices?.[0]?.message?.content||'לא הצלחתי לענות, נסה שנית 😔';
+    let reply=data.choices?.[0]?.message?.content||'לא הצלחתי לענות, נסה/י שוב 😔';
+    let outFlag=null;
+    if(!chatOutputAllowed(reply)){ reply=CHAT_SAFE_REPLIES.blocked; outFlag='blocked-output'; }
     chatHistory.push({text,isUser:true},{text:reply,isUser:false});
     thinkingWrap.remove();
     displayMessage(reply,false);
+    await chatLogAdd({ts:Date.now(),role:'izzy',text:reply,flag:outFlag});
     const speakBtns=document.querySelectorAll('.chat-speak-btn');
     if(speakBtns.length) speakText(reply,speakBtns[speakBtns.length-1]);
   }catch(e){
     console.error('Chat error:',e);
     thinkingWrap.remove();
-    displayMessage('אין חיבור לאינטרנט 😓 נסה שנית!',false);
+    displayMessage('אין חיבור לאינטרנט 😓 נסה/י שוב!',false);
   }finally{
     _chatBusy=false;
+  }
+}
+
+/* ---- chat view lifecycle: restore history, starter chips, cap notice ---- */
+// Starter prompts matter more here than in a general chatbot: initiating an
+// open-ended conversation is exactly the step that's hardest for the child
+// this app is built around. One tap sends a complete, well-formed question.
+const CHAT_STARTERS=[
+  {ic:'🎨',label:'אני משועמם',text:'אני משועמם, מה אפשר לעשות?'},
+  {ic:'😔',label:'יום קשה',text:'היה לי יום קשה היום'},
+  {ic:'🦖',label:'ספר לי משהו',text:'ספר לי משהו מעניין על דינוזאורים'},
+  {ic:'📋',label:'מה נשאר לי?',text:'מה נשאר לי לעשות היום?'},
+];
+async function initChatView(){
+  const msgs=document.getElementById('chatMessages'); if(!msgs) return;
+  msgs.innerHTML='';
+  chatHistory=[];
+  const log=await chatLogGet();
+  // Replay the tail of the persisted conversation so closing the app doesn't
+  // wipe the thread mid-topic (and so a parent glancing at the screen sees the
+  // same thing the child does).
+  log.slice(-12).forEach(e=>{
+    displayMessage(e.text,e.role==='child');
+    chatHistory.push({text:e.text,isUser:e.role==='child'});
+  });
+  if(!log.length){
+    displayMessage('שלום '+(curChild()?.name||'')+'! אני איזי 🤖\nאפשר לשאול אותי כל דבר, או ללחוץ על אחד הכפתורים למטה.',false);
+  }
+  const chips=document.getElementById('chatStarters');
+  if(chips){
+    chips.innerHTML='';
+    CHAT_STARTERS.forEach(s=>{
+      const b=document.createElement('button');
+      b.className='chat-chip'; b.innerHTML=`<span>${s.ic}</span> ${esc(s.label)}`;
+      b.onclick=()=>{ document.getElementById('chatInput').value=s.text; sendChatMessage(); };
+      chips.appendChild(b);
+    });
+  }
+  const left=chatDailyCap()-(await chatUsedToday());
+  const note=document.getElementById('chatCapNote');
+  if(note){
+    note.style.display=left<=5?'':'none';
+    note.textContent=left>0?('נשארו '+left+' הודעות להיום 🙂'):'דיברנו הרבה היום — נמשיך מחר! 😊';
   }
 }
 

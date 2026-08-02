@@ -553,6 +553,11 @@
   .chat-bubble-user{background:linear-gradient(135deg,var(--purple),var(--sky));color:#fff;align-self:flex-end;padding:10px 14px;border-radius:18px 18px 4px 18px;max-width:80%;word-wrap:break-word;box-shadow:0 2px 8px rgba(124,92,252,.2);}
   .chat-bubble-ai{background:#fff;color:var(--ink);align-self:flex-start;padding:10px 14px;border-radius:18px 18px 18px 4px;max-width:80%;word-wrap:break-word;box-shadow:0 2px 8px rgba(0,0,0,.08);}
   .chat-input-row{display:flex;gap:8px;align-items:center;padding:10px 0 4px;}
+  /* One-tap conversation starters (CHAT_STARTERS) -- 44px+ targets, wraps to
+     as many rows as it needs rather than scrolling sideways out of sight. */
+  .chat-chips{display:flex;flex-wrap:wrap;gap:7px;margin-bottom:8px;}
+  .chat-chip{background:#fff;border:2px solid var(--line);border-radius:16px;padding:9px 13px;min-height:44px;font-family:inherit;font-weight:700;font-size:.82rem;color:var(--ink);cursor:pointer;display:inline-flex;align-items:center;gap:5px;transition:transform .1s;}
+  .chat-chip:active{transform:scale(.95);background:#F2F0FB;}
   .chat-mic-btn{width:48px;height:48px;border-radius:50%;border:none;cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:1.4rem;flex-shrink:0;transition:transform .15s;background:#F2F0FB;}
   .chat-mic-btn.recording{background:linear-gradient(135deg,var(--coral),var(--coral-d));animation:pulse-mic .7s ease-in-out infinite;}
   @keyframes pulse-mic{0%,100%{transform:scale(1);}50%{transform:scale(1.12);}}

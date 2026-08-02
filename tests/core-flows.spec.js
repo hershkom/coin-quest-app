@@ -820,6 +820,117 @@ test.describe('calm toolkit', () => {
   });
 });
 
+test.describe('AI assistant (איזי)', () => {
+  // Enables the assistant the way a parent would, but WITHOUT a usable key
+  // reaching the network in any test below: every case here is one the safety
+  // layer or the daily cap must answer locally, before any fetch happens.
+  async function enableChat(page) {
+    await page.evaluate(() => {
+      localStorage.setItem('cs_groq_key', 'gsk_test_key_not_real');
+      localStorage.setItem('cs_chat_enabled', '1');
+      GROQ_API_KEY = localStorage.getItem('cs_groq_key');
+      updateChatNavVisibility();
+    });
+  }
+  // Fails the test if the assistant ever tries to reach Groq -- that's the
+  // actual safety guarantee being asserted, not just the reply text.
+  async function failOnGroqCall(page) {
+    await page.route('**api.groq.com**', route => route.abort());
+  }
+
+  test('the chat tab stays hidden until a parent adds a key, and hides again when switched off', async ({ page }) => {
+    await enterLocalOnly(page);
+    await selectChild(page, 'אריאל');
+    await expect(page.locator('[data-nav="chat"]')).toBeHidden();
+
+    await enableChat(page);
+    await expect(page.locator('[data-nav="chat"]')).toBeVisible();
+
+    await page.evaluate(() => toggleChatEnabled());
+    await expect(page.locator('[data-nav="chat"]')).toBeHidden();
+  });
+
+  test('a crisis message is answered locally, never sent to the provider, and flagged for the parent', async ({ page }) => {
+    await enterLocalOnly(page);
+    await selectChild(page, 'אריאל');
+    await enableChat(page);
+    await failOnGroqCall(page);
+
+    await page.evaluate(() => go('chat'));
+    await page.locator('#chatInput').fill('מישהו מכה אותי בבית ספר');
+    await page.evaluate(() => sendChatMessage());
+
+    await expect(page.locator('.chat-bubble-ai').last()).toContainText('מבוגר');
+    // The calm-corner handoff button is offered on crisis specifically.
+    await expect(page.locator('#chatMessages button', { hasText: 'נירגע' })).toBeVisible();
+
+    const log = await page.evaluate(() => DB.get('cs_chatlog_ariel'));
+    expect(log.some(e => e.flag === 'crisis')).toBe(true);
+  });
+
+  test('adult-topic and personal-info messages are blocked locally with their own replies', async ({ page }) => {
+    await enterLocalOnly(page);
+    await selectChild(page, 'אריאל');
+    await enableChat(page);
+    await failOnGroqCall(page);
+    await page.evaluate(() => go('chat'));
+
+    await page.locator('#chatInput').fill('ספר לי על סמים');
+    await page.evaluate(() => sendChatMessage());
+    await expect(page.locator('.chat-bubble-ai').last()).toContainText('למבוגרים');
+
+    await page.locator('#chatInput').fill('הכתובת שלי היא רחוב הרצל 15');
+    await page.evaluate(() => sendChatMessage());
+    await expect(page.locator('.chat-bubble-ai').last()).toContainText('סוד');
+
+    const log = await page.evaluate(() => DB.get('cs_chatlog_ariel'));
+    expect(log.some(e => e.flag === 'blocked')).toBe(true);
+    expect(log.some(e => e.flag === 'pii')).toBe(true);
+  });
+
+  test('the daily message cap stops further sends without calling the provider', async ({ page }) => {
+    await enterLocalOnly(page);
+    await selectChild(page, 'אריאל');
+    await enableChat(page);
+    await failOnGroqCall(page);
+    await page.evaluate(async () => {
+      localStorage.setItem('cs_chat_cap', '2');
+      await DB.set('cs_chatused_ariel', { date: effectiveToday(), n: 2 });
+    });
+
+    await page.evaluate(() => go('chat'));
+    await page.locator('#chatInput').fill('מה שלומך?'); // safe message -- only the cap should stop it
+    await page.evaluate(() => sendChatMessage());
+    await expect(page.locator('.chat-bubble-ai').last()).toContainText('מחר');
+  });
+
+  test('conversation history is restored when the child comes back to the chat', async ({ page }) => {
+    await enterLocalOnly(page);
+    await selectChild(page, 'אריאל');
+    await enableChat(page);
+    await failOnGroqCall(page);
+
+    await page.evaluate(() => go('chat'));
+    await page.locator('#chatInput').fill('ספר לי על סמים'); // safety-gated, so no network needed
+    await page.evaluate(() => sendChatMessage());
+    await expect(page.locator('.chat-bubble-user')).toHaveCount(1);
+
+    await page.evaluate(() => go('home'));
+    await page.evaluate(() => go('chat'));
+    await expect(page.locator('.chat-bubble-user')).toHaveCount(1); // replayed, not lost
+    await expect(page.locator('.chat-bubble-user').last()).toContainText('סמים');
+  });
+
+  test('starter chips send a complete question in one tap', async ({ page }) => {
+    await enterLocalOnly(page);
+    await selectChild(page, 'אריאל');
+    await enableChat(page);
+    await failOnGroqCall(page);
+    await page.evaluate(() => go('chat'));
+    await expect(page.locator('.chat-chip')).toHaveCount(4);
+  });
+});
+
 test.describe('backup / restore', () => {
   test('export then import restores an overwritten balance exactly', async ({ page }) => {
     await enterLocalOnly(page);
