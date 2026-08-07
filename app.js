@@ -45,7 +45,11 @@ async function detectBackend(){
 const SYNC_SECTIONS={cs_children:'children',cs_chores:'chores',cs_actions:'actions',
   cs_rewards:'rewards',cs_math:'math',cs_streaks:'streaks',cs_badgedefs:'badgeDefs',
   cs_anchored:'anchored',cs_events:'events',cs_calm:'calmMode',cs_games:'games',
-  cs_hwm_date:'hwmDate',cs_auditlog:'auditLog',cs_learning:'learning'};
+  cs_hwm_date:'hwmDate',cs_auditlog:'auditLog',cs_learning:'learning',
+  // Only the HASH of the parent code (see buildSyncPayload). Without an entry
+  // here a DB.set would never mark anything dirty and pushToFirebase -- which
+  // sends dirty sections only -- would silently drop it.
+  cs_pinhash:'pinHash'};
 function keyToSyncSection(k){
   if(SYNC_SECTIONS[k]) return SYNC_SECTIONS[k];
   const m=k.match(/^cs_(bal|hist|daily|mathd|badges|matht|taskt|rwt|gtime|learn|learnlvl)_(.+)$/);
@@ -407,6 +411,7 @@ async function loadState(){
   }
   state.learning=(await DB.get('cs_learning'))??DEFAULT_LEARNING;
   state.pin     =(await DB.get('cs_pin'))     ??'1234';
+  state.pinHash =(await DB.get('cs_pinhash')) ??null; // family-wide parent code (hash only) -- see savePin/verifyPin
   state.calmMode=(await DB.get('cs_calm'))    ??false;
   // Bedtime game gate (parent-controlled, on by default): banked game time is
   // otherwise spendable at any hour, so a child with a full wallet could play
@@ -3731,17 +3736,54 @@ function isWeakPin(pin){
   if(pin.length>=3 && (asc.includes(pin) || desc.includes(pin))) return true;
   return false;
 }
+/* ---- parent code hashing ----
+   Salted so the stored value can't be matched against a rainbow table of bare
+   4-digit strings. Two implementations because crypto.subtle only exists in a
+   secure context (https/localhost) -- the fallback is weaker but still not
+   plaintext, and the 'fb' prefix records which one produced a given hash so a
+   device using one algorithm can still verify a hash made by the other. */
+const PIN_SALT='coinquest-pin-v1:';
+async function sha256Pin(v){
+  const buf=new TextEncoder().encode(PIN_SALT+v);
+  const d=await crypto.subtle.digest('SHA-256',buf);
+  return [...new Uint8Array(d)].map(b=>b.toString(16).padStart(2,'0')).join('');
+}
+function fallbackPinHash(v){
+  const s=PIN_SALT+v; let h=5381;
+  for(let i=0;i<s.length;i++) h=((h*33)^s.charCodeAt(i))>>>0;
+  return 'fb'+h.toString(16);
+}
+async function hashPin(v){
+  try{ if(window.crypto&&crypto.subtle) return await sha256Pin(v); }catch(e){}
+  return fallbackPinHash(v);
+}
+// A device only switches to hash verification once a parent has actually set a
+// family code; until then it keeps checking its own local plaintext code, so
+// simply installing this update never changes how any device unlocks.
+async function verifyPin(entered){
+  if(state.pinHash){
+    const h=state.pinHash.startsWith('fb')?fallbackPinHash(entered):await hashPin(entered);
+    return h===state.pinHash;
+  }
+  return entered===state.pin;
+}
 async function savePin(){
   const v=document.getElementById('setPin').value.trim();
   if(v.length<3){ toast('קוד קצר מדי'); return; }
   if(isWeakPin(v)){ toast('קוד קל מדי לניחוש — נסה קוד אחר 🙂'); return; }
-  state.pin=v; await DB.set('cs_pin',v); scheduleSync(); document.getElementById('setPin').value=''; toast('הקוד עודכן ✓');
+  state.pin=v; await DB.set('cs_pin',v);
+  // Setting the code here makes it the code for the WHOLE family: the hash
+  // syncs, every other device adopts it, and their old local codes stop
+  // working. That's the intended behaviour -- one parent code per family.
+  state.pinHash=await hashPin(v); await DB.set('cs_pinhash',state.pinHash);
+  scheduleSync(); document.getElementById('setPin').value='';
+  toast('הקוד עודכן לכל מכשירי המשפחה ✓');
 }
 
 /* ===== BACKUP / RESTORE ===== */
 function backupKeyList(){
   const keys=['cs_children','cs_current','cs_chores','cs_actions','cs_rewards','cs_math',
-    'cs_streaks','cs_badgedefs','cs_anchored','cs_events','cs_pin','cs_calm','cs_games',
+    'cs_streaks','cs_badgedefs','cs_anchored','cs_events','cs_pin','cs_pinhash','cs_calm','cs_games',
     'cs_games_v3','cs_games_v4','cs_games_v5','cs_gtime_seeded','cs_hwm_date','cs_calmlog',
     'cs_familyid','cs_learning','cs_auditlog','cs_chore_reminder'];
   for(const ch of state.children){
@@ -3946,9 +3988,9 @@ function modalPin(onOk){
   // Lock out after repeated wrong guesses, with growing cooldowns, so the PIN
   // can't be brute-forced by rapid tapping. Persisted-per-session (in memory),
   // not tied to the PIN value itself.
-  const ok=()=>{
+  const ok=async()=>{
     const v=document.getElementById('mPin').value.trim();
-    if(v===state.pin){ _pinFails=0; setPinLock(0); closeModal(); onOk(); }
+    if(await verifyPin(v)){ _pinFails=0; setPinLock(0); closeModal(); onOk(); }
     else{
       _pinFails++;
       if(_pinFails>=5){ setPinLock(Date.now()+Math.min(300000,10000*Math.pow(2,_pinFails-5))); closeModal(); modalMsg('⏳','יותר מדי ניסיונות','חכה קצת ונסה שוב.'); return; }
@@ -5218,10 +5260,14 @@ function showSyncStatus(msg,color){
 function familyRef(){ return state.familyId?fbDb.ref('families/'+state.familyId+'/data'):null; }
 
 function buildSyncPayload(){
-  // The parent PIN is intentionally NOT included — it's a device-local admin
-  // lock, not family data, and syncing it would let it leak to whichever
-  // device last set it rather than staying under each device's own control.
-  const payload={children:state.children,chores:state.chores,actions:state.actions,
+  // The parent code itself is NEVER uploaded -- only a salted hash of it. The
+  // family node is readable by every member, and in this app a member can be
+  // the CHILD's own Google account, so a plaintext parent code sitting there
+  // would be readable by exactly the person it exists to keep out. The hash
+  // is enough to make every device accept the same code without any device
+  // (or the cloud) ever holding the code in a readable form.
+  const payload={pinHash:state.pinHash||null,
+    children:state.children,chores:state.chores,actions:state.actions,
     rewards:state.rewards,math:state.math,streaks:state.streaks,badgeDefs:state.badgeDefs,
     anchored:state.anchored,events:state.events||[],hwmDate:_hwmDate,calmMode:state.calmMode,
     gameBedtime:state.gameBedtime,
@@ -5361,9 +5407,16 @@ async function applyRemoteSnapshot(data){
       state.gameBedtime=data.gameBedtime; await DB.set('cs_gamebedtime',data.gameBedtime);
       fillGameBedtimeToggle();
     }
-    // PIN is never synced (see buildSyncPayload). The high-water-mark date IS
-    // synced so wiping/reinstalling the app on one device can't roll back the
-    // anti-clock-tamper guard for the whole family.
+    // Only the HASH of the parent code travels (see buildSyncPayload/savePin),
+    // never the code itself. Adopting it makes every family device accept the
+    // same parent code. A device that has never had one set stays on its own
+    // local code until a parent explicitly sets one somewhere -- so upgrading
+    // can't silently change (and lock someone out of) an existing device.
+    if(data.pinHash){
+      state.pinHash=data.pinHash; await DB.set('cs_pinhash',data.pinHash);
+    }
+    // The high-water-mark date IS synced so wiping/reinstalling the app on one
+    // device can't roll back the anti-clock-tamper guard for the whole family.
     if(data.hwmDate){
       const remote=dateToNum(data.hwmDate);
       if(_hwmDate==null||remote>dateToNum(_hwmDate)){ _hwmDate=data.hwmDate; await DB.set('cs_hwm_date',_hwmDate); }
@@ -5536,7 +5589,7 @@ async function clearLocalFamilyData(){
   state.chores=DEFAULT_CHORES; state.actions=DEFAULT_ACTIONS; state.rewards=DEFAULT_REWARDS;
   state.math=DEFAULT_MATH; state.streaks=DEFAULT_STREAKS.map(s=>({...s,days:{}})); state.badgeDefs=DEFAULT_BADGE_DEFS;
   state.anchored=DEFAULT_ANCHORED_TASKS; state.events=[]; state.familyId=null;
-  state.games=DEFAULT_GAMES; state.learning=DEFAULT_LEARNING; state.auditLog=[]; state.pin='1234';
+  state.games=DEFAULT_GAMES; state.learning=DEFAULT_LEARNING; state.auditLog=[]; state.pin='1234'; state.pinHash=null;
   // Delete rather than write defaults back: hasExistingLocalData() treats a
   // present key as "this device has real data" regardless of its content, so
   // writing DEFAULT_CHILDREN etc back here would leave the keys present and
@@ -5546,7 +5599,7 @@ async function clearLocalFamilyData(){
   // never set up at all.
   for(const k of ['cs_children','cs_current','cs_chores','cs_actions','cs_rewards','cs_math',
     'cs_streak','cs_streaks','cs_badgedefs','cs_anchored','cs_events','cs_hwm_date','cs_familyid',
-    'cs_games','cs_games_v2','cs_games_v3','cs_games_v4','cs_gtime_seeded']){
+    'cs_pinhash','cs_games','cs_games_v2','cs_games_v3','cs_games_v4','cs_gtime_seeded']){
     await DB.del(k);
   }
   _hwmDate=null; _hwmAdvanceMono=performance.now();
@@ -6005,6 +6058,9 @@ async function finishWizard(){
   state.pin=pin;
   await DB.set('cs_children',state.children);
   await DB.set('cs_pin',pin);
+  // Establish the family-wide code from the start, so a second device joining
+  // this family later adopts it instead of keeping its own (see savePin).
+  state.pinHash=await hashPin(pin); await DB.set('cs_pinhash',state.pinHash);
   syncFullPush=true; // brand-new family from the wizard: seed the entire tree
   await pushToFirebase();
   closeModal();

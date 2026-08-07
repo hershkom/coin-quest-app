@@ -1057,6 +1057,68 @@ test.describe('anti-cheat invariants', () => {
   });
 });
 
+test.describe('family-wide parent code', () => {
+  test('the plaintext code never reaches the sync payload — only a hash', async ({ page }) => {
+    await enterLocalOnly(page);
+    await selectChild(page, 'אריאל');
+    const res = await page.evaluate(async () => {
+      document.getElementById('setPin').value = '835211';
+      await savePin();
+      const payload = buildSyncPayload();
+      return { json: JSON.stringify(payload), hash: payload.pinHash, localPin: state.pin };
+    });
+    expect(res.localPin).toBe('835211');          // still usable locally
+    expect(res.hash).toBeTruthy();
+    expect(res.json).not.toContain('835211');     // the code itself must never be uploaded
+    expect(res.json).not.toContain('"pin"');
+  });
+
+  test('a device adopts the family code from a remote snapshot and its old local code stops working', async ({ page }) => {
+    await enterLocalOnly(page);
+    await selectChild(page, 'אריאל');
+    const res = await page.evaluate(async () => {
+      // This device's own local code, set before it ever joined the family.
+      state.pin = '4321'; state.pinHash = null;
+      const before = await verifyPin('4321');
+      // A snapshot arrives carrying the family code's hash (set on the parent's device).
+      const familyHash = await hashPin('835211');
+      await applyRemoteSnapshot({ pinHash: familyHash });
+      return { before, adopted: state.pinHash === familyHash,
+               familyCodeWorks: await verifyPin('835211'), oldCodeWorks: await verifyPin('4321') };
+    });
+    expect(res.before).toBe(true);
+    expect(res.adopted).toBe(true);
+    expect(res.familyCodeWorks).toBe(true);
+    expect(res.oldCodeWorks).toBe(false); // one code per family is the whole point
+  });
+
+  test('a device that never received a family code keeps using its own local one', async ({ page }) => {
+    await enterLocalOnly(page);
+    await selectChild(page, 'אריאל');
+    // Installing the update alone must not change how any existing device unlocks.
+    const res = await page.evaluate(async () => {
+      state.pin = '4321'; state.pinHash = null;
+      await applyRemoteSnapshot({ chores: state.chores }); // snapshot with no pinHash at all
+      return { stillNull: state.pinHash === null, works: await verifyPin('4321') };
+    });
+    expect(res.stillNull).toBe(true);
+    expect(res.works).toBe(true);
+  });
+
+  test('the admin PIN dialog accepts the adopted family code', async ({ page }) => {
+    await enterLocalOnly(page);
+    await selectChild(page, 'אריאל');
+    await page.evaluate(async () => {
+      state.pin = '4321';
+      state.pinHash = await hashPin('835211');
+    });
+    await page.locator('#gearBtn').click();
+    await page.locator('#mPin').fill('835211');
+    await page.locator('#mPinOk').click();
+    await expect(page.locator('#view-admin')).toHaveClass(/active/);
+  });
+});
+
 test.describe('joining a different family after the account is already linked', () => {
   // The reported bug: a child's own Google account had created its own family
   // on their device, so onboarding (the only place the invite-code field ever
