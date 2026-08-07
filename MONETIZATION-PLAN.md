@@ -30,9 +30,9 @@
 אלה דברים שרק מייק יכול לעשות; המודל רק מזכיר לו ועוצר עד שבוצעו:
 
 - **M0.1** חשבון Google Play Console (אגרה חד-פעמית 25$) אם עוד אין.
-- **M0.2** שדרוג פרויקט Firebase ל-**Blaze** (חיוב לפי שימוש; נשאר ~0$ בהיקפים קטנים). חובה בשביל Cloud Functions.
+- **M0.2** ~~שדרוג ל-Blaze~~ — **בוטל בכוונה.** נשארים במסלול Spark החינמי; ראה M2 לארכיטקטורה החלופית ולמחיר שמשלמים עליה.
 - **M0.3** ב-Play Console: יצירת שני מוצרים — מנוי `premium_monthly` (עם base plan חודשי) ומוצר חד-פעמי `premium_lifetime`, ותמחור. לרשום את המזהים המדויקים.
-- **M0.4** חיבור Play Console ↔ Google Cloud project (Setup → API access) + יצירת Service Account עם הרשאת `androidpublisher` לאימות רכישות.
+- **M0.4** העתקת **המפתח הציבורי (RSA) של האפליקציה** מ-Play Console (Monetization setup → Licensing) והדבקתו ב-`BillingManager.kt` (קבוע `PLAY_PUBLIC_KEY`). בלי זה אימות החתימה לא יעבוד והאפליקציה תתייחס ל-Billing כלא-זמין.
 - **M0.5** רישום כ-license tester (החשבון של מייק) לבדיקות רכישה בלי כסף אמיתי.
 
 ---
@@ -112,57 +112,73 @@ function gate(key){ if(featureAllowed(key)) return true; showPaywall(key); retur
 
 ---
 
-## שלב M2 — צד שרת (Cloud Functions, אחרי M0.2)
+## שלב M2 — אימות רכישה בלי שרת (מסלול Spark / ללא Blaze)
 
-תיקייה חדשה `functions/` (Node 20, firebase-functions v2). **המודל יוצר את הקוד; ההורה מריץ `firebase deploy --only functions` ידנית** (ה-pre-push hook פורס hosting בלבד — לא לשנות אותו).
+**החלטה:** נשארים במסלול החינמי, כלומר **אין Cloud Functions**. זה משנה את הארכיטקטורה, ולהלן בדיוק מה מרוויחים ומה מוותרים עליו — בלי לייפות.
 
-### M2.1 — שלד + סודות
-`firebase init functions` ידני ע"י ההורה, ואז המודל כותב: `functions/index.js`, `functions/package.json`. סודות ב-`firebase functions:secrets:set` — `GROQ_API_KEY`, ו-service-account לאימות רכישות (או ADC).
+### מה מחליף את השרת: אימות חתימה מקומי
 
-### M2.2 — `verifyPurchase` (callable)
-קלט: `{purchaseToken, productId, type:'subs'|'inapp'}` + auth של Firebase (חובה). התהליך:
-1. אימות מול Google Play Developer API (`purchases.subscriptionsv2.get` / `purchases.products.get`).
-2. אם תקף — כתיבה ל-`families/$familyId/entitlement` (ה-familyId נלקח מ-`users/{uid}/familyId`, לא מהקלט!): מנוי → `{plan:'premium',expiresAt:<expiryTimeMillis>,source:'play'}`; חד-פעמי → `{plan:'lifetime',expiresAt:null,source:'play'}`.
-3. Acknowledge לרכישה אם טרם בוצע (חובת Play תוך 3 ימים, אחרת החזר אוטומטי).
-4. רישום ב-`purchaseLog` (טוקן→familyId) למניעת שימוש באותו טוקן בשתי משפחות.
+Google Play Billing מחזיר לכל רכישה `originalJson` + `signature` — חתימת RSA של גוגל על פרטי הרכישה. אפשר לאמת אותה **במכשיר**, מול המפתח הציבורי של האפליקציה (מ-Play Console), בלי שום שרת. זיוף חתימה דורש את המפתח הפרטי של גוגל.
 
-### M2.3 — RTDN (התראות בזמן-אמת מ-Play)
-Pub/Sub topic ב-Play Console → function שמאזין ומעדכן entitlement על חידוש/ביטול/החזר. בלי זה מנוי מבוטל ממשיך לקבל premium עד שיפתח את האפליקציה אחרי ה-expiry.
+### M2.1 — למה בכל זאת צריך לשתף בין מכשירים (ולמה זה לא טריוויאלי כאן)
 
-### M2.4 — הקשחת rules
-ב-`database.rules.json`, תחת `families/$familyId` להוסיף חריג:
-```json
-"entitlement": { ".write": false }
-```
-(כתיבת Admin SDK עוקפת rules — רק השרת יכול). וכן `purchaseLog` ברמת השורש: קריאה/כתיבה false.
-**קבלה:** ניסיון כתיבת entitlement מהלקוח נכשל ב-permission denied; הפריסה של rules ידנית ע"י ההורה.
+רכישות ב-Play שייכות ל**חשבון Google**, והמשפחה הזו פרושה על שני חשבונות שונים (ההורה והילד). כלומר `queryPurchasesAsync` במכשיר של הילד **לא יחזיר את הרכישה של ההורה**. לכן:
 
-### M2.5 — פרוקסי Groq
-Function `chat` שמקבל `{messages}` (עם אימות Firebase + בדיקת entitlement בצד השרת!), קורא ל-Groq עם המפתח הסודי, ומחזיר את התשובה. ב-`app.js` — `sendChatMessage` עובר לקרוא ל-function כשהדגל דולק (fallback למפתח מקומי כשהדגל כבוי, לתאימות המשפחה הקיימת). שכבת הבטיחות (crisis/blocked/PII) **נשארת בלקוח** — היא חייבת לעבוד גם offline — אבל נוספת גם בשרת כהגנת עומק.
+1. מכשיר הקונה מקבל `{originalJson, signature}` מ-Play.
+2. הוא כותב אותם ל-`families/$id/entitlement`.
+3. **כל מכשיר במשפחה מאמת את החתימה מקומית** לפני שהוא מכבד את הזכאות.
+
+כך הזכאות חוצה חשבונות, בלי שרת, ובלי שאפשר להמציא אותה בלי המפתח הפרטי של גוגל.
+
+### M2.2 — מה אנחנו מוותרים עליו (חשוב שיהיה מודע)
+
+| יכולת | עם שרת | בלי שרת (מצבנו) |
+|-------|--------|------------------|
+| זיוף זכאות ע"י עריכת localStorage | חסום | **אפשרי** — מי שמוכן לפתוח DevTools יכול. החתימה מקשה, אבל הלקוח הוא זה שבודק אותה |
+| ביטול/החזר מיידי (RTDN) | מיידי | מתגלה רק בפקיעת התוקף או בהפעלה הבאה שבה Play נשאל מחדש |
+| מפתח Groq מוסתר | כן | **לא** — לכן ה-AI נשאר "הבא מפתח משלך", ולא פיצ'ר נמכר |
+| מניעת שימוש באותו טוקן בשתי משפחות | כן | לא נאכף |
+
+**המסקנה המעשית:** זה מספיק לחלוטין לאפליקציה בתשלום קטנה — זהו הדפוס הסטנדרטי של אפליקציות אינדי בלי backend. זה לא עמיד בפני פיראטיות ממוקדת. אם וכאשר המכירות יצדיקו זאת, מעבר ל-Blaze + Functions הוא שדרוג מדורג שלא מחייב לשכתב את הלקוח (רק להחליף את מקור האמת של ה-entitlement).
+
+### M2.3 — הקשחת rules (מה שכן אפשר בלי שרת)
+
+`entitlement` נשאר כתיב ע"י חברי המשפחה (אין שרת שיכתוב במקומם), אבל **הערך חסר משמעות בלי חתימה תקפה** — הלקוח מכבד רק זכאות שעברה `verifyPurchaseSignature`. לא להוסיף `".write": false` על `entitlement`, כי זה היה חוסם את מכשיר הקונה עצמו.
+
+### M2.4 — ה-AI נשאר "מפתח משלך"
+
+בלי שרת אין איפה להסתיר מפתח Groq, ולכן **אסור** לכלול AI כפיצ'ר שנמכר (זה יהיה מכירת שירות שאתה משלם עליו מכיסך, עם מפתח חשוף). ההתנהגות הקיימת — ההורה מזין מפתח משלו — נשארת בדיוק כפי שהיא, וה-AI מסומן כ"מתקדם" ולא כ-premium.
 
 ---
 
-## שלב M3 — אינטגרציית Play Billing (Kotlin)
+## שלב M3 — אינטגרציית Play Billing (Kotlin) — ✅ מומש
 
 **דרישה: Billing Library 8+** (כל הגשה חדשה מחויבת בה מ-31.8.2026).
 
-### M3.1 — BillingManager
-`android-app/app/build.gradle`: `implementation 'com.android.billingclient:billing-ktx:8.0.0'` (בגרסת play בלבד אם אפשר — `playImplementation`).
-קובץ חדש `BillingManager.kt`: התחברות, `queryProductDetailsAsync` לשני המוצרים, `launchBillingFlow`, מאזין רכישות, `queryPurchasesAsync` בכל עלייה (שחזור רכישות).
+**הערה מהמימוש:** להשתמש ב-`com.android.billingclient:billing:8.0.0` ו**לא** ב-`billing-ktx` — גרסת ה-ktx נבנתה עם Kotlin 2.1 והפרויקט על 1.9, מה שמפיל את הקומפילציה. וכן: ב-Billing 8 ה-callback של `queryProductDetailsAsync` מחזיר `QueryProductDetailsResult` (ולא `List<ProductDetails>` כמו ב-v7).
 
-### M3.2 — גשר ל-JS
-ב-`NativeGameBridge.kt`: `billingAvailable()`, `getProducts()` (JSON עם מחירים מקומיים), `startPurchase(productId)`, callbacks `_onPurchaseComplete(token,productId,type)` / `_onPurchaseFailed(msg)`.
-ב-`app.js`: על `_onPurchaseComplete` → קריאה ל-`verifyPurchase` (M2.2) → עם החזרה תקינה ה-entitlement כבר נכתב ב-RTDB ויגיע בסנכרון החי → `toast('⭐ premium פעיל!')`.
+- **M3.1** `BillingManager.kt` — התחברות, שאילתת מוצרים, `launchBillingFlow`, acknowledge (חובה תוך 3 ימים אחרת החזר אוטומטי), ו**אימות חתימת RSA מקומי**.
+- **M3.2** גשר ב-`NativeGameBridge.kt`: `billingAvailable()`, `getProducts()`, `startPurchase()`, `restorePurchases()`, `verifyPurchaseSignature()`, `openUrl()`. ה-callbacks קופצים חזרה ל-UI thread לפני `evaluateJavascript`.
+- **M3.3** שחזור רכישות אוטומטי בכל עלייה של האפליקציה.
+- **M3.4** קופונים: כפתור "יש לי קוד הטבה" ב-paywall פותח את `play.google.com/redeem`; הרכישה שנוצרת חוזרת דרך אותו מסלול אימות בדיוק. הקודים מונפקים ב-Play Console → Promotions.
 
-### M3.3 — שחזור רכישות
-בעלייה של האפליקציה בגרסת play: אם `queryPurchasesAsync` מחזיר רכישה שלא נרשמה — לשלוח ל-verifyPurchase. מכסה החלפת מכשיר.
-
-### M3.4 — קופונים (promo codes)
-אין מנגנון עצמאי — כפתור "יש לי קוד" ב-paywall פותח את דף המימוש של Play (`https://play.google.com/redeem?code=`) או את ה-In-App Promotions flow. הרכישה שנוצרת מהקוד מגיעה דרך אותו מסלול אימות בדיוק. את הקודים עצמם ההורה מנפיק ב-Play Console → Promotions (חד-פעמיים, או קוד מותאם למנוי עד תקרה).
-
-**קבלה (M3 כולו):** רכישת בדיקה כ-license tester → entitlement נכתב → פיצ'רים נפתחים בכל מכשירי המשפחה; ביטול מנוי בבדיקות → RTDN מוריד ל-free בתום התקופה.
+**קבלה:** רכישת בדיקה כ-license tester → entitlement נכתב ומסונכרן → פיצ'רים נפתחים בכל מכשירי המשפחה.
 
 ---
+
+## סטטוס מימוש (מעודכן)
+
+| שלב | מצב |
+|-----|------|
+| M0 | ⏳ ממתין לך (Play Console, מוצרים, מפתח RSA) |
+| M1 | ✅ מומש ונבדק — 8 בדיקות ייעודיות |
+| M2 | ✅ הוחלף באימות חתימה מקומי (ראה למעלה) |
+| M3 | ✅ מומש — Kotlin מתקמפל |
+| M4.2 | ✅ אזהרת PIN ברירת מחדל |
+| M4.3/M4.4 | ⏳ טקסטי פרטיות ו-Data Safety |
+| M5/M6 | ⏳ QA בחנות + הדלקת הדגל |
+
+**הדגל `MONETIZATION_ENABLED` עדיין `false`** — כל הקוד למעלה חי בייצור אך רדום לחלוטין.
 
 ## שלב M4 — התאמת גרסת Play למכירה
 

@@ -49,7 +49,11 @@ const SYNC_SECTIONS={cs_children:'children',cs_chores:'chores',cs_actions:'actio
   // Only the HASH of the parent code (see buildSyncPayload). Without an entry
   // here a DB.set would never mark anything dirty and pushToFirebase -- which
   // sends dirty sections only -- would silently drop it.
-  cs_pinhash:'pinHash'};
+  cs_pinhash:'pinHash',
+  // Family-wide so a purchase made on one parent's Google account unlocks the
+  // child's device too -- they sign in with different accounts, so Play alone
+  // could never carry it across (see MONETIZATION-PLAN M2.1).
+  cs_entitlement:'entitlement', cs_trial_started:'trialStartedAt'};
 function keyToSyncSection(k){
   if(SYNC_SECTIONS[k]) return SYNC_SECTIONS[k];
   const m=k.match(/^cs_(bal|hist|daily|mathd|badges|matht|taskt|rwt|gtime|learn|learnlvl)_(.+)$/);
@@ -154,6 +158,215 @@ const DEFAULT_LEARNING={enabled:true,
   minutesPerSession:0, dailyMaxMinutes:15, // 0 = game-time reward option off
   gateEnabled:false, customQuestions:[],
   readAloud:true}; // default ON: the target child reads Hebrew/English poorly
+
+/* ===== MONETIZATION (see MONETIZATION-PLAN.md) =====
+   MASTER SWITCH. While false the app behaves EXACTLY as it always has:
+   isPremium() is unconditionally true, no gate ever fires, no paywall can
+   open. Every piece of billing code below ships dark behind it, so partial
+   work can be committed and deployed without any risk to the family already
+   using this app in production. It is turned on in one final commit (M6.4),
+   only once everything is green.
+   Tests flip window.__forceMonetization instead of editing this. */
+const MONETIZATION_ENABLED=false;
+function monetizationOn(){ return MONETIZATION_ENABLED||!!window.__forceMonetization; }
+const TRIAL_DAYS=7;
+// Free tier limits -- deliberately generous enough to be genuinely usable
+// (a real single-child household works fine), so the paid tier sells on
+// breadth rather than on crippling the basics.
+const FREE_MAX_CHILDREN=1;
+const FREE_MAX_CHORES=4;
+
+/* entitlement shape (lives in the synced family record):
+     {plan:'legacy'|'premium'|'lifetime', expiresAt:<ms|null>, source, purchaseJson?, signature?}
+   'legacy'  -- family that existed before monetization; premium forever.
+   'premium' -- active subscription (expiresAt set).
+   'lifetime'-- one-time purchase (expiresAt null).
+   A Play-sourced entitlement is only honoured if its Google signature
+   verifies (see entitlementValid) -- that's what lets it be shared across
+   the family's several Google accounts without a server vouching for it. */
+function entitlementValid(e){
+  if(!e||!e.plan) return false;
+  if(e.expiresAt&&Date.now()>e.expiresAt) return false;
+  if(e.source==='play'){
+    // Verified natively where possible. When the bridge can't check (browser,
+    // or an APK predating it) we accept: without a server this is best-effort
+    // anyway, and refusing would lock out a genuinely paying customer.
+    const n=window.CoinQuestNative;
+    if(n&&typeof n.verifyPurchaseSignature==='function'&&e.purchaseJson&&e.signature){
+      try{ return !!n.verifyPurchaseSignature(e.purchaseJson,e.signature); }catch(err){ return true; }
+    }
+  }
+  return true;
+}
+function trialActive(){
+  if(!state.trialStartedAt) return false;
+  return (Date.now()-state.trialStartedAt) < TRIAL_DAYS*86400000;
+}
+function trialDaysLeft(){
+  if(!state.trialStartedAt) return 0;
+  return Math.max(0,Math.ceil((state.trialStartedAt+TRIAL_DAYS*86400000-Date.now())/86400000));
+}
+function entitlementPlan(){
+  if(!monetizationOn()) return 'legacy';
+  if(entitlementValid(state.entitlement)) return state.entitlement.plan;
+  return trialActive()?'trial':'free';
+}
+function isPremium(){ return entitlementPlan()!=='free'; }
+
+/* ---- feature gates ----
+   One funnel, so there is exactly one place that decides what's locked and
+   exactly one paywall. Note what is deliberately ABSENT: the calm toolkit.
+   Emotional-regulation tools for a dysregulated child are not a thing to put
+   behind a payment prompt, so they stay free on every plan, forever. */
+const PREMIUM_FEATURES={
+  multiChild:'יותר מילד אחד',
+  moreChores:'יותר מ-'+FREE_MAX_CHORES+' מטלות',
+  games:'משחקים וזמן מסך',
+  learning:'מכרה הידע',
+  streaks:'אתגרי רצף',
+  badges:'תגים',
+  events:'אירועים ותזכורות',
+  reports:'דוח שבועי להורים',
+};
+// Returns true when the caller may proceed. When it returns false it has
+// ALREADY told the user why -- callers just `if(!gate('x')) return;`.
+function gate(key){
+  if(!monetizationOn()||isPremium()) return true;
+  // Anything absent from PREMIUM_FEATURES is free by construction -- so the
+  // calm toolkit staying free isn't a promise someone has to remember, it's
+  // the default for every key that was never listed as paid.
+  if(!(key in PREMIUM_FEATURES)) return true;
+  showPaywall(key);
+  return false;
+}
+function featureLocked(key){ return monetizationOn()&&!isPremium()&&(key in PREMIUM_FEATURES); }
+
+/* ---- paywall ----
+   Two audiences, two completely different screens. A child must never be
+   shown sales copy or a price -- they get a neutral "this is a grown-up
+   setting" note and a way to fetch a parent. Purchase pressure tactics
+   (countdowns, "today only", shaming) are deliberately absent: this is an
+   app families rely on daily, not a funnel. */
+let _paywallProducts=null; // filled from the Play bridge when available
+function showPaywall(featureKey){
+  const label=PREMIUM_FEATURES[featureKey]||'הפיצ׳ר הזה';
+  // The gear/PIN gate is the app's existing notion of "a parent is present";
+  // outside the admin screens we must assume the child is holding the device.
+  const parentPresent=currentView==='admin';
+  if(!parentPresent){
+    modalContent.innerHTML=`<div class="m-emoji">🔒</div><h3>זה חלק של ההורים</h3>
+      <p>${esc(label)} נפתח דרך אמא או אבא.</p>
+      <div style="display:flex;gap:8px;margin-top:14px;">
+        <button class="btn ghost" onclick="closeModal()">סגור</button>
+        <button class="btn primary" onclick="closeModal();openAdmin()">קרא להורה</button>
+      </div>`;
+    modalBg.classList.add('show');
+    return;
+  }
+  const priceMonthly=(_paywallProducts&&_paywallProducts.premium_monthly)||'—';
+  const priceLifetime=(_paywallProducts&&_paywallProducts.premium_lifetime)||'—';
+  const trialNote=trialActive()
+    ? `<div style="background:#EAFBF3;border-radius:12px;padding:9px 11px;font-weight:700;font-size:.84rem;margin-bottom:10px;">נשארו ${trialDaysLeft()} ימי ניסיון — הכול פתוח בינתיים 🙂</div>`
+    : '';
+  modalContent.innerHTML=`<div class="m-emoji">⭐</div><h3>${esc(label)} — בגרסה המלאה</h3>
+    ${trialNote}
+    <div style="text-align:right;font-size:.86rem;line-height:1.9;margin-bottom:12px;">
+      הגרסה המלאה כוללת:<br>
+      👧 כמה ילדים שרוצים · 🧹 מטלות ללא הגבלה<br>
+      🎮 משחקים וזמן מסך · ⛏️ מכרה הידע<br>
+      🌟 אתגרי רצף · 🏅 תגים · 📅 אירועים · 📊 דוח להורים
+    </div>
+    <div style="background:#F2F0FB;border-radius:12px;padding:9px 11px;font-size:.8rem;margin-bottom:12px;">
+      🌿 כלי הרגיעה נשארים חינם תמיד, בכל גרסה.
+    </div>
+    <div style="display:flex;flex-direction:column;gap:8px;">
+      <button class="btn primary" onclick="startPurchase('premium_monthly')">⭐ מנוי חודשי · ${esc(priceMonthly)}</button>
+      <button class="btn gold" onclick="startPurchase('premium_lifetime')">♾️ רכישה לתמיד · ${esc(priceLifetime)}</button>
+      <button class="btn ghost sm" onclick="openRedeemCode()">יש לי קוד הטבה</button>
+      <button class="btn ghost sm" onclick="restorePurchases()">שחזור רכישה קיימת</button>
+      <button class="btn ghost sm" onclick="closeModal()">לא עכשיו</button>
+    </div>`;
+  modalBg.classList.add('show');
+}
+/* ---- Play Billing bridge (JS side; Kotlin in BillingManager.kt) ----
+   Everything degrades quietly when billing isn't reachable (browser, or the
+   family sideload flavour which is never monetized) -- the buttons explain
+   rather than fail. */
+function billingAvailable(){
+  const n=window.CoinQuestNative;
+  return !!(n&&typeof n.billingAvailable==='function'&&n.billingAvailable());
+}
+function refreshPaywallPrices(){
+  if(!billingAvailable()) return;
+  try{
+    const raw=window.CoinQuestNative.getProducts(); // JSON: {productId: "₪19.90", ...}
+    if(raw) _paywallProducts=JSON.parse(raw);
+  }catch(e){ console.error('getProducts failed',e); }
+}
+function startPurchase(productId){
+  if(!billingAvailable()){
+    modalMsg('🛒','לא זמין כאן','רכישה אפשרית רק דרך אפליקציית האנדרואיד שהותקנה מ-Google Play.');
+    return;
+  }
+  try{ window.CoinQuestNative.startPurchase(productId); }
+  catch(e){ toast('שגיאה בפתיחת הרכישה'); }
+}
+function restorePurchases(){
+  if(!billingAvailable()){ toast('שחזור אפשרי רק באפליקציה מ-Google Play'); return; }
+  try{ window.CoinQuestNative.restorePurchases(); toast('בודק רכישות קיימות...'); }
+  catch(e){ toast('שגיאה בשחזור'); }
+}
+function openRedeemCode(){
+  // Play has no in-app "enter code" surface we can host ourselves; the codes
+  // are redeemed in the Play Store and come back as an ordinary purchase.
+  modalContent.innerHTML=`<div class="m-emoji">🎁</div><h3>מימוש קוד הטבה</h3>
+    <p style="font-size:.88rem;">קודי הטבה נפדים בחנות Google Play. אחרי המימוש חזרו לכאן — הגרסה המלאה תיפתח אוטומטית.</p>
+    <div style="display:flex;gap:8px;margin-top:14px;">
+      <button class="btn ghost" onclick="closeModal()">סגור</button>
+      <button class="btn primary" onclick="openPlayRedeem()">פתח את Google Play</button>
+    </div>`;
+  modalBg.classList.add('show');
+}
+function openPlayRedeem(){
+  const n=window.CoinQuestNative;
+  if(n&&typeof n.openUrl==='function'){ try{ n.openUrl('https://play.google.com/redeem'); return; }catch(e){} }
+  window.open('https://play.google.com/redeem','_blank');
+}
+/* Called from Kotlin once Play has confirmed AND locally verified a purchase.
+   The signed payload is stored in the family record so every device -- each on
+   its own Google account -- can re-verify it independently. */
+async function onPurchaseVerified(productId,purchaseJson,signature,expiresAt){
+  const plan=productId==='premium_lifetime'?'lifetime':'premium';
+  state.entitlement={plan,expiresAt:expiresAt||null,source:'play',purchaseJson,signature};
+  await DB.set('cs_entitlement',state.entitlement);
+  closeModal();
+  renderPlanStatus();
+  modalMsg('🎉','תודה!','הגרסה המלאה נפתחה בכל מכשירי המשפחה.');
+}
+function onPurchaseFailed(msg){
+  // A user-cancelled flow is not an error worth a dialog.
+  if(msg&&/cancel/i.test(msg)) return;
+  toast('הרכישה לא הושלמה');
+}
+// Trial state for the parent only -- rendered into the admin settings pane,
+// never onto a child-facing screen.
+function renderPlanStatus(){
+  const el=document.getElementById('planStatus'); if(!el) return;
+  if(!monetizationOn()){ el.style.display='none'; return; }
+  el.style.display='block';
+  const plan=entitlementPlan();
+  const txt={
+    legacy:'✅ גרסה מלאה — לתמיד (משתמש ותיק, תודה!)',
+    lifetime:'✅ גרסה מלאה — נרכשה לתמיד',
+    premium:'✅ מנוי פעיל'+(state.entitlement&&state.entitlement.expiresAt?' — מתחדש ב-'+new Date(state.entitlement.expiresAt).toLocaleDateString('he-IL'):''),
+    trial:'⏳ תקופת ניסיון — נשארו '+trialDaysLeft()+' ימים',
+    free:'🔒 גרסה חינמית מוגבלת',
+  }[plan]||'';
+  el.innerHTML=`<div style="font-weight:800;margin-bottom:6px;">${txt}</div>`+
+    (plan==='trial'||plan==='free'
+      ? `<button class="btn primary sm" onclick="showPaywall('games')">⭐ שדרוג לגרסה המלאה</button>`
+      : '');
+}
 // Default games must be frame-embeddable (no X-Frame-Options/frame-ancestors
 // blocking). The primary game is SELF-HOSTED (games/classicube/ — the
 // open-source ClassiCube webclient launched straight into singleplayer):
@@ -412,6 +625,23 @@ async function loadState(){
   state.learning=(await DB.get('cs_learning'))??DEFAULT_LEARNING;
   state.pin     =(await DB.get('cs_pin'))     ??'1234';
   state.pinHash =(await DB.get('cs_pinhash')) ??null; // family-wide parent code (hash only) -- see savePin/verifyPin
+  state.entitlement   =(await DB.get('cs_entitlement'))   ??null;
+  state.trialStartedAt=(await DB.get('cs_trial_started')) ??null;
+  // Grandfathering: a family that already existed when monetization arrives
+  // keeps everything, forever, for free. Written unconditionally (not only
+  // when the flag is on) so the record is already in place, and already
+  // synced, before the switch is ever flipped.
+  // Must test PERSISTED data, not state.children -- that falls back to
+  // DEFAULT_CHILDREN on a fresh install, which would hand a free lifetime
+  // licence to every brand-new download. Several signals, because a long-time
+  // family might have persisted any one of them first, and wrongly charging
+  // an existing user is far worse than wrongly gifting a rare edge case.
+  const preExisting=!!(await DB.get('cs_children'))||!!(await DB.get('cs_familyid'))
+    ||!!(await DB.get('cs_chores'))||!!(await DB.get('cs_bal_ariel'));
+  if(!state.entitlement&&!state.trialStartedAt&&preExisting){
+    state.entitlement={plan:'legacy',expiresAt:null,source:'grandfather'};
+    await DB.set('cs_entitlement',state.entitlement);
+  }
   state.calmMode=(await DB.get('cs_calm'))    ??false;
   // Bedtime game gate (parent-controlled, on by default): banked game time is
   // otherwise spendable at any hour, so a child with a full wallet could play
@@ -772,6 +1002,16 @@ function go(v){
   if(v==='games') renderGamesView();
   if(v==='learn') initLearningView();
   updateKeepScreenOn();
+}
+// Gated navigation: used by the home tiles and bottom nav so a locked screen
+// explains itself instead of opening empty. Kept separate from go() itself --
+// go() is also called internally (restore-on-launch, post-purchase refresh)
+// where a paywall would be wrong.
+const VIEW_FEATURE={games:'games',learn:'learning',streak:'streaks',badges:'badges'};
+function goGated(v){
+  const f=VIEW_FEATURE[v];
+  if(f&&!gate(f)) return;
+  go(v);
 }
 // Self-heal: if something upstream (a thrown error mid-render, a race
 // between two go() calls, etc.) ever leaves zero .view elements with
@@ -2537,7 +2777,7 @@ function adminTab(t){
   if(t==='events') renderEventsAdmin();
   if(t==='badges') renderBadgesAdmin();
   if(t==='report') renderReportAdmin();
-  if(t==='settings'){ fillAccountSettings(); fillCalmToggle(); fillChoreReminderSettings(); renderEnforcementWarning(); updateParentDeviceModeCardVisibility(); renderCalmPrefsAdmin(); fillChatAdmin(); }
+  if(t==='settings'){ fillAccountSettings(); fillCalmToggle(); fillChoreReminderSettings(); renderEnforcementWarning(); updateParentDeviceModeCardVisibility(); renderCalmPrefsAdmin(); fillChatAdmin(); refreshPaywallPrices(); renderPlanStatus(); warnIfDefaultPin(); }
 }
 // C11 (CALM-UPGRADE-PLAN): reused by the body-sensation chips (C8's log
 // field) here in the parent report -- kept as its own constant rather than
@@ -2706,6 +2946,7 @@ function pickKidColor(inputId,color,btn){
   btn.classList.add('sel');
 }
 async function addChild(){
+  if(state.children.length>=FREE_MAX_CHILDREN&&!gate('multiChild')) return;
   const name=document.getElementById('newKidName').value.trim();
   if(!name){ toast('צריך שם'); return; }
   const emoji=document.getElementById('newKidEmoji').value.trim()||'🙂';
@@ -3023,6 +3264,7 @@ async function removeChorePhoto(i){
 }
 async function delChore(i){ await delWithUndo(state.chores,i,'cs_chores',renderChoresAdmin,'המטלה'); }
 async function addChore(){
+  if(state.chores.length>=FREE_MAX_CHORES&&!gate('moreChores')) return;
   const label=document.getElementById('newChoreLabel').value.trim(); if(!label){ toast('צריך שם למטלה'); return; }
   const emoji=document.getElementById('newChoreEmoji').value.trim()||'⭐';
   const points=parseInt(document.getElementById('newChorePoints').value)||5, max=parseInt(document.getElementById('newChoreMax').value)||1;
@@ -3861,6 +4103,14 @@ async function verifyPin(entered){
     return h===state.pinHash;
   }
   return entered===state.pin;
+}
+// M4.2: '1234' is a fine bootstrap default for a private family build, but it
+// must not survive into a shipped product where it's the documented, publicly
+// known way into every un-configured install's parent area.
+function usingDefaultPin(){ return !state.pinHash && state.pin==='1234'; }
+function warnIfDefaultPin(){
+  const el=document.getElementById('defaultPinWarning'); if(!el) return;
+  el.style.display=(monetizationOn()&&usingDefaultPin())?'block':'none';
 }
 async function savePin(){
   const v=document.getElementById('setPin').value.trim();
@@ -5362,6 +5612,7 @@ function buildSyncPayload(){
   // is enough to make every device accept the same code without any device
   // (or the cloud) ever holding the code in a readable form.
   const payload={pinHash:state.pinHash||null,
+    entitlement:state.entitlement||null, trialStartedAt:state.trialStartedAt||null,
     children:state.children,chores:state.chores,actions:state.actions,
     rewards:state.rewards,math:state.math,streaks:state.streaks,badgeDefs:state.badgeDefs,
     anchored:state.anchored,events:state.events||[],hwmDate:_hwmDate,calmMode:state.calmMode,
@@ -5509,6 +5760,14 @@ async function applyRemoteSnapshot(data){
     // can't silently change (and lock someone out of) an existing device.
     if(data.pinHash){
       state.pinHash=data.pinHash; await DB.set('cs_pinhash',data.pinHash);
+    }
+    if(data.entitlement){
+      state.entitlement=data.entitlement; await DB.set('cs_entitlement',data.entitlement);
+    }
+    // Earliest wins: a second device joining the family must not restart (or
+    // extend) the trial by pushing its own later start date.
+    if(data.trialStartedAt&&(!state.trialStartedAt||data.trialStartedAt<state.trialStartedAt)){
+      state.trialStartedAt=data.trialStartedAt; await DB.set('cs_trial_started',data.trialStartedAt);
     }
     // The high-water-mark date IS synced so wiping/reinstalling the app on one
     // device can't roll back the anti-clock-tamper guard for the whole family.
@@ -6153,6 +6412,13 @@ async function finishWizard(){
   state.pin=pin;
   await DB.set('cs_children',state.children);
   await DB.set('cs_pin',pin);
+  // A genuinely new family starts its free trial here -- and explicitly gets
+  // NO 'legacy' entitlement, which is what separates it from a pre-existing
+  // family being grandfathered in loadState().
+  if(!state.trialStartedAt){
+    state.trialStartedAt=Date.now();
+    await DB.set('cs_trial_started',state.trialStartedAt);
+  }
   // Establish the family-wide code from the start, so a second device joining
   // this family later adopts it instead of keeping its own (see savePin).
   state.pinHash=await hashPin(pin); await DB.set('cs_pinhash',state.pinHash);

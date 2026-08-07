@@ -138,8 +138,8 @@
         <button class="bigbtn math" onclick="go('math')"><span class="ic">➗</span>חשבון<span class="sub">פתור תרגילים והרווח</span></button>
         <button class="bigbtn rewards" onclick="go('rewards')"><span class="ic">🎁</span>פרסים<span class="sub">החלף מטבעות בפרסים</span></button>
         <button class="bigbtn history" onclick="go('history')"><span class="ic">📜</span>היומן שלי<span class="sub">כל מה שהרווחת</span></button>
-        <button class="bigbtn learn" onclick="go('learn')"><span class="ic">⛏️</span>מכרה הידע<span class="sub">למד והרווח מטבעות</span></button>
-        <button class="bigbtn games" onclick="go('games')"><span class="ic">🎮</span>המשחקים שלי<span class="sub">שחק עם זמן שקנית</span></button>
+        <button class="bigbtn learn" onclick="goGated('learn')"><span class="ic">⛏️</span>מכרה הידע<span class="sub">למד והרווח מטבעות</span></button>
+        <button class="bigbtn games" onclick="goGated('games')"><span class="ic">🎮</span>המשחקים שלי<span class="sub">שחק עם זמן שקנית</span></button>
       </div>
 
       <div id="eventsWrap"></div>
@@ -729,6 +729,9 @@
           <div id="calmLogStats"></div>
         </div>
         <div class="card">
+          <div id="defaultPinWarning" style="display:none;background:#FFE9E4;border-radius:12px;padding:10px 12px;margin-bottom:10px;font-size:.84rem;font-weight:700;color:#8a3410;">
+            ⚠️ עדיין בשימוש קוד ההורים הראשוני (1234) — הוא ידוע לכולם. כדאי מאוד לשנות אותו עכשיו.
+          </div>
           <div class="field"><label>שנה קוד הורים (PIN)</label><input id="setPin" type="number" placeholder="קוד חדש">
             <div class="card-sub" style="margin-top:6px;">הקוד שתגדירו כאן יחול על <b>כל מכשירי המשפחה</b> — הקוד הישן בשאר המכשירים יפסיק לעבוד. הקוד עצמו לא נשמר בענן, רק חתימה מוצפנת שלו.</div>
           </div>
@@ -812,6 +815,9 @@
             </button>
             <div id="settingsAuthStatus" style="font-size:.82rem;color:var(--ink2);min-height:18px;margin-bottom:6px;"></div>
           </div>
+          <!-- Plan / trial state. Parent-facing only (this is inside the
+               PIN-gated admin pane); hidden entirely while monetization is off. -->
+          <div id="planStatus" style="display:none;background:#F2F0FB;border-radius:12px;padding:10px 12px;margin-bottom:10px;font-size:.84rem;"></div>
           <div id="syncStatus" style="font-size:.85rem;font-weight:700;margin-bottom:10px;min-height:20px;"></div>
           <div id="accountInviteBox" style="display:none;margin-bottom:12px;">
             <div class="card-sub" style="margin-bottom:6px;">קוד הזמנה להורה נוסף — כל מי שמזין אותו מצטרף לאותה משפחה:</div>
@@ -856,7 +862,7 @@
          economy funnels (and what the child actually wants to reach), while
          the history journal is a rare, reflective visit -- it stays one tap
          away via the "היומן שלי" tile on the home grid. -->
-    <button class="navbtn" data-nav="games" onclick="go('games')"><span class="ic">🎮</span>משחקים</button>
+    <button class="navbtn" data-nav="games" onclick="goGated('games')"><span class="ic">🎮</span>משחקים</button>
     <button class="navbtn" data-nav="chat" onclick="go('chat')" style="display:none;"><span class="ic">💬</span>צ'אט</button>
   </div>
 

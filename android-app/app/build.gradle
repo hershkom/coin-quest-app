@@ -97,4 +97,10 @@ dependencies {
     // rejects the web OAuth flow when it detects it's running inside a
     // WebView, by design, since ~2016). See MainActivity's googleSignInClient.
     implementation 'com.google.android.gms:play-services-auth:21.2.0'
+    // Play Billing 8 -- required for any new submission from 31 Aug 2026
+    // onwards, so starting below it would mean an immediate forced migration.
+    // Plain artifact, NOT billing-ktx: the ktx variant ships Kotlin 2.1
+    // metadata which this project's Kotlin 1.9 toolchain refuses to read. The
+    // Java API is all this integration needs.
+    implementation 'com.android.billingclient:billing:8.0.0'
 }

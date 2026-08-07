@@ -30,6 +30,21 @@ async function openAdminWithPin(page) {
 // the one-time first-open social story (C10) -- pre-marks it as already seen
 // for the CURRENTLY selected child, matching how a returning child (not
 // their first-ever open) experiences the modal. Call after selectChild().
+// Games are blocked after the family's bedtime hour -- a real feature, but it
+// would otherwise make every game test's result depend on what time of day the
+// suite happens to run. Tests about anything OTHER than bedtime opt out.
+async function disableBedtimeGate(page) {
+  await page.evaluate(() => { state.gameBedtime = false; });
+}
+
+// Pins the clock to a fixed weekday mid-morning. Anything asserting on
+// time-of-day windows needs this: run late enough in the evening and the app
+// legitimately switches the whole task list to "time for bed", which has
+// nothing to do with what those tests are checking.
+async function pinToMorning(page) {
+  await page.clock.setFixedTime(new Date('2026-01-15T10:00:00'));
+}
+
 async function openCalmModal(page) {
   await page.evaluate(() => DB.set('cs_calmintro_' + state.current, true));
   await page.locator('.break-btn').click();
@@ -203,6 +218,7 @@ test.describe('required tasks gate game launches', () => {
   test('a required task blocks starting a game until done, then unblocks', async ({ page }) => {
     await enterLocalOnly(page);
     await selectChild(page, 'נועה');
+    await disableBedtimeGate(page); // this test is about required tasks, not bedtime
     await page.evaluate(async () => {
       const k = cur(); k.gtime = 600; await DB.set('cs_gtime_noa', 600);
       state.chores.push({ id: 'test_req', label: 'מטלת חובה', emoji: '🎯', points: 2, max: 1, required: true });
@@ -262,6 +278,7 @@ test.describe('unified chores + anchored (time-window) tasks', () => {
   // optional `period` tag; this proves the tag actually governs visibility
   // for ANY child (not just schedule ones), with no duplication.
   test('a task tagged with the current period shows now and is hidden in a different period, for schedule AND non-schedule children', async ({ page }) => {
+    await pinToMorning(page);
     await enterLocalOnly(page);
     await selectChild(page, 'נועה'); // useSchedule:false
     const now = await page.evaluate(() => getTimeOfDay(new Date().getHours()));
@@ -286,6 +303,7 @@ test.describe('unified chores + anchored (time-window) tasks', () => {
   // A task with NO period is unrestricted -- always visible regardless of
   // time of day, for either kind of child.
   test('a task with no period is always visible ("anytime")', async ({ page }) => {
+    await pinToMorning(page);
     await enterLocalOnly(page);
     await selectChild(page, 'אריאל');
     await page.evaluate(() => {
@@ -1057,6 +1075,149 @@ test.describe('anti-cheat invariants', () => {
   });
 });
 
+test.describe('monetization (all gated behind the master switch)', () => {
+  // The single most important guarantee: with the switch off, nothing about
+  // the app changes. Every other test file asserts current behaviour, so if
+  // this regressed the whole suite would light up -- this states it directly.
+  test('with monetization off, everything is unlocked and no paywall can open', async ({ page }) => {
+    await enterLocalOnly(page);
+    await selectChild(page, 'אריאל');
+    const res = await page.evaluate(() => ({
+      on: monetizationOn(), premium: isPremium(), plan: entitlementPlan(),
+      gateGames: gate('games'), gateChild: gate('multiChild'),
+      modalOpen: document.getElementById('modalBg').classList.contains('show'),
+    }));
+    expect(res.on).toBe(false);
+    expect(res.premium).toBe(true);
+    expect(res.plan).toBe('legacy');
+    expect(res.gateGames).toBe(true);
+    expect(res.gateChild).toBe(true);
+    expect(res.modalOpen).toBe(false); // gates that pass must never show a paywall
+  });
+
+  test('an existing family is grandfathered to a permanent full licence', async ({ page }) => {
+    await enterLocalOnly(page);
+    await selectChild(page, 'אריאל');
+    // Simulate a device that was already in real use before monetization
+    // existed: persisted family data, but no entitlement and no trial.
+    await page.evaluate(async () => {
+      await DB.set('cs_children', state.children);
+      await DB.del('cs_entitlement'); await DB.del('cs_trial_started');
+    });
+    await page.reload();               // loadState() re-runs and must grandfather
+    await page.waitForFunction(() => typeof state !== 'undefined' && state.entitlement !== undefined);
+    const res = await page.evaluate(() => {
+      window.__forceMonetization = true;
+      return { ent: state.entitlement, plan: entitlementPlan(), premium: isPremium() };
+    });
+    expect(res.ent.plan).toBe('legacy');
+    expect(res.ent.source).toBe('grandfather');
+    expect(res.plan).toBe('legacy'); // even with monetization ON
+    expect(res.premium).toBe(true);
+  });
+
+  test('a free family is gated, and each gate names the feature in the paywall', async ({ page }) => {
+    await enterLocalOnly(page);
+    await selectChild(page, 'אריאל');
+    await page.evaluate(() => {
+      window.__forceMonetization = true;
+      state.entitlement = null; state.trialStartedAt = null; // plain free family
+      go('admin'); // paywall shows sales copy only when a parent is present
+    });
+    expect(await page.evaluate(() => entitlementPlan())).toBe('free');
+    expect(await page.evaluate(() => isPremium())).toBe(false);
+
+    await page.evaluate(() => gate('games'));
+    await expect(page.locator('#modalContent')).toContainText('משחקים וזמן מסך');
+    await expect(page.locator('#modalContent')).toContainText('מנוי חודשי');
+    await page.evaluate(() => closeModal());
+
+    await page.evaluate(() => gate('multiChild'));
+    await expect(page.locator('#modalContent')).toContainText('יותר מילד אחד');
+  });
+
+  test('an active trial unlocks everything and reports the days left', async ({ page }) => {
+    await enterLocalOnly(page);
+    await selectChild(page, 'אריאל');
+    const res = await page.evaluate(() => {
+      window.__forceMonetization = true;
+      state.entitlement = null;
+      state.trialStartedAt = Date.now() - 2 * 86400000; // day 3 of 7
+      return { plan: entitlementPlan(), premium: isPremium(), left: trialDaysLeft(), gate: gate('games') };
+    });
+    expect(res.plan).toBe('trial');
+    expect(res.premium).toBe(true);
+    expect(res.left).toBe(5);
+    expect(res.gate).toBe(true);
+  });
+
+  test('an expired trial falls back to free, and an expired subscription does too', async ({ page }) => {
+    await enterLocalOnly(page);
+    await selectChild(page, 'אריאל');
+    const res = await page.evaluate(() => {
+      window.__forceMonetization = true;
+      state.entitlement = null;
+      state.trialStartedAt = Date.now() - 30 * 86400000;
+      const afterTrial = entitlementPlan();
+      state.entitlement = { plan: 'premium', expiresAt: Date.now() - 1000, source: 'play' };
+      const afterSub = entitlementPlan();
+      state.entitlement = { plan: 'lifetime', expiresAt: null, source: 'play' };
+      const lifetime = entitlementPlan();
+      return { afterTrial, afterSub, lifetime };
+    });
+    expect(res.afterTrial).toBe('free');
+    expect(res.afterSub).toBe('free');   // lapsed subscription must not linger
+    expect(res.lifetime).toBe('lifetime'); // no expiry === never lapses
+  });
+
+  test('a child hitting a locked feature sees a neutral note, never sales copy or a price', async ({ page }) => {
+    await enterLocalOnly(page);
+    await selectChild(page, 'אריאל');
+    await page.evaluate(() => {
+      window.__forceMonetization = true;
+      state.entitlement = null; state.trialStartedAt = null;
+      go('home');            // a child-facing screen
+      gate('games');
+    });
+    await expect(page.locator('#modalContent')).toContainText('אמא או אבא');
+    await expect(page.locator('#modalContent')).not.toContainText('מנוי חודשי');
+    await expect(page.locator('#modalContent')).not.toContainText('₪');
+  });
+
+  test('the calm toolkit is never gated, on any plan', async ({ page }) => {
+    await enterLocalOnly(page);
+    await selectChild(page, 'אריאל');
+    await page.evaluate(() => {
+      window.__forceMonetization = true;
+      state.entitlement = null; state.trialStartedAt = null;
+    });
+    expect(await page.evaluate(() => isPremium())).toBe(false);
+    // No calm key exists in the premium map, so gate() lets it straight through.
+    expect(await page.evaluate(() => gate('calm'))).toBe(true);
+    await openCalmModal(page);
+    await expect(page.locator('#calmMenu')).toBeVisible();
+    await expect(page.locator('#modalBg')).not.toHaveClass(/show/); // no paywall appeared
+  });
+
+  test('a Play entitlement whose signature fails verification is not honoured', async ({ page }) => {
+    await enterLocalOnly(page);
+    await selectChild(page, 'אריאל');
+    const res = await page.evaluate(() => {
+      window.__forceMonetization = true;
+      state.trialStartedAt = null;
+      state.entitlement = { plan: 'lifetime', expiresAt: null, source: 'play', purchaseJson: '{}', signature: 'forged' };
+      window.CoinQuestNative = { verifyPurchaseSignature: () => false };
+      const rejected = entitlementPlan();
+      window.CoinQuestNative = { verifyPurchaseSignature: () => true };
+      const accepted = entitlementPlan();
+      delete window.CoinQuestNative;
+      return { rejected, accepted };
+    });
+    expect(res.rejected).toBe('free');
+    expect(res.accepted).toBe('lifetime');
+  });
+});
+
 test.describe('family-wide parent code', () => {
   test('the plaintext code never reaches the sync payload — only a hash', async ({ page }) => {
     await enterLocalOnly(page);
@@ -1296,6 +1457,7 @@ test.describe('native game (real purchased app, e.g. Minecraft)', () => {
   test('is visibly locked and explains itself when the native bridge is absent', async ({ page }) => {
     await enterLocalOnly(page);
     await selectChild(page, 'אריאל');
+    await disableBedtimeGate(page); // the bedtime lock would mask the native-missing one
     await page.evaluate(async () => { const k = cur(); k.gtime = 300; await DB.set('cs_gtime_ariel', 300); });
     await page.evaluate(() => go('games'));
 
@@ -1488,6 +1650,7 @@ test.describe('pre-game learning gate (L6)', () => {
   test('gate is non-blocking: even 3 wrong answers still starts the game session afterward', async ({ page }) => {
     await enterLocalOnly(page);
     await selectChild(page, 'נועה');
+    await disableBedtimeGate(page);
     const result = await page.evaluate(async () => {
       state.learning.gateEnabled = true;
       state.learning.enabled = true;
@@ -1509,6 +1672,7 @@ test.describe('pre-game learning gate (L6)', () => {
   test('gate disabled (default): launching a game skips straight to the session with no modal', async ({ page }) => {
     await enterLocalOnly(page);
     await selectChild(page, 'נועה');
+    await disableBedtimeGate(page);
     await page.evaluate(() => {
       const k = cur(); k.gtime = 600;
       const g = state.games.find(x => !x.native);

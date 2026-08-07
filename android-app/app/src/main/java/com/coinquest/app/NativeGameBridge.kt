@@ -37,6 +37,10 @@ class NativeGameBridge(private val activity: Activity, private val webView: WebV
 
     private var tts: TextToSpeech? = null
     @Volatile private var ttsReady = false
+    // Created lazily on first use: the family sideload flavour is never
+    // monetized, and with no PLAY_PUBLIC_KEY configured BillingManager.start()
+    // is a no-op anyway, so nothing is spun up needlessly.
+    private var billing: BillingManager? = null
 
     init {
         instance = this
@@ -148,6 +152,70 @@ class NativeGameBridge(private val activity: Activity, private val webView: WebV
                     activity.startActivity(Intent("com.android.settings.TTS_SETTINGS"))
                 } catch (e2: Exception) { /* no TTS settings screen reachable on this device */ }
             }
+        }
+    }
+
+    /* ===== Google Play Billing (see BillingManager + MONETIZATION-PLAN.md) ===== */
+
+    private fun billingManager(): BillingManager {
+        billing?.let { return it }
+        val m = BillingManager(activity) { event, payload ->
+            // Hop back to the WebView's thread -- Billing callbacks arrive on
+            // a background thread and evaluateJavascript must not be called
+            // from there.
+            activity.runOnUiThread {
+                when (event) {
+                    "verified" -> {
+                        val o = org.json.JSONObject(payload)
+                        val js = "window.onPurchaseVerified && onPurchaseVerified(" +
+                            jsStr(o.optString("productId")) + "," +
+                            jsStr(o.optString("originalJson")) + "," +
+                            jsStr(o.optString("signature")) + ",null)"
+                        webView.evaluateJavascript(js, null)
+                    }
+                    "failed" -> webView.evaluateJavascript(
+                        "window.onPurchaseFailed && onPurchaseFailed(" + jsStr(payload) + ")", null)
+                }
+            }
+        }
+        m.start()
+        billing = m
+        return m
+    }
+
+    /** JSON-quotes a string for safe interpolation into evaluateJavascript. */
+    private fun jsStr(s: String): String = org.json.JSONObject.quote(s)
+
+    @JavascriptInterface
+    fun billingAvailable(): Boolean = try { billingManager().isAvailable() } catch (e: Exception) { false }
+
+    @JavascriptInterface
+    fun getProducts(): String = try { billingManager().productsJson() } catch (e: Exception) { "{}" }
+
+    @JavascriptInterface
+    fun startPurchase(productId: String) {
+        activity.runOnUiThread { try { billingManager().launchPurchase(productId) } catch (e: Exception) {} }
+    }
+
+    @JavascriptInterface
+    fun restorePurchases() {
+        try { billingManager().restorePurchases() } catch (e: Exception) {}
+    }
+
+    /** Re-verifies an entitlement that reached this device through family sync
+     *  rather than through this device's own Play account -- the mechanism that
+     *  lets one parent's purchase unlock the child's separately-signed-in
+     *  device without a server vouching for it. */
+    @JavascriptInterface
+    fun verifyPurchaseSignature(json: String, signature: String): Boolean =
+        try { billingManager().verifyExternal(json, signature) } catch (e: Exception) { false }
+
+    /** Opens an external URL in the real browser (used for Play redeem). */
+    @JavascriptInterface
+    fun openUrl(url: String) {
+        activity.runOnUiThread {
+            try { activity.startActivity(Intent(Intent.ACTION_VIEW, android.net.Uri.parse(url))) }
+            catch (e: Exception) { /* no browser available */ }
         }
     }
 
