@@ -520,7 +520,17 @@
             <button class="btn sm" id="learnReadAloudToggle" onclick="toggleLearningReadAloud()">פעיל ✓</button>
           </div>
           <div class="card-sub" id="ttsVoiceWarning" style="display:none;background:#FFF6E0;border-radius:12px;padding:10px 12px;margin-bottom:12px;">
-            ⚠️ למכשיר הזה אין קול עברי מותקן להקראה — לכן השאלות לא נשמעות. <button class="btn sm gold" onclick="openTtsVoiceSettings()" style="margin-top:6px;">התקן קול עברי</button>
+            <b>⚠️ אין קול עברי במנוע הדיבור של המכשיר — לכן השאלות לא נשמעות.</b>
+            <div style="margin-top:6px;">חשוב לדעת: מנוע ברירת המחדל של Google <b>לא כולל עברית בכלל</b>, ולכן במסך "התקנת נתוני קול" לא תופיע עברית כמה שלא תחפשו. הפתרון הוא <b>להחליף מנוע דיבור</b>, לא להתקין שפה למנוע הנוכחי:</div>
+            <ol style="margin:6px 18px 0 0;padding:0;line-height:1.7;">
+              <li>אם זה מכשיר <b>Samsung</b> — בחרו במנוע "Samsung text-to-speech", שם עברית קיימת.</li>
+              <li>אחרת — התקינו מ-Google Play מנוע דיבור שתומך בעברית, ואז בחרו בו כמנוע ברירת המחדל.</li>
+            </ol>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;">
+              <button class="btn sm gold" onclick="openTtsEngineSettings()">הגדרות מנוע דיבור</button>
+              <button class="btn sm ghost" onclick="openTtsVoiceSettings()">מסך התקנת שפות</button>
+            </div>
+            <div style="margin-top:8px;font-size:.94em;">אם אין מנוע עברי זמין למכשיר הזה — ההקראה בעברית לא תוכל לעבוד בו, וזו מגבלה של המכשיר ולא של האפליקציה.</div>
           </div>
           <!-- Silence has several possible causes (old APK with no native
                bridge, no Hebrew voice pack, read-aloud switched off, muted

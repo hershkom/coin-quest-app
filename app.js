@@ -3460,6 +3460,15 @@ function renderTtsVoiceWarning(){
 function openTtsVoiceSettings(){
   if(window.CoinQuestNative&&typeof window.CoinQuestNative.openTtsSettings==='function') window.CoinQuestNative.openTtsSettings();
 }
+// The engine picker -- the screen that actually helps when the current engine
+// has no Hebrew (see NativeGameBridge.openTtsEngineSettings). Falls back to
+// the install-data screen on an APK built before that method existed, so the
+// button still does something on a device that hasn't been updated yet.
+function openTtsEngineSettings(){
+  const n=window.CoinQuestNative; if(!n) return;
+  if(typeof n.openTtsEngineSettings==='function') n.openTtsEngineSettings();
+  else if(typeof n.openTtsSettings==='function') n.openTtsSettings();
+}
 /* ---- read-aloud diagnostics ----
    "There's just no speech" has at least four distinct causes that look
    identical from the outside: the read-aloud switch is off (and it's a SYNCED
@@ -3476,7 +3485,18 @@ function ttsDiagnostics(){
   if(WEB_TTS_SUPPORTED){
     try{ hebrewWeb=speechSynthesis.getVoices().some(v=>/^he/i.test(v.lang||'')); }catch(e){ hebrewWeb=null; }
   }
-  return {bridge,engineReady,canAskVoice,hebrewNative,hebrewWeb,
+  // Only present on an APK new enough to expose it (see ttsEngineInfo).
+  let engines=[];
+  try{
+    if(bridge&&typeof window.CoinQuestNative.ttsEngineInfo==='function'){
+      engines=(window.CoinQuestNative.ttsEngineInfo()||'').split(',').filter(Boolean).map(s=>{
+        const isDefault=s.startsWith('*');
+        const [name,label]=(isDefault?s.slice(1):s).split('|');
+        return {name,label,isDefault};
+      });
+    }
+  }catch(e){}
+  return {bridge,engineReady,canAskVoice,hebrewNative,hebrewWeb,engines,
     readAloud:state.learning.readAloud!==false,
     webSupported:WEB_TTS_SUPPORTED,
     inApp:!!window.CoinQuestNative};
@@ -3492,6 +3512,14 @@ function renderTtsDiagnostics(){
   if(d.bridge) html+=row(d.engineReady,'מנוע הדיבור של אנדרואיד מוכן');
   if(d.canAskVoice) html+=row(d.hebrewNative,'מותקן קול עברי במכשיר');
   if(!d.inApp||!d.bridge) html+=row(d.hebrewWeb,'קול עברי בדפדפן');
+  // Naming the engine turns "no Hebrew voice" into something the parent can
+  // act on -- Google's engine has no Hebrew at all, so seeing it named here
+  // explains why the install-languages screen never lists Hebrew.
+  if(d.engines&&d.engines.length){
+    const cur=d.engines.find(e=>e.isDefault);
+    if(cur) html+=`<div style="padding:2px 0;">🔧 מנוע הדיבור בשימוש: <b>${esc(cur.label||cur.name)}</b></div>`;
+    if(d.engines.length>1) html+=`<div style="padding:2px 0;color:var(--muted);">מנועים נוספים מותקנים: ${esc(d.engines.filter(e=>!e.isDefault).map(e=>e.label||e.name).join(', '))}</div>`;
+  }
   // Name the single most likely cause instead of leaving a parent to interpret
   // a checklist -- ordered by which failure actually blocks speech first.
   let verdict='';

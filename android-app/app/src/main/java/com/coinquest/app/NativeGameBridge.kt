@@ -131,7 +131,13 @@ class NativeGameBridge(private val activity: Activity, private val webView: WebV
 
     /** Opens the system screen for installing missing TTS voice data (falls
      *  back to the general TTS settings screen if the install-data action
-     *  isn't handled on this device/engine). */
+     *  isn't handled on this device/engine).
+     *
+     *  NOTE: this screen only ever lists languages the CURRENTLY SELECTED
+     *  engine can provide. Google's engine ships no Hebrew at all, so on most
+     *  devices Hebrew will simply not appear here however long you look --
+     *  the fix is to select a different engine, not to install data for this
+     *  one. openTtsEngineSettings() below is the screen that actually helps. */
     @JavascriptInterface
     fun openTtsSettings() {
         activity.runOnUiThread {
@@ -143,6 +149,39 @@ class NativeGameBridge(private val activity: Activity, private val webView: WebV
                 } catch (e2: Exception) { /* no TTS settings screen reachable on this device */ }
             }
         }
+    }
+
+    /** Opens the text-to-speech settings screen itself, where the DEFAULT
+     *  ENGINE is chosen. That's the actionable screen when the current engine
+     *  has no Hebrew: switching to one that does (Samsung TTS on Samsung
+     *  hardware, or an installed third-party engine) is what makes Hebrew
+     *  speech work at all. */
+    @JavascriptInterface
+    fun openTtsEngineSettings() {
+        activity.runOnUiThread {
+            try {
+                activity.startActivity(Intent("com.android.settings.TTS_SETTINGS"))
+            } catch (e: Exception) {
+                try {
+                    activity.startActivity(Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS))
+                } catch (e2: Exception) { /* nothing reachable */ }
+            }
+        }
+    }
+
+    /** "engine|label,engine|label,..." for every installed TTS engine, with
+     *  the current default marked by a leading '*'. Lets the parent-facing
+     *  diagnostic say WHICH engine is in use and whether a Hebrew-capable
+     *  alternative is even installed, instead of just "no Hebrew voice". */
+    @JavascriptInterface
+    fun ttsEngineInfo(): String {
+        val engine = tts ?: return ""
+        return try {
+            val def = engine.defaultEngine ?: ""
+            engine.engines.joinToString(",") { e ->
+                (if (e.name == def) "*" else "") + e.name + "|" + e.label
+            }
+        } catch (e: Exception) { "" }
     }
 
     /** Fixes Google Sign-In's "Error 403: disallowed_useragent" inside this
