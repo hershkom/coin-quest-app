@@ -21,8 +21,8 @@ android {
         applicationId "com.coinquest.app"
         minSdk 21
         targetSdk 35
-        versionCode 3
-        versionName "1.2"
+        versionCode 4
+        versionName "1.3"
     }
 
     // Two distribution channels with different policy exposure (S6/S7):
