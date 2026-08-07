@@ -3442,6 +3442,7 @@ function fillLearningConfig(){
   document.getElementById('learnGateToggle').textContent=state.learning.gateEnabled?'פעיל ✓':'כבוי';
   document.getElementById('learnReadAloudToggle').textContent=state.learning.readAloud!==false?'פעיל ✓':'כבוי';
   renderTtsVoiceWarning();
+  renderTtsDiagnostics();
   renderCustomQuestionsAdmin();
 }
 // Surfaces the actual root cause when quiz questions go silently unspoken:
@@ -3458,6 +3459,72 @@ function renderTtsVoiceWarning(){
 }
 function openTtsVoiceSettings(){
   if(window.CoinQuestNative&&typeof window.CoinQuestNative.openTtsSettings==='function') window.CoinQuestNative.openTtsSettings();
+}
+/* ---- read-aloud diagnostics ----
+   "There's just no speech" has at least four distinct causes that look
+   identical from the outside: the read-aloud switch is off (and it's a SYNCED
+   family setting, so joining another family can turn it off on a device that
+   had it on), the installed APK predates the native TTS bridge, the Android
+   engine has no Hebrew voice pack, or the device is simply muted. Reporting
+   each layer separately turns "it's broken" into one specific thing to fix. */
+function ttsDiagnostics(){
+  const bridge=!!(window.CoinQuestNative&&typeof window.CoinQuestNative.ttsSpeak==='function');
+  const engineReady=nativeTtsAvailable();
+  const canAskVoice=bridge&&typeof window.CoinQuestNative.hasVoiceForLanguage==='function';
+  const hebrewNative=canAskVoice?window.CoinQuestNative.hasVoiceForLanguage('he-IL'):null;
+  let hebrewWeb=null;
+  if(WEB_TTS_SUPPORTED){
+    try{ hebrewWeb=speechSynthesis.getVoices().some(v=>/^he/i.test(v.lang||'')); }catch(e){ hebrewWeb=null; }
+  }
+  return {bridge,engineReady,canAskVoice,hebrewNative,hebrewWeb,
+    readAloud:state.learning.readAloud!==false,
+    webSupported:WEB_TTS_SUPPORTED,
+    inApp:!!window.CoinQuestNative};
+}
+function renderTtsDiagnostics(){
+  const el=document.getElementById('ttsDiag'); if(!el) return;
+  const d=ttsDiagnostics();
+  const row=(ok,label)=>`<div style="padding:2px 0;">${ok===null?'❔':(ok?'✅':'❌')} ${label}</div>`;
+  let html='';
+  html+=row(d.readAloud,'ההקראה מופעלת בהגדרות (המתג למעלה)');
+  html+=row(d.inApp,'רץ בתוך אפליקציית האנדרואיד (לא בדפדפן)');
+  html+=row(d.bridge,'גרסת האפליקציה תומכת בהקראה');
+  if(d.bridge) html+=row(d.engineReady,'מנוע הדיבור של אנדרואיד מוכן');
+  if(d.canAskVoice) html+=row(d.hebrewNative,'מותקן קול עברי במכשיר');
+  if(!d.inApp||!d.bridge) html+=row(d.hebrewWeb,'קול עברי בדפדפן');
+  // Name the single most likely cause instead of leaving a parent to interpret
+  // a checklist -- ordered by which failure actually blocks speech first.
+  let verdict='';
+  if(!d.readAloud) verdict='הסיבה: ההקראה כבויה. הפעילו את המתג "🔊 הקראת שאלות ותשובות בקול" למעלה.';
+  else if(!d.inApp) verdict='נפתח בדפדפן ולא באפליקציה — ההקראה תלויה בקולות של הדפדפן ולרוב לא תעבוד בעברית.';
+  else if(!d.bridge) verdict='הסיבה: גרסת האפליקציה המותקנת ישנה ואין בה תמיכה בהקראה. צריך להתקין את הגרסה העדכנית של האפליקציה במכשיר הזה.';
+  else if(d.canAskVoice&&d.hebrewNative===false) verdict='הסיבה: אין קול עברי מותקן במכשיר. לחצו על "התקן קול עברי" למעלה.';
+  else verdict='כל הבדיקות תקינות — אם עדיין אין קול, בדקו שעוצמת המדיה במכשיר אינה על אפס ושהמכשיר לא במצב שקט.';
+  html+=`<div style="margin-top:7px;font-weight:800;">${verdict}</div>`;
+  el.innerHTML=html;
+}
+// getVoices() is commonly empty on the first call and fills in asynchronously;
+// without this the web-voice row would report a false ❌ on a device that does
+// have a Hebrew voice.
+if(WEB_TTS_SUPPORTED){
+  try{ speechSynthesis.addEventListener('voiceschanged',()=>renderTtsDiagnostics()); }catch(e){}
+}
+// Speaks a fixed phrase through the very same path the quiz uses, so a
+// "success" here genuinely means the quiz will speak too.
+function testTtsNow(){
+  const out=document.getElementById('ttsDiagResult');
+  if(out){ out.textContent='מנגן...'; out.style.color='var(--ink2)'; }
+  stopSpeaking();
+  let ended=false;
+  speakWithHighlight('שלום, אני קורא לך את השאלות',null,'he-IL',()=>{
+    ended=true;
+    if(out){ out.textContent='אם לא נשמע כלום — הבעיה היא בקול/עוצמת השמע במכשיר.'; out.style.color='var(--ink2)'; }
+  });
+  // ttsEnabled() short-circuits speakWithHighlight to an immediate finish, so
+  // distinguish "played" from "refused to even try".
+  setTimeout(()=>{
+    if(ended&&!ttsEnabled()&&out){ out.textContent='ההקראה כבויה או לא נתמכת — ראו את הבדיקה למעלה.'; out.style.color='var(--coral-d)'; }
+  },50);
 }
 // These toggles used to mutate state.learning in memory only -- a parent who
 // flipped one and left without pressing "save" saw it take effect immediately

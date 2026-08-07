@@ -522,6 +522,19 @@
           <div class="card-sub" id="ttsVoiceWarning" style="display:none;background:#FFF6E0;border-radius:12px;padding:10px 12px;margin-bottom:12px;">
             ⚠️ למכשיר הזה אין קול עברי מותקן להקראה — לכן השאלות לא נשמעות. <button class="btn sm gold" onclick="openTtsVoiceSettings()" style="margin-top:6px;">התקן קול עברי</button>
           </div>
+          <!-- Silence has several possible causes (old APK with no native
+               bridge, no Hebrew voice pack, read-aloud switched off, muted
+               device) and they are indistinguishable to a parent holding the
+               device. This reports each layer separately. renderTtsDiagnostics() -->
+          <div style="background:#F2F0FB;border-radius:12px;padding:10px 12px;margin-bottom:12px;">
+            <div style="font-weight:800;font-size:.86rem;margin-bottom:6px;">🔎 בדיקת הקראה במכשיר הזה</div>
+            <div id="ttsDiag" style="font-size:.8rem;"></div>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;">
+              <button class="btn mint sm" onclick="testTtsNow()">🔊 השמע בדיקה</button>
+              <button class="btn ghost sm" onclick="renderTtsDiagnostics()">↻ בדוק שוב</button>
+            </div>
+            <div id="ttsDiagResult" style="font-size:.8rem;font-weight:700;margin-top:6px;min-height:16px;"></div>
+          </div>
           <div class="field" style="display:flex;align-items:center;justify-content:space-between;">
             <label style="margin:0;">שער למידה לפני משחק (3 שאלות חימום, לא חוסם)</label>
             <button class="btn sm" id="learnGateToggle" onclick="toggleLearningGate()">כבוי</button>
