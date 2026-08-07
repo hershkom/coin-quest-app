@@ -795,6 +795,15 @@
               <button class="icon-btn" onclick="copyInviteCode()" title="העתק">📋</button>
             </div>
           </div>
+          <!-- Diagnostic: two devices are only really "synced" if this matches.
+               Different parent PINs are NOT a sync signal (the PIN is
+               deliberately device-local), which is the exact thing that made
+               a desync look like a sync bug and vice versa. -->
+          <div id="familyIdBox" style="display:none;margin-bottom:10px;background:#F2F0FB;border-radius:12px;padding:9px 11px;font-size:.8rem;">
+            מזהה המשפחה במכשיר הזה: <b id="familyIdShort" style="letter-spacing:1px;"></b>
+            <div style="color:var(--muted);margin-top:3px;">כדי ששני מכשירים יסתנכרנו, המזהה חייב להיות זהה בשניהם.<br>שימו לב: <b>קוד ההורים (PIN) נשמר בכל מכשיר בנפרד ואינו מסתנכרן</b> — קוד שונה בשני המכשירים זה תקין ולא מעיד על בעיית סנכרון.</div>
+          </div>
+          <button class="btn ghost sm" id="switchFamilyBtn" style="margin-bottom:8px;display:none;" onclick="showSwitchFamily()">🔗 הצטרפות למשפחה אחרת (קוד הזמנה)</button>
           <button class="btn mint sm" id="forceSyncBtn" style="margin-bottom:8px;display:none;" onclick="forceSyncNow().then(()=>toast('סונכרן ✓'))">🔄 סנכרן עכשיו</button>
           <!-- AN4 (ANDROID-APP-PLAN.md): the app's pull-to-refresh gesture is
                disabled inside the Android wrapper (a stray downward swipe

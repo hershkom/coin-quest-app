@@ -6065,23 +6065,97 @@ async function fillAccountSettings(){
   document.getElementById('forceSyncBtn').style.display='block';
   document.getElementById('signOutBtn').style.display='block';
   document.getElementById('deleteAccountBtn').style.display='block';
-  const rec=(await fbDb.ref('users/'+authUser.uid).once('value')).val();
-  if(rec&&rec.role==='owner'&&state.familyId){
-    let code=(await fbDb.ref('families/'+state.familyId+'/inviteCode').once('value')).val();
-    if(!code){
-      code=randomInviteCode();
-      await fbDb.ref('inviteCodes/'+code).set(state.familyId);
-      await fbDb.ref('families/'+state.familyId+'/inviteCode').set(code);
+  // Family identity + the escape hatch out of the wrong family. Rendered BEFORE
+  // the network reads below, and never behind them: these two controls are what
+  // a parent needs precisely when the cloud reads are failing (wrong family =
+  // permission-denied on the family node), and an unguarded await here used to
+  // abort the rest of this function, leaving no way to fix the problem at all.
+  const fidBox=document.getElementById('familyIdBox');
+  const swBtn=document.getElementById('switchFamilyBtn');
+  if(fidBox){
+    fidBox.style.display=state.familyId?'block':'none';
+    const short=document.getElementById('familyIdShort');
+    if(short) short.textContent=state.familyId||'—';
+  }
+  if(swBtn) swBtn.style.display='block';
+  // Owner-only invite code. Wrapped so a denied/offline read degrades to "no
+  // code shown" instead of taking the whole settings screen down with it.
+  try{
+    const rec=(await fbDb.ref('users/'+authUser.uid).once('value')).val();
+    if(rec&&rec.role==='owner'&&state.familyId){
+      let code=(await fbDb.ref('families/'+state.familyId+'/inviteCode').once('value')).val();
+      if(!code){
+        code=randomInviteCode();
+        await fbDb.ref('inviteCodes/'+code).set(state.familyId);
+        await fbDb.ref('families/'+state.familyId+'/inviteCode').set(code);
+      }
+      document.getElementById('inviteCodeText').textContent=code;
+      inviteBox.style.display='block';
+    }else{
+      inviteBox.style.display='none';
     }
-    document.getElementById('inviteCodeText').textContent=code;
-    inviteBox.style.display='block';
-  }else{
+  }catch(e){
+    console.error('invite code lookup failed', e);
     inviteBox.style.display='none';
   }
 }
 function copyInviteCode(){
   const code=document.getElementById('inviteCodeText').textContent;
   if(navigator.clipboard) navigator.clipboard.writeText(code).then(()=>toast('הקוד הועתק! 📋')).catch(()=>{});
+}
+
+/* ---- joining a DIFFERENT family after the account is already linked ----
+   The invite-code flow used to live only inside first-run onboarding, which
+   is shown solely when users/{uid} has no familyId yet. So the moment an
+   account created (or joined) a family -- including a child's own Google
+   account that tapped "create a new family" on their own device -- it was
+   permanently stuck there: the app had no screen anywhere that could re-point
+   an existing account at another family. That's what made a parent's invite
+   code unusable on the child's device.
+
+   Firebase's rules already allow it (users/$uid is writable by that uid), so
+   this is purely the missing UI + a safe switch sequence. */
+function showSwitchFamily(){
+  if(!authUser){ toast('צריך להתחבר עם חשבון Google קודם'); return; }
+  modalContent.innerHTML=`<div class="m-emoji">🔗</div><h3>הצטרפות למשפחה אחרת</h3>
+    <p style="font-size:.88rem;">הזן/י את קוד ההזמנה שמופיע אצל ההורה במסך הזה (אזור הורים ← 🔧 הגדרות).</p>
+    <div style="background:#FFE9E4;border-radius:12px;padding:10px;font-size:.82rem;font-weight:700;color:#8a3410;margin-bottom:12px;text-align:right;">
+      ⚠️ כל הנתונים שנמצאים כרגע במכשיר הזה (מטבעות, מטלות, היסטוריה) יוחלפו בנתונים של המשפחה שאליה מצטרפים.
+    </div>
+    <input id="switchCode" style="width:100%;border:2px solid var(--line);border-radius:13px;padding:12px;text-align:center;font-size:1.4rem;font-weight:800;letter-spacing:3px;font-family:inherit;" maxlength="6" placeholder="ABC123">
+    <div style="display:flex;gap:8px;margin-top:14px;"><button class="btn ghost" onclick="closeModal()">ביטול</button><button class="btn primary" id="switchOk">הצטרף</button></div>`;
+  modalBg.classList.add('show');
+  document.getElementById('switchOk').onclick=doSwitchFamily;
+  setTimeout(()=>document.getElementById('switchCode').focus(),100);
+}
+async function doSwitchFamily(){
+  const code=document.getElementById('switchCode').value.trim().toUpperCase();
+  if(!code){ toast('הזן קוד'); return; }
+  const btn=document.getElementById('switchOk'); if(btn){ btn.disabled=true; btn.textContent='⏳ בודק...'; }
+  try{
+    const newFamilyId=(await withTimeout(fbDb.ref('inviteCodes/'+code).once('value'),15000,'בדיקת קוד')).val();
+    if(!newFamilyId){ toast('קוד לא נמצא 🤔'); if(btn){ btn.disabled=false; btn.textContent='הצטרף'; } return; }
+    if(newFamilyId===state.familyId){ toast('המכשיר כבר במשפחה הזאת ✓'); closeModal(); return; }
+    // ORDER IS SAFETY-CRITICAL. Every DB.del/DB.set below marks state dirty and
+    // schedules a push; if pushes were still live, clearing local data could
+    // upload an EMPTY payload -- to the old family, or worse, to the new one,
+    // wiping the family we're trying to join. Suspending sync and detaching the
+    // live listener first makes scheduleSync() a no-op for the whole sequence
+    // (it early-returns on !syncReady), and the reload at the end rebuilds all
+    // in-memory state from scratch rather than trusting a hand-patched state.
+    syncReady=false;
+    detachLiveSync();
+    await withTimeout(fbDb.ref('users/'+authUser.uid).set({familyId:newFamilyId,role:'member',email:authUser.email||'',name:authUser.displayName||''}),15000,'עדכון חשבון');
+    await clearLocalFamilyData();               // also nulls state.familyId / cs_familyid
+    await DB.set('cs_familyid',newFamilyId);    // so the reload below starts in the right family
+    toast('מצטרף למשפחה... 🔄');
+    setTimeout(()=>location.reload(),700);
+  }catch(e){
+    console.error('doSwitchFamily failed', e);
+    syncReady=true; // switch aborted -- let normal syncing resume
+    if(btn){ btn.disabled=false; btn.textContent='הצטרף'; }
+    toast('⚠️ שגיאה: '+authErrorText(e));
+  }
 }
 
 /* ===== DAILY EVENTS ===== */

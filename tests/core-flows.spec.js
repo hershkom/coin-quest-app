@@ -1057,6 +1057,61 @@ test.describe('anti-cheat invariants', () => {
   });
 });
 
+test.describe('joining a different family after the account is already linked', () => {
+  // The reported bug: a child's own Google account had created its own family
+  // on their device, so onboarding (the only place the invite-code field ever
+  // existed) never showed again -- leaving the parent's invite code with
+  // nowhere to be typed. These assert the always-available escape hatch.
+  test('the switch-family control and the family id are shown to any signed-in account', async ({ page }) => {
+    await enterLocalOnly(page);
+    await selectChild(page, 'אריאל');
+    await openAdminWithPin(page);
+    await page.locator('[data-atab="settings"]').click();
+    await page.evaluate(async () => {
+      authUser = { uid: 'fake-uid', email: 'child@example.com', displayName: 'Child' };
+      state.familyId = 'fam_wrongfamily';
+      await fillAccountSettings();
+    });
+    await expect(page.locator('#switchFamilyBtn')).toBeVisible();
+    await expect(page.locator('#familyIdBox')).toBeVisible();
+    await expect(page.locator('#familyIdShort')).toHaveText('fam_wrongfamily');
+  });
+
+  // fillAccountSettings reads users/{uid} from Firebase. With no real auth that
+  // read is denied, and it used to be un-guarded -- taking every control after
+  // it down with it, including the one control that fixes a wrong-family
+  // device. The controls must survive a failing cloud read.
+  test('a failed cloud read still leaves the switch control usable', async ({ page }) => {
+    await enterLocalOnly(page);
+    await selectChild(page, 'אריאל');
+    await openAdminWithPin(page);
+    await page.locator('[data-atab="settings"]').click();
+    const threw = await page.evaluate(async () => {
+      authUser = { uid: 'denied-uid', email: 'x@y.z' };
+      state.familyId = 'fam_x';
+      try { await fillAccountSettings(); return false; } catch (e) { return true; }
+    });
+    expect(threw).toBe(false);
+    await expect(page.locator('#switchFamilyBtn')).toBeVisible();
+  });
+
+  test('the join dialog warns about replacement and refuses without a signed-in account', async ({ page }) => {
+    await enterLocalOnly(page);
+    await selectChild(page, 'אריאל');
+
+    const signedOutOpened = await page.evaluate(() => {
+      modalContent.innerHTML = ''; closeModal();
+      authUser = null; showSwitchFamily();
+      return document.getElementById('modalBg').classList.contains('show');
+    });
+    expect(signedOutOpened).toBe(false); // must not offer a join it can't perform
+
+    await page.evaluate(() => { authUser = { uid: 'u', email: 'x@y.z' }; showSwitchFamily(); });
+    await expect(page.locator('#switchCode')).toBeVisible();
+    await expect(page.locator('#modalContent')).toContainText('יוחלפו'); // explicit data-loss warning
+  });
+});
+
 test.describe('live cross-device sync', () => {
   // Full real-time Firebase E2E (two signed-in browsers) is out of scope for
   // a no-credentials CI suite -- this mocks fbDb.ref the same way the whole
