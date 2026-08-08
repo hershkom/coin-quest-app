@@ -1199,6 +1199,70 @@ test.describe('monetization (all gated behind the master switch)', () => {
     await expect(page.locator('#modalBg')).not.toHaveClass(/show/); // no paywall appeared
   });
 
+  test('signing out / switching family clears the entitlement and trial instead of leaking them', async ({ page }) => {
+    await enterLocalOnly(page);
+    await selectChild(page, 'אריאל');
+    const res = await page.evaluate(async () => {
+      window.__forceMonetization = true;
+      state.entitlement = { plan: 'lifetime', expiresAt: null, source: 'play' };
+      await DB.set('cs_entitlement', state.entitlement);
+      state.trialStartedAt = Date.now(); await DB.set('cs_trial_started', state.trialStartedAt);
+      await clearLocalFamilyData(); // what sign-out / join-another-family runs
+      return {
+        ent: state.entitlement, trial: state.trialStartedAt,
+        persistedEnt: await DB.get('cs_entitlement'), persistedTrial: await DB.get('cs_trial_started'),
+        plan: entitlementPlan(),
+      };
+    });
+    expect(res.ent).toBeNull();
+    expect(res.trial).toBeNull();
+    expect(res.persistedEnt).toBeNull();
+    expect(res.persistedTrial).toBeNull();
+    expect(res.plan).toBe('free'); // the next family starts clean
+  });
+
+  test('a verified subscription gets a rolling expiry, never a permanent one; lifetime stays permanent', async ({ page }) => {
+    await enterLocalOnly(page);
+    await selectChild(page, 'אריאל');
+    const res = await page.evaluate(async () => {
+      window.__forceMonetization = true;
+      await onPurchaseVerified('premium_monthly', '{}', 'sig', null); // Play gives us no expiry
+      const sub = { ...state.entitlement };
+      closeModal();
+      await onPurchaseVerified('premium_lifetime', '{}', 'sig', null);
+      const life = { ...state.entitlement };
+      closeModal();
+      return { sub, life, now: Date.now() };
+    });
+    // A month's subscription must not become a forever licence.
+    expect(res.sub.plan).toBe('premium');
+    expect(res.sub.expiresAt).toBeGreaterThan(res.now);
+    expect(res.sub.expiresAt).toBeLessThan(res.now + 34 * 86400000);
+    expect(res.life.plan).toBe('lifetime');
+    expect(res.life.expiresAt).toBeNull();
+  });
+
+  test('a free home shows no premium banners, and premium admin tabs open the paywall', async ({ page }) => {
+    await enterLocalOnly(page);
+    await selectChild(page, 'אריאל');
+    await page.evaluate(() => {
+      window.__forceMonetization = true;
+      state.entitlement = null; state.trialStartedAt = null;
+      go('home');
+    });
+    // Streak/badges banners exist for this seeded family normally -- under a
+    // free plan they must simply not render (no dead-end chrome for a child).
+    await expect(page.locator('.streak-banner')).toHaveCount(0);
+    await expect(page.locator('.badges-banner')).toHaveCount(0);
+
+    await openAdminWithPin(page);
+    await page.locator('[data-atab="streak"]').click();
+    await expect(page.locator('#modalContent')).toContainText('אתגרי רצף');
+    await expect(page.locator('#modalContent')).toContainText('מנוי חודשי'); // parent-facing paywall
+    // The locked tab must NOT have become the active pane behind the modal.
+    await expect(page.locator('#pane-streak')).toBeHidden();
+  });
+
   test('a Play entitlement whose signature fails verification is not honoured', async ({ page }) => {
     await enterLocalOnly(page);
     await selectChild(page, 'אריאל');

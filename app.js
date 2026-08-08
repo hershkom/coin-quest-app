@@ -249,6 +249,7 @@ function featureLocked(key){ return monetizationOn()&&!isPremium()&&(key in PREM
    app families rely on daily, not a funnel. */
 let _paywallProducts=null; // filled from the Play bridge when available
 function showPaywall(featureKey){
+  refreshPaywallPrices(); // sync bridge call -- without this, any paywall opened before visiting Settings shows "—" prices
   const label=PREMIUM_FEATURES[featureKey]||'הפיצ׳ר הזה';
   // The gear/PIN gate is the app's existing notion of "a parent is present";
   // outside the admin screens we must assume the child is holding the device.
@@ -337,7 +338,19 @@ function openPlayRedeem(){
    its own Google account -- can re-verify it independently. */
 async function onPurchaseVerified(productId,purchaseJson,signature,expiresAt){
   const plan=productId==='premium_lifetime'?'lifetime':'premium';
-  state.entitlement={plan,expiresAt:expiresAt||null,source:'play',purchaseJson,signature};
+  // A subscription MUST carry an expiry: entitlementValid treats a missing
+  // expiresAt as "never lapses", so passing Play's null through would turn a
+  // single month's payment into a lifetime licence. The purchase payload
+  // carries no expiry date (that needs the server API we don't have), so we
+  // stamp a rolling one: now + 33 days (a monthly cycle plus grace).
+  // BillingManager re-runs restorePurchases on every launch of the buyer's
+  // device; as long as Play still reports the subscription active, this
+  // re-stamps and the entitlement rolls forward. Once cancelled and expired,
+  // Play stops reporting it, the stamp stops moving, and premium lapses on
+  // every family device within ~a month of the buyer's last launch. That lag
+  // is the serverless trade-off, and it errs in the customer's favour.
+  const exp=plan==='lifetime'?null:(expiresAt||Date.now()+33*86400000);
+  state.entitlement={plan,expiresAt:exp,source:'play',purchaseJson,signature};
   await DB.set('cs_entitlement',state.entitlement);
   closeModal();
   renderPlanStatus();
@@ -498,6 +511,7 @@ function earnedBadgeCount(k){
 }
 function renderBadgesBanner(){
   const wrap=document.getElementById('badgesBannerWrap'); if(!wrap) return;
+  if(featureLocked('badges')){ wrap.innerHTML=''; return; } // free home: no premium chrome
   const k=cur();
   // No badges defined at all (a parent who removed every one from the admin
   // "תגים" tab) -- there's nothing meaningful to show ("אספת 0 מתוך 0 תגים"
@@ -2103,10 +2117,13 @@ function goScanForChore(id){
 /* ===== STREAK CHALLENGES (multiple daily-streak challenges, e.g. "clean day" / "good behavior") ===== */
 function dateKey(d){ return d.getFullYear()+'-'+(d.getMonth()+1)+'-'+d.getDate(); }
 let currentStreakId=null;
-function openStreakView(id){ currentStreakId=id; go('streak'); }
+function openStreakView(id){ if(!gate('streaks')) return; currentStreakId=id; go('streak'); }
 function renderStreakBanner(){
   const wrap=document.getElementById('streakBannerWrap'); if(!wrap) return;
   wrap.innerHTML='';
+  // A free home simply doesn't show premium chrome -- cleaner for the child
+  // than a banner that opens a "go ask a parent" dead end when tapped.
+  if(featureLocked('streaks')) return;
   const c=curChild(); if(!c) return;
   state.streaks.filter(s=>s.childId===c.id).forEach(s=>{
     const todayMarked = !!s.days[dateKey(new Date())];
@@ -2762,6 +2779,11 @@ function renderHistory(){
 function openAdmin(){ modalPin(()=>{ go('admin'); adminTab('children'); }); }
 function exitAdmin(){ if(cur()) go('home'); else go('picker'); }
 function adminTab(t){
+  // Premium admin tabs open the (parent-facing, priced) paywall for a free
+  // family -- otherwise a parent could configure streaks/events/badges that
+  // the child-facing screens will never show, which reads as data loss.
+  const tabFeature={streak:'streaks',events:'events',badges:'badges',report:'reports'}[t];
+  if(tabFeature&&!gate(tabFeature)) return;
   document.querySelectorAll('.atab').forEach(b=>b.classList.toggle('active',b.dataset.atab===t));
   document.querySelectorAll('.admin-pane').forEach(p=>p.style.display='none');
   document.getElementById('pane-'+t).style.display='block';
@@ -5944,6 +5966,10 @@ async function clearLocalFamilyData(){
   state.math=DEFAULT_MATH; state.streaks=DEFAULT_STREAKS.map(s=>({...s,days:{}})); state.badgeDefs=DEFAULT_BADGE_DEFS;
   state.anchored=DEFAULT_ANCHORED_TASKS; state.events=[]; state.familyId=null;
   state.games=DEFAULT_GAMES; state.learning=DEFAULT_LEARNING; state.auditLog=[]; state.pin='1234'; state.pinHash=null;
+  // Entitlement and trial are FAMILY property, not device property -- leaving
+  // them behind here would carry one family's paid licence (or spent trial)
+  // into whatever family this device signs into next.
+  state.entitlement=null; state.trialStartedAt=null;
   // Delete rather than write defaults back: hasExistingLocalData() treats a
   // present key as "this device has real data" regardless of its content, so
   // writing DEFAULT_CHILDREN etc back here would leave the keys present and
@@ -5953,7 +5979,8 @@ async function clearLocalFamilyData(){
   // never set up at all.
   for(const k of ['cs_children','cs_current','cs_chores','cs_actions','cs_rewards','cs_math',
     'cs_streak','cs_streaks','cs_badgedefs','cs_anchored','cs_events','cs_hwm_date','cs_familyid',
-    'cs_pinhash','cs_games','cs_games_v2','cs_games_v3','cs_games_v4','cs_gtime_seeded']){
+    'cs_pinhash','cs_entitlement','cs_trial_started',
+    'cs_games','cs_games_v2','cs_games_v3','cs_games_v4','cs_gtime_seeded']){
     await DB.del(k);
   }
   _hwmDate=null; _hwmAdvanceMono=performance.now();
@@ -6671,6 +6698,7 @@ function getMinutesUntil(timeStr){
 
 function renderEventsHome(){
   const wrap=document.getElementById('eventsWrap'); if(!wrap) return;
+  if(featureLocked('events')){ wrap.innerHTML=''; return; } // free home: no premium chrome
   loadEvents().then(allEvs=>{
     const today=todayDateStr();
     const tomorrow=new Date(); tomorrow.setDate(tomorrow.getDate()+1);
