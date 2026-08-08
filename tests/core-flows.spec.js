@@ -1156,13 +1156,19 @@ test.describe('monetization (all gated behind the master switch)', () => {
     await selectChild(page, 'אריאל');
     const res = await page.evaluate(() => {
       window.__forceMonetization = true;
+      // A Play entitlement is only valid WITH its signed payload, so these
+      // fixtures carry one -- otherwise they'd be rejected for that reason
+      // and this test would pass without proving anything about expiry.
+      const signed = { source: 'play', purchaseJson: '{}', signature: 'sig' };
+      window.CoinQuestNative = { verifyPurchaseSignature: () => true };
       state.entitlement = null;
       state.trialStartedAt = Date.now() - 30 * 86400000;
       const afterTrial = entitlementPlan();
-      state.entitlement = { plan: 'premium', expiresAt: Date.now() - 1000, source: 'play' };
+      state.entitlement = { plan: 'premium', expiresAt: Date.now() - 1000, ...signed };
       const afterSub = entitlementPlan();
-      state.entitlement = { plan: 'lifetime', expiresAt: null, source: 'play' };
+      state.entitlement = { plan: 'lifetime', expiresAt: null, ...signed };
       const lifetime = entitlementPlan();
+      delete window.CoinQuestNative;
       return { afterTrial, afterSub, lifetime };
     });
     expect(res.afterTrial).toBe('free');
@@ -1261,6 +1267,45 @@ test.describe('monetization (all gated behind the master switch)', () => {
     await expect(page.locator('#modalContent')).toContainText('מנוי חודשי'); // parent-facing paywall
     // The locked tab must NOT have become the active pane behind the modal.
     await expect(page.locator('#pane-streak')).toBeHidden();
+  });
+
+  test('a Play entitlement stripped of its signed payload is rejected, not silently trusted', async ({ page }) => {
+    await enterLocalOnly(page);
+    await selectChild(page, 'אריאל');
+    const res = await page.evaluate(() => {
+      window.__forceMonetization = true;
+      state.trialStartedAt = null;
+      window.CoinQuestNative = { verifyPurchaseSignature: () => true };
+      // The forgery this closes: claim a Play purchase but omit the two fields
+      // that make it checkable, so verification never runs at all.
+      state.entitlement = { plan: 'lifetime', expiresAt: null, source: 'play' };
+      const noPayload = entitlementPlan();
+      state.entitlement = { plan: 'lifetime', expiresAt: null, source: 'play', purchaseJson: '{}' };
+      const noSignature = entitlementPlan();
+      // An unrecognised plan string must not count as premium either.
+      state.entitlement = { plan: 'ultra', expiresAt: null, source: 'grandfather' };
+      const bogusPlan = entitlementPlan();
+      delete window.CoinQuestNative;
+      return { noPayload, noSignature, bogusPlan };
+    });
+    expect(res.noPayload).toBe('free');
+    expect(res.noSignature).toBe('free');
+    expect(res.bogusPlan).toBe('free');
+  });
+
+  test('a bridge that throws during verification denies rather than grants', async ({ page }) => {
+    await enterLocalOnly(page);
+    await selectChild(page, 'אריאל');
+    const plan = await page.evaluate(() => {
+      window.__forceMonetization = true;
+      state.trialStartedAt = null;
+      window.CoinQuestNative = { verifyPurchaseSignature: () => { throw new Error('bridge broken'); } };
+      state.entitlement = { plan: 'lifetime', expiresAt: null, source: 'play', purchaseJson: '{}', signature: 's' };
+      const p = entitlementPlan();
+      delete window.CoinQuestNative;
+      return p;
+    });
+    expect(plan).toBe('free');
   });
 
   test('a Play entitlement whose signature fails verification is not honoured', async ({ page }) => {

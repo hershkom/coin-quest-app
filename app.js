@@ -184,17 +184,32 @@ const FREE_MAX_CHORES=4;
    A Play-sourced entitlement is only honoured if its Google signature
    verifies (see entitlementValid) -- that's what lets it be shared across
    the family's several Google accounts without a server vouching for it. */
+const ENTITLEMENT_PLANS=['legacy','premium','lifetime'];
 function entitlementValid(e){
-  if(!e||!e.plan) return false;
+  // Whitelist the plan: an unrecognised string used to sail through here and
+  // then be returned by entitlementPlan(), where anything !== 'free' counts as
+  // premium -- so {plan:'anything'} was a licence.
+  if(!e||!ENTITLEMENT_PLANS.includes(e.plan)) return false;
   if(e.expiresAt&&Date.now()>e.expiresAt) return false;
   if(e.source==='play'){
-    // Verified natively where possible. When the bridge can't check (browser,
-    // or an APK predating it) we accept: without a server this is best-effort
-    // anyway, and refusing would lock out a genuinely paying customer.
+    // A Play entitlement is ONLY meaningful together with the signed payload
+    // Google issued for it. Previously these two fields were merely optional
+    // inputs to the check, so omitting them skipped verification entirely and
+    // fell through to the accept at the bottom -- i.e. the whole signature
+    // scheme could be defeated by deleting two fields. Absent payload is now
+    // itself a rejection.
+    if(!e.purchaseJson||!e.signature) return false;
     const n=window.CoinQuestNative;
-    if(n&&typeof n.verifyPurchaseSignature==='function'&&e.purchaseJson&&e.signature){
-      try{ return !!n.verifyPurchaseSignature(e.purchaseJson,e.signature); }catch(err){ return true; }
+    if(n&&typeof n.verifyPurchaseSignature==='function'){
+      // Trust the bridge's verdict either way. A throw means the bridge is
+      // broken rather than the purchase being good, so it must not grant.
+      try{ return !!n.verifyPurchaseSignature(e.purchaseJson,e.signature); }catch(err){ return false; }
     }
+    // No bridge at all (browser preview, or an APK older than this feature):
+    // nothing here can verify anything. Accepted deliberately -- refusing
+    // would lock a genuinely paying customer out of the web view -- and the
+    // required payload above still blocks the trivial hand-written forgery.
+    return true;
   }
   return true;
 }
