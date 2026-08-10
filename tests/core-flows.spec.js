@@ -750,8 +750,24 @@ test.describe('calm toolkit', () => {
     await page.locator('.calm-sound-switch[data-sound="purr"]').click();
     await expect(page.locator('#calmSoundLabel')).toHaveText(/גרגור חתול/);
 
+    // An armed sleep timer must SURVIVE switching sounds -- the "10 minutes
+    // then silence" choice belongs to the listening session, and the bedtime
+    // scenario is exactly: pick a timer, then fiddle between sounds. This
+    // regression-tests the bug where the switch path silently cancelled the
+    // timer while leaving its button highlighted.
+    await page.evaluate(() => setCalmSoundTimer(10));
+    await page.locator('.calm-sound-switch[data-sound="rain"]').click();
+    await expect(page.locator('#calmSoundLabel')).toHaveText(/גשם/);
+    expect(await page.evaluate(() => _calmSoundTimeout !== null)).toBe(true);
+    await expect(page.locator('.calm-timer-btn[data-min="10"]')).toHaveClass(/sel/);
+
+    // Leaving the session is what ends the timer.
+    await page.evaluate(() => showCalmMenu());
+    expect(await page.evaluate(() => _calmSoundTimeout === null)).toBe(true);
+
     // Exercise the real timer path with a short delay instead of waiting real minutes:
     // temporarily shrink the minute->ms conversion just for this one call.
+    await page.locator('.calm-tile', { hasText: 'גלים בים' }).click();
     await page.evaluate(() => {
       const realSetTimeout = window.setTimeout;
       window.setTimeout = (fn, ms) => realSetTimeout(fn, Math.min(ms, 50));

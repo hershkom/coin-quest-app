@@ -4622,24 +4622,44 @@ function calmPickBody(b){
   if(_calmSession) _calmSession.body=b;
   document.querySelectorAll('.body-chip').forEach(c=>c.classList.toggle('sel',c.dataset.body===b));
 }
+const CALM_SOUND_INFO={
+  ocean:['🌊','גלים בים... שומעים את הים עולה ויורד'],
+  rain:['🌧️','גשם שקט על החלון...'],
+  heartbeat:['💓','פעימות לב רגועות...'],
+  purr:['🐱','גרגור חתול רך...'],
+};
+// Swaps only the AUDIO (plus its icon/label/selection chrome). Shared by the
+// pane-entry path and the in-pane switch buttons.
+function applyCalmSound(kind){
+  const info=CALM_SOUND_INFO[kind];
+  document.getElementById('calmSoundIcon').textContent=info[0];
+  document.getElementById('calmSoundLabel').textContent=info[1];
+  document.querySelectorAll('.calm-sound-switch').forEach(b=>b.classList.toggle('sel',b.dataset.sound===kind));
+  stopCalmNoise();
+  startCalmNoise(kind);
+  _calmActive=kind;
+}
+// The in-pane 🌊/🌧️/💓/🐱 buttons. Deliberately NOT openCalmActivity: that
+// runs stopCalmActivity(), which ends the whole listening session -- killing
+// the armed sleep timer and resetting its buttons -- when the child only
+// wanted a different sound. "10 minutes then silence" must survive switching
+// from waves to rain; that's the bedtime use the timer exists for.
+function switchCalmSound(kind){
+  if(!CALM_SOUND_INFO[kind]) return;
+  if(CALM_SOUND_INFO[_calmActive]){ applyCalmSound(kind); return; }
+  openCalmActivity(kind); // not in the sound pane at all -- full entry path
+}
 function openCalmActivity(kind){
   stopCalmActivity();
   _calmActive=kind;
   if(_calmSession&&!_calmSession.tool) _calmSession.tool=kind;
   if(kind==='breathe'){ calmShowPane('calmBreathe'); startBreathing(); }
-  else if(kind==='ocean'||kind==='rain'||kind==='heartbeat'||kind==='purr'){
+  else if(CALM_SOUND_INFO[kind]){
     calmShowPane('calmSound');
+    // Fresh entry into the sound pane: stopCalmActivity() above just cleared
+    // any old sleep timer, so the buttons truthfully show "no limit".
     document.querySelectorAll('.calm-timer-btn').forEach(b=>b.classList.toggle('sel',+b.dataset.min===0));
-    const info={
-      ocean:['🌊','גלים בים... שומעים את הים עולה ויורד'],
-      rain:['🌧️','גשם שקט על החלון...'],
-      heartbeat:['💓','פעימות לב רגועות...'],
-      purr:['🐱','גרגור חתול רך...'],
-    }[kind];
-    document.getElementById('calmSoundIcon').textContent=info[0];
-    document.getElementById('calmSoundLabel').textContent=info[1];
-    document.querySelectorAll('.calm-sound-switch').forEach(b=>b.classList.toggle('sel',b.dataset.sound===kind));
-    startCalmNoise(kind);
+    applyCalmSound(kind);
   }
   else if(kind==='ground'){ calmShowPane('calmGround'); startGrounding(); }
   else if(kind==='muscle'){ calmShowPane('calmMuscle'); startMuscle(); }
@@ -4652,6 +4672,10 @@ function stopCalmActivity(){
   clearInterval(_muscleTimer); _muscleTimer=null;
   stopTrace();
   stopCalmNoise();
+  // The sleep timer ends with the SESSION, not with an individual sound --
+  // see the note on stopCalmNoise for why it must not live there.
+  if(_calmSoundTimeout){ clearTimeout(_calmSoundTimeout); _calmSoundTimeout=null; }
+  document.querySelectorAll('.calm-timer-btn').forEach(b=>b.classList.remove('sel'));
   stopSpeaking();
   _calmActive=null;
 }
@@ -5029,8 +5053,14 @@ function setCalmSoundTimer(minutes){
     },minutes*60000);
   }
 }
+// NOTE: deliberately does NOT touch the sleep timer. This runs both when the
+// session truly ends AND when the child merely switches sounds (ocean->rain
+// goes through here on the way to the new sound) -- and a "10 minutes then
+// silence" choice belongs to the listening session, not to one specific
+// sound. Clearing it here silently cancelled the timer on every switch while
+// its button stayed highlighted, so the sound played forever at bedtime.
+// The timer is cleared where the session actually ends: stopCalmActivity().
 function stopCalmNoise(){
-  if(_calmSoundTimeout){ clearTimeout(_calmSoundTimeout); _calmSoundTimeout=null; }
   if(_calmNoise&&_calmNoise.interval){ clearInterval(_calmNoise.interval); _calmNoise=null; return; }
   if(!_calmNoise) return;
   _calmNoise.nodes.forEach(n=>{ try{ n.stop(); }catch(e){} });

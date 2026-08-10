@@ -944,10 +944,12 @@
     <div class="cm-sub" id="calmSoundLabel" style="margin-top:14px;">גלים בים...</div>
     <div class="cm-sub" style="margin-top:8px;font-size:.78rem;opacity:.7;">לא שומעים? בדוק שהמכשיר לא במצב שקט 🔈</div>
     <div class="calm-sound-switches">
-      <button class="calm-sound-switch" data-sound="ocean" onclick="openCalmActivity('ocean')">🌊</button>
-      <button class="calm-sound-switch" data-sound="rain" onclick="openCalmActivity('rain')">🌧️</button>
-      <button class="calm-sound-switch" data-sound="heartbeat" onclick="openCalmActivity('heartbeat')">💓</button>
-      <button class="calm-sound-switch" data-sound="purr" onclick="openCalmActivity('purr')">🐱</button>
+      <!-- switchCalmSound, not openCalmActivity: swapping a sound must not
+           end the listening session (that would cancel the sleep timer). -->
+      <button class="calm-sound-switch" data-sound="ocean" onclick="switchCalmSound('ocean')">🌊</button>
+      <button class="calm-sound-switch" data-sound="rain" onclick="switchCalmSound('rain')">🌧️</button>
+      <button class="calm-sound-switch" data-sound="heartbeat" onclick="switchCalmSound('heartbeat')">💓</button>
+      <button class="calm-sound-switch" data-sound="purr" onclick="switchCalmSound('purr')">🐱</button>
     </div>
     <div class="cm-sub" style="margin-top:14px;">טיימר שינה</div>
     <div class="calm-timer-row">
