@@ -112,11 +112,29 @@ const DEFAULT_ACTIONS=[
   {id:'shower', label:'מקלחת', emoji:'🚿', points:5, max:1},
 ];
 const DEFAULT_REWARDS=[
-  {id:'screen', label:'30 דקות מסך', emoji:'🎮', cost:30},
+  {id:'screen', label:'30 דקות מסך', emoji:'🎮', cost:30, minutes:30},
   {id:'icecream', label:'גלידה', emoji:'🍦', cost:50},
   {id:'money', label:'שקל אחד', emoji:'💵', cost:20, cash:1},
   {id:'movie', label:'ערב סרט', emoji:'🍿', cost:80},
 ];
+// A reward only grants game time if it carries `minutes` -- the label is
+// decoration. The original default "30 דקות מסך" shipped WITHOUT that field,
+// so it looked like a time package, cost real coins, and granted nothing
+// (a real incident: 50 coins gone, 0 minutes, parent fixed it by hand).
+// Rather than trust every past and future reward to be entered correctly,
+// infer `minutes` from a label that plainly states a number of minutes.
+// Idempotent and cheap, so it runs on every load AND on every remote
+// adoption -- an older device pushing the un-fixed list back can't undo it.
+const REWARD_MINUTES_RE=/(\d{1,3})\s*דק/;
+function normalizeRewards(list){
+  let changed=false;
+  (list||[]).forEach(r=>{
+    if(!r||r.minutes||r.cash||typeof r.label!=='string') return;
+    const m=r.label.match(REWARD_MINUTES_RE);
+    if(m){ r.minutes=Math.max(1,Math.min(600,parseInt(m[1]))); changed=true; }
+  });
+  return changed;
+}
 const DEFAULT_MATH={enabled:true, ops:['+','-'], maxNum:20, pts:2, daily:10};
 // Age-graded difficulty bands, roughly following the Israeli curriculum. A
 // single family-wide maxNum can't serve siblings years apart -- a 6-year-old
@@ -562,6 +580,7 @@ async function loadState(){
   state.chores  =(await DB.get('cs_chores'))  ??DEFAULT_CHORES;
   state.actions =(await DB.get('cs_actions')) ??DEFAULT_ACTIONS;
   state.rewards =(await DB.get('cs_rewards')) ??DEFAULT_REWARDS;
+  if(normalizeRewards(state.rewards)) await DB.set('cs_rewards',state.rewards); // see normalizeRewards
   state.math    =(await DB.get('cs_math'))    ??DEFAULT_MATH;
   state.streaks =await DB.get('cs_streaks');
   if(!state.streaks){
@@ -918,26 +937,32 @@ async function addPoints(n,label,type,srcEl){
   await DB.set('cs_bal_'+id,k.balance);
   await DB.set('cs_hist_'+id,k.history);
   if(type==='spend'){ k.rewardsTotal=(k.rewardsTotal||0)+1; await DB.set('cs_rwt_'+id,k.rewardsTotal); }
-  renderBalance();
-  if(srcRect && n>0) coinFly(srcRect); else coinBurst();
-  // A completed real-world task (scan) gets its OWN recognizable chime+buzz,
-  // distinct from math/learning's plain earn tone -- "I actually did the
-  // chore" is a bigger, more physical moment than answering a question, and
-  // a consistent, distinctive anchor for it helps it register as a habit.
-  chime(type==='spend'?true:type==='scan'?'scan':false);
-  if(n>0){
-    mascotReact(); // G1: the companion reacts to something earned, not to a purchase
-    // G8 (ANDROID-APP-PLAN.md): one short, gentle pulse on anything earned
-    // (chore marked, correct answer -- both route through here). Skipped in
-    // calm mode, same as every other sensory-intensity dial in the app; not
-    // given its own separate settings toggle since the OS already lets a
-    // parent disable vibration device-wide if calm mode isn't enough.
-    if(!state.calmMode&&navigator.vibrate){
-      try{ navigator.vibrate(type==='scan'?[25,60,25]:20); }catch(e){}
+  // Everything below is presentation. The balance is already persisted, so
+  // a throw here (an AudioContext in a bad state, a detached element, a
+  // malformed badge definition) must not propagate to the caller -- for a
+  // reward purchase that would have meant "coins taken, nothing granted".
+  try{
+    renderBalance();
+    if(srcRect && n>0) coinFly(srcRect); else coinBurst();
+    // A completed real-world task (scan) gets its OWN recognizable chime+buzz,
+    // distinct from math/learning's plain earn tone -- "I actually did the
+    // chore" is a bigger, more physical moment than answering a question, and
+    // a consistent, distinctive anchor for it helps it register as a habit.
+    chime(type==='spend'?true:type==='scan'?'scan':false);
+    if(n>0){
+      mascotReact(); // G1: the companion reacts to something earned, not to a purchase
+      // G8 (ANDROID-APP-PLAN.md): one short, gentle pulse on anything earned
+      // (chore marked, correct answer -- both route through here). Skipped in
+      // calm mode, same as every other sensory-intensity dial in the app; not
+      // given its own separate settings toggle since the OS already lets a
+      // parent disable vibration device-wide if calm mode isn't enough.
+      if(!state.calmMode&&navigator.vibrate){
+        try{ navigator.vibrate(type==='scan'?[25,60,25]:20); }catch(e){}
+      }
     }
-  }
+  }catch(e){ console.error('addPoints FX failed (balance already saved)',e); }
   scheduleSync();
-  checkBadges();
+  try{ checkBadges(); }catch(e){ console.error('checkBadges failed',e); }
 }
 
 /* ===== NAV ===== */
@@ -2749,14 +2774,34 @@ function redeemReward(rw){
   if(cur().balance<rw.cost) return;
   modalConfirm('🎁','להחליף את "'+rw.label+'"?','זה יעלה '+rw.cost+' מטבעות.', async()=>{
     if(cur().balance<rw.cost){ toast('אין מספיק מטבעות 🪙'); renderRewards(); return; }
-    await addPoints(-rw.cost,'פרס: '+rw.label,'spend'); renderRewards();
+    const id=state.current, k=cur();
+    try{
+      // ORDER MATTERS. Credit the time FIRST and persist it, THEN take the
+      // coins. The old order (coins, then a stretch of rendering/FX, then
+      // time) meant any exception in between ended with coins gone and no
+      // time -- and modalConfirm swallows the rejection, so not even an
+      // error showed. If something fails now it fails in the child's favour
+      // (time without payment), which a parent can see and fix; the reverse
+      // is a silent theft from the child's point of view.
+      if(rw.minutes){
+        // Game-time package: no parent approval step, the coins themselves
+        // are the approval (they were parent-verified when earned).
+        k.gtime=(k.gtime||0)+rw.minutes*60;
+        await DB.set('cs_gtime_'+id,k.gtime);
+      }
+      await addPoints(-rw.cost,'פרס: '+rw.label,'spend');
+    }catch(e){
+      console.error('redeemReward failed',e);
+      audit('⚠️ שגיאה ברכישת "'+rw.label+'" ('+(e&&e.message||e)+') — לבדוק יתרה וזמן משחק');
+      modalMsg('⚠️','משהו השתבש','הרכישה לא הושלמה כמו שצריך. ספר/י לאמא או אבא — הם יראו את זה ביומן ההורים.');
+      renderRewards(); renderGameTimeBanner();
+      return;
+    }
+    renderRewards();
     if(rw.minutes){
-      // Game-time package: credit the wallet immediately — no parent approval
-      // step, the coins themselves are the approval (they were parent-verified
-      // when earned). The child can start playing right away.
-      const k=cur();
-      k.gtime=(k.gtime||0)+rw.minutes*60;
-      await DB.set('cs_gtime_'+state.current,k.gtime);
+      // Leaves a trail a parent can check the next time a child says "I
+      // bought time and didn't get it" -- the last incident had none.
+      audit((curChild()?.name||'')+' קנה/תה '+rw.minutes+' דקות משחק ב-'+rw.cost+' מטבעות (יתרת זמן: '+fmtGT(k.gtime)+')');
       renderGameTimeBanner();
       modalMsg('🎮','יש לך זמן משחק!','קיבלת '+rw.minutes+' דקות משחק.\nסה"כ עכשיו: '+fmtGT(k.gtime)+'.\nלחץ על "המשחקים שלי" במסך הבית כדי לשחק!');
     } else if(rw.cash){
@@ -2765,7 +2810,6 @@ function redeemReward(rw){
       // instead of a one-shot "show this to your parent" message that's easy
       // to forget, so it can be checked and paid out whenever the parent is
       // actually available, then reset in one place.
-      const k=cur();
       k.cashOwed=(k.cashOwed||0)+rw.cash;
       await DB.set('cs_cash_'+state.current,k.cashOwed);
       modalMsg('💵','מזל טוב! 🎉','החלפת את: '+rw.label+'\nעכשיו ההורה חייב לך '+k.cashOwed+' ₪ — הראה להורה את המסך הזה מתישהו 😊');
@@ -3897,10 +3941,17 @@ function renderRewardsAdmin(){
   const c=document.getElementById('rewardsAdmin'); c.innerHTML='';
   state.rewards.forEach((r,i)=>{
     const row=document.createElement('div'); row.className='admin-row';
-    const sub=r.minutes?`<br><span style="font-size:.72rem;color:var(--mint-d);font-weight:700;">🎮 ${r.minutes} דקות משחק אוטומטית</span>`
-      :r.cash?`<br><span style="font-size:.72rem;color:var(--gold-d);font-weight:700;">💵 ${r.cash} ₪ (נכנס למונה "ממתין לתשלום")</span>`:'';
+    // The trap this screen must make impossible to miss: a label that reads
+    // like a time package but grants nothing. normalizeRewards() auto-fixes
+    // the obvious "N דקות" case; this catches the rest ("זמן מסך", "משחק").
+    const looksLikeTime=!r.minutes&&!r.cash&&/זמן|מסך|משחק|דק/.test(r.label||'');
+    const sub=r.minutes?`<br><span style="font-size:.72rem;color:var(--mint-d);font-weight:700;">🎮 מעניק ${r.minutes} דקות משחק אוטומטית</span>`
+      :r.cash?`<br><span style="font-size:.72rem;color:var(--gold-d);font-weight:700;">💵 ${r.cash} ₪ (נכנס למונה "ממתין לתשלום")</span>`
+      :looksLikeTime?`<br><span style="font-size:.72rem;color:#c0392b;font-weight:800;">⚠️ פרס רגיל — לא מעניק זמן משחק! הגדר דקות ←</span>`
+      :`<br><span style="font-size:.72rem;color:var(--muted);">פרס רגיל (ההורה נותן ידנית)</span>`;
     row.innerHTML=`<button type="button" class="emoji" title="שנה אימוג'י" onclick="pickRewardEmoji(${i})" style="border:none;background:none;cursor:pointer;padding:0;font-size:inherit;">${r.emoji}</button><span class="t">${esc(r.label)}${sub}</span>
-      <input type="number" value="${r.cost}" min="1" style="width:62px;border:2px solid var(--line);border-radius:10px;padding:7px;text-align:center;font-family:inherit;font-weight:700;" onchange="updateRewardCost(${i},this.value)">
+      <label style="font-size:.62rem;color:var(--muted);text-align:center;">מחיר<br><input type="number" value="${r.cost}" min="1" style="width:58px;border:2px solid var(--line);border-radius:10px;padding:6px;text-align:center;font-family:inherit;font-weight:700;" onchange="updateRewardCost(${i},this.value)"></label>
+      <label style="font-size:.62rem;color:var(--muted);text-align:center;">דקות<br><input type="number" value="${r.minutes||0}" min="0" style="width:52px;border:2px solid ${looksLikeTime?'#c0392b':'var(--line)'};border-radius:10px;padding:6px;text-align:center;font-family:inherit;font-weight:700;" onchange="updateRewardMinutes(${i},this.value)"></label>
       <button class="icon-btn" onclick="delReward(${i})">🗑️</button>`;
     c.appendChild(row);
   });
@@ -3912,6 +3963,16 @@ function pickRewardEmoji(i){
   });
 }
 async function updateRewardCost(i,v){ state.rewards[i].cost=parseInt(v)||1; await DB.set('cs_rewards',state.rewards); toast('עודכן ✓'); }
+// Lets a parent convert an existing plain reward into a time package (or
+// back) -- previously only cost was editable after creation, so a reward
+// created without minutes could never be repaired, only deleted and retyped.
+async function updateRewardMinutes(i,v){
+  const r=state.rewards[i]; if(!r) return;
+  const n=parseInt(v)||0;
+  if(n>0){ r.minutes=Math.min(600,n); delete r.cash; } else delete r.minutes;
+  await DB.set('cs_rewards',state.rewards);
+  renderRewardsAdmin(); toast(n>0?('יעניק '+r.minutes+' דקות משחק ✓'):'פרס רגיל ✓');
+}
 async function delReward(i){ await delWithUndo(state.rewards,i,'cs_rewards',renderRewardsAdmin,'הפרס'); }
 async function addReward(){
   const label=document.getElementById('newRwLabel').value.trim(); if(!label){ toast('צריך שם לפרס'); return; }
@@ -3923,6 +3984,10 @@ async function addReward(){
   // takes priority if a parent somehow fills both fields.
   if(minutes>0) rw.minutes=minutes;
   else if(cash>0) rw.cash=cash;
+  // "20 דקות משחק" with the minutes box left at 0 is almost certainly a slip,
+  // not a deliberate plain reward -- and a plain reward with that label is
+  // exactly the trap normalizeRewards exists to close. Infer, and say so.
+  if(!rw.minutes&&!rw.cash&&normalizeRewards([rw])) toast('זוהו '+rw.minutes+' דקות בשם — הפרס יעניק זמן משחק אוטומטית 🎮');
   state.rewards.push(rw); await DB.set('cs_rewards',state.rewards);
   scheduleSync();
   document.getElementById('newRwLabel').value=''; document.getElementById('newRwEmoji').value=''; document.getElementById('newRwMinutes').value=''; document.getElementById('newRwCash').value='';
@@ -5770,7 +5835,7 @@ async function applyRemoteSnapshot(data){
     if(data.children){ state.children=data.children; await DB.set('cs_children',data.children); }
     if(data.chores){ state.chores=data.chores; await DB.set('cs_chores',data.chores); }
     if(data.actions){ state.actions=data.actions; await DB.set('cs_actions',data.actions); }
-    if(data.rewards){ state.rewards=data.rewards; await DB.set('cs_rewards',data.rewards); }
+    if(data.rewards){ state.rewards=data.rewards; normalizeRewards(state.rewards); await DB.set('cs_rewards',state.rewards); }
     if(data.math){ state.math=data.math; await DB.set('cs_math',data.math); }
     if(data.streaks){
       state.streaks=data.streaks;

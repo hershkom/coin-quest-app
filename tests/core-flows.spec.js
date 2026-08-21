@@ -459,6 +459,94 @@ test.describe('age-graded math difficulty', () => {
   });
 });
 
+test.describe('game-time reward purchase (regression: coins taken, no time credited)', () => {
+  // The real incident: the child redeemed "30 דקות מסך" for coins and got no
+  // time. That default reward shipped WITHOUT the `minutes` field -- a plain
+  // reward wearing a time package's label -- so redeemReward took the coins
+  // and fell through to the generic "show a parent" branch. The parent had to
+  // credit the time by hand.
+  test('the default "30 דקות מסך" reward actually grants 30 minutes', async ({ page }) => {
+    await enterLocalOnly(page);
+    await selectChild(page, 'נועה');
+    await page.evaluate(async () => { const k = cur(); k.balance = 100; await DB.set('cs_bal_noa', 100); });
+    await page.evaluate(() => go('rewards'));
+    await page.locator('.row', { hasText: 'דקות מסך' }).getByRole('button', { name: 'החלף' }).click();
+    await page.locator('#mYes').click();
+    await expect(page.locator('#modalContent')).toContainText('יש לך זמן משחק');
+    const res = await page.evaluate(async () => ({
+      gtime: cur().gtime, balance: cur().balance,
+      audit: ((await DB.get('cs_auditlog')) || []).map(e => e.action).join(' | '),
+    }));
+    expect(res.gtime).toBe(1800);
+    expect(res.balance).toBe(70);
+    expect(res.audit).toContain('30 דקות משחק'); // a trail the parent can check next time
+  });
+
+  test('a reward whose label states minutes is normalized on load-style and remote adoption alike', async ({ page }) => {
+    await enterLocalOnly(page);
+    await selectChild(page, 'נועה');
+    const res = await page.evaluate(async () => {
+      // An older device (or a hand-edited record) pushes the un-fixed shape back.
+      await applyRemoteSnapshot({ rewards: [
+        { id: 'x1', label: '20 דקות משחק', emoji: '🎮', cost: 10 },
+        { id: 'x2', label: 'גלידה', emoji: '🍦', cost: 50 },
+        { id: 'x3', label: 'שקל אחד', emoji: '💵', cost: 20, cash: 1 },
+      ] });
+      return state.rewards.map(r => ({ id: r.id, minutes: r.minutes || null, cash: r.cash || null }));
+    });
+    expect(res[0].minutes).toBe(20);   // inferred from the label
+    expect(res[1].minutes).toBeNull(); // a real plain reward stays plain
+    expect(res[2].minutes).toBeNull(); // cash rewards are never touched
+    expect(res[2].cash).toBe(1);
+  });
+
+  // The second half of the fix: even with a correctly-flagged package, the
+  // old code took the coins first and credited the time only after a stretch
+  // of rendering/FX -- so any exception in between was "paid, got nothing",
+  // silently (modalConfirm swallows the rejection).
+  test('the purchase completes even when celebration FX throw mid-way', async ({ page }) => {
+    await enterLocalOnly(page);
+    await selectChild(page, 'נועה');
+    await page.evaluate(async () => {
+      const k = cur(); k.balance = 100; await DB.set('cs_bal_noa', 100);
+      window.coinBurst = () => { throw new Error('fx broke'); };
+      window.chime = () => { throw new Error('audio broke'); };
+    });
+    await page.evaluate(() => go('rewards'));
+    await page.locator('.row', { hasText: 'דקות מסך' }).getByRole('button', { name: 'החלף' }).click();
+    await page.locator('#mYes').click();
+    await expect(page.locator('#modalContent')).toContainText('יש לך זמן משחק'); // not the error modal
+    const res = await page.evaluate(() => ({ gtime: cur().gtime, balance: cur().balance }));
+    expect(res.gtime).toBe(1800);
+    expect(res.balance).toBe(70);
+  });
+
+  test('a parent can repair an existing plain reward into a time package, and is warned about suspicious ones', async ({ page }) => {
+    await enterLocalOnly(page);
+    await selectChild(page, 'נועה');
+    await openAdminWithPin(page);
+    await page.locator('[data-atab="rewards"]').click();
+    await page.evaluate(async () => {
+      // A plain reward whose label smells like screen time but states no number.
+      state.rewards.push({ id: 'sus', label: 'זמן מסך', emoji: '📺', cost: 40 });
+      await DB.set('cs_rewards', state.rewards);
+      renderRewardsAdmin();
+    });
+    await expect(page.locator('#rewardsAdmin .admin-row', { hasText: 'זמן מסך' })).toContainText('לא מעניק זמן משחק');
+
+    const after = await page.evaluate(async () => {
+      const i = state.rewards.findIndex(r => r.id === 'sus');
+      await updateRewardMinutes(i, 25);
+      const set = state.rewards[i].minutes;
+      await updateRewardMinutes(i, 0);
+      const cleared = state.rewards[i].minutes;
+      return { set, cleared };
+    });
+    expect(after.set).toBe(25);
+    expect(after.cleared).toBeUndefined();
+  });
+});
+
 test.describe('rewards shop', () => {
   test('an unaffordable reward explains how many coins are missing instead of swallowing the tap', async ({ page }) => {
     await enterLocalOnly(page);
