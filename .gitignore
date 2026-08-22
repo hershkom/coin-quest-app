@@ -36,3 +36,14 @@ npm-debug.log*
 test-results/
 playwright-report/
 dl/
+
+# Unrelated sibling projects that happen to live in this folder -- never part
+# of this repo, and (see scripts/check-hosting-upload.js) never part of the
+# website either.
+d2nn/
+wa-agent/
+lig-platform/
+pcb-laserfab/
+spec2doc/
+galaxy-watch-faces/
+*.pdf
