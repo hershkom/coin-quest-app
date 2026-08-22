@@ -1024,7 +1024,7 @@ function go(v){
   clearInterval(clockInterval); clockInterval=null;
   if(v==='picker') renderPicker();
   if(v==='home'){
-    renderChores(); renderStreakBanner(); renderGameTimeBanner(); renderEventsHome(); renderDayStrip(); renderBadgesBanner(); renderRequiredTaskAlert();
+    renderChores(); renderStreakBanner(); renderGameTimeBanner(); renderEventsHome(); renderDayStrip(); renderBadgesBanner(); renderRequiredTaskAlert(); renderEnforcementHomeAlert();
     maybeShowDailyGreeting();
   }
   renderFirstThen(); // A1: now runs for every view renderFirstThen() itself allows, not just home
@@ -2526,23 +2526,65 @@ function applyEnforcedPackages(){
 // floating-timer overlay permission. If either is missing the wall isn't fully
 // there, so surface it to the parent. The overlay is re-grantable from the app;
 // device-owner has to be re-provisioned from a computer, so we say so.
+// What actually holds the always-on wall up on this install. The three
+// mechanisms are NOT interchangeable, and the old check treated them as if
+// they were ("any wall satisfies"): the usage-access watcher
+// (GameWatchService) is the ONLY thing that blocks the game while CoinQuest
+// is closed on a Family-Link/MIUI phone -- setEnforcedPackages() starts it
+// solely on hasUsageAccess(). Device-owner genuinely enforces at OS level
+// but is a no-op unless provisioned; accessibility only serves the in-session
+// overlay. So "usage access lost, accessibility still granted" used to pass
+// the check while the wall was dead -- a silent failure, which is the worst
+// kind for a safety feature.
+function enforcementStatus(){
+  const n=window.CoinQuestNative;
+  const call=(name)=>{ try{ return !!(n&&typeof n[name]==='function'&&n[name]()); }catch(e){ return false; } };
+  const hasGames=(state.games||[]).some(g=>g.native&&g.androidPackage);
+  const st={
+    native:isNativeGameAvailable(), hasGames,
+    parentMode:call('isParentDeviceMode'),
+    usage:call('hasUsageAccess'), owner:call('isDeviceOwner'),
+    overlay:!n||typeof n.hasOverlayPermission!=='function'?true:call('hasOverlayPermission'),
+  };
+  // The wall is only as good as whichever OS-level guard can run it.
+  st.wallPossible=st.usage||st.owner;
+  st.broken=st.native&&st.hasGames&&(st.parentMode||!st.wallPossible);
+  return st;
+}
 function renderEnforcementWarning(){
   const el=document.getElementById('enforcementWarning'); if(!el) return;
-  const hasNativeGames=(state.games||[]).some(g=>g.native&&g.androidPackage);
-  if(!isNativeGameAvailable()||!hasNativeGames){ el.style.display='none'; return; }
+  const st=enforcementStatus();
+  if(!st.native||!st.hasGames){ el.style.display='none'; return; }
+  const btn=el.querySelector('button');
+  if(st.parentMode){
+    // The single most dangerous misconfiguration on a CHILD's phone, and it
+    // used to live quietly in a separate card. Say it first, loudest, with
+    // the fix one tap away.
+    el.style.display='block';
+    el.querySelector('.ew-text').textContent='🛑 הפיקוח על זמן המשחק כבוי לגמרי במכשיר הזה: הוא מסומן כ"מכשיר של הורה". אם זה המכשיר של הילד/ה — זו טעות, והמשחקים פתוחים בלי הגבלה.';
+    if(btn){ btn.textContent='זה המכשיר של הילד/ה — הפעל פיקוח מחדש'; btn.onclick=()=>{ toggleParentDeviceMode(); renderEnforcementWarning(); renderEnforcementHomeAlert(); }; }
+    return;
+  }
   const missing=[];
-  try{
-    // Enforcement is satisfied by ANY wall (usage access / device-owner /
-    // accessibility); only warn when none is present.
-    const usage=typeof window.CoinQuestNative.hasUsageAccess==='function'&&window.CoinQuestNative.hasUsageAccess();
-    const owner=typeof window.CoinQuestNative.isDeviceOwner==='function'&&window.CoinQuestNative.isDeviceOwner();
-    const acc=typeof window.CoinQuestNative.hasAccessibilityPermission==='function'&&window.CoinQuestNative.hasAccessibilityPermission();
-    if(!usage&&!owner&&!acc) missing.push('אכיפה (גישה לשימוש)');
-    if(typeof window.CoinQuestNative.hasOverlayPermission==='function'&&!window.CoinQuestNative.hasOverlayPermission()) missing.push('חלון צף');
-  }catch(e){}
+  if(!st.wallPossible) missing.push('גישה לשימוש (Usage access) — בלעדיה אין קיר כשהאפליקציה סגורה');
+  if(!st.overlay) missing.push('חלון צף (Display over other apps)');
   if(missing.length===0){ el.style.display='none'; return; }
   el.style.display='block';
-  el.querySelector('.ew-text').textContent='⚠️ אכיפת זמן המשחק כבויה — חסר: '+missing.join(' + ')+'. בלי זה הילד יכול לפתוח את המשחק בלי לקנות זמן.';
+  el.querySelector('.ew-text').textContent='⚠️ אכיפת זמן המשחק כבויה — חסר: '+missing.join(' + ')+'. בלי זה הילד/ה יכול/ה לפתוח את המשחק בלי לקנות זמן, גם כשהכספת סגורה.';
+  if(btn){ btn.textContent='פתח הגדרות והפעל מחדש'; btn.onclick=openEnforcementSettings; }
+}
+// Home-screen version. A parent-facing technical alert on a child's screen is
+// normally wrong -- but a dead game wall is a safety failure the parent will
+// otherwise discover only when the child is already three hours into a game.
+// Neutral wording for the child, and the tap leads to the PIN-gated admin.
+function renderEnforcementHomeAlert(){
+  const wrap=document.getElementById('enforcementHomeWrap'); if(!wrap) return;
+  const st=enforcementStatus();
+  if(!st.broken){ wrap.innerHTML=''; return; }
+  wrap.innerHTML=`<button class="req-alert" style="background:linear-gradient(135deg,#FFD6D6,#FF8A8A);" onclick="openAdmin()">
+    <span class="ra-ic">🛑</span>
+    <span class="ra-text"><div class="ra-title">הפיקוח על המשחקים לא פעיל</div><div class="ra-sub">אמא או אבא צריכים לפתוח את זה ולתקן</div></span>
+    <span class="ra-arrow">›</span></button>`;
 }
 function openEnforcementSettings(){
   if(!isNativeGameAvailable()) return;
@@ -2726,6 +2768,16 @@ async function recoverPendingNativeConsume(){
 
 // Pause the drain while the app is backgrounded / screen off: the child only
 // "spends" time actually spent playing. On return, restart the baseline.
+// Re-arm the always-on wall on every return to the foreground. Covers the
+// parent granting usage access in Android Settings and coming straight back
+// (the wall would otherwise stay down until the next cold start), and a
+// watcher the OS killed without our onDestroy ever running.
+document.addEventListener('visibilitychange',()=>{
+  if(document.visibilityState==='visible'){
+    try{ applyEnforcedPackages(); }catch(e){}
+    if(currentView==='home') renderEnforcementHomeAlert();
+  }
+});
 document.addEventListener('visibilitychange',()=>{
   if(!_gt) return;
   if(document.hidden){
@@ -6019,7 +6071,7 @@ function refreshUIAfterRemoteChange(){
   try{
     if(!cur()) return;
     renderBalance();
-    if(currentView==='home'){ renderChores(); renderStreakBanner(); renderGameTimeBanner(); renderEventsHome(); renderDayStrip(); renderFirstThen(); renderBadgesBanner(); renderRequiredTaskAlert(); }
+    if(currentView==='home'){ renderChores(); renderStreakBanner(); renderGameTimeBanner(); renderEventsHome(); renderDayStrip(); renderFirstThen(); renderBadgesBanner(); renderRequiredTaskAlert(); renderEnforcementHomeAlert(); }
     else if(currentView==='rewards') renderRewards();
     else if(currentView==='history') renderHistory();
     else if(currentView==='streak') renderStreakView();

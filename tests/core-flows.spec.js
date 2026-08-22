@@ -547,6 +547,83 @@ test.describe('game-time reward purchase (regression: coins taken, no time credi
   });
 });
 
+test.describe('native game-wall health check (regression: wall down, no warning)', () => {
+  // Installs a fake native bridge with the given permission state. Only the
+  // usage-access watcher can hold the wall up while CoinQuest is closed on a
+  // Family-Link phone; accessibility alone cannot.
+  async function mockBridge(page, { usage, owner = false, acc = false, overlay = true, parent = false }) {
+    await page.evaluate((st) => {
+      window.CoinQuestNative = {
+        hasUsageAccess: () => st.usage, isDeviceOwner: () => st.owner,
+        hasAccessibilityPermission: () => st.acc, hasOverlayPermission: () => st.overlay,
+        isParentDeviceMode: () => st.parent, setParentDeviceMode: (v) => { st.parent = v; },
+        setEnforcedPackages: () => {}, isPackageInstalled: () => true,
+      };
+      window.__bridgeState = st;
+    }, { usage, owner, acc, overlay, parent });
+  }
+
+  test('usage access lost but accessibility still granted: the wall is DOWN and the app must say so', async ({ page }) => {
+    await enterLocalOnly(page);
+    await selectChild(page, 'אריאל');
+    await mockBridge(page, { usage: false, acc: true });
+    // This is the exact combination the old check waved through ("any wall
+    // satisfies") while the always-on watcher could not start at all.
+    const st = await page.evaluate(() => enforcementStatus());
+    expect(st.wallPossible).toBe(false);
+    expect(st.broken).toBe(true);
+
+    await page.evaluate(() => go('home'));
+    await expect(page.locator('#enforcementHomeWrap .req-alert')).toBeVisible();
+    await expect(page.locator('#enforcementHomeWrap')).toContainText('לא פעיל');
+
+    await openAdminWithPin(page);
+    await page.locator('[data-atab="settings"]').click();
+    await expect(page.locator('#enforcementWarning')).toBeVisible();
+    await expect(page.locator('#enforcementWarning')).toContainText('גישה לשימוש');
+  });
+
+  test('parent-device mode on a child phone is called out loudly, and one tap re-enables enforcement', async ({ page }) => {
+    await enterLocalOnly(page);
+    await selectChild(page, 'אריאל');
+    await mockBridge(page, { usage: true, parent: true });
+    await page.evaluate(() => go('home'));
+    await expect(page.locator('#enforcementHomeWrap .req-alert')).toBeVisible();
+
+    await openAdminWithPin(page);
+    await page.locator('[data-atab="settings"]').click();
+    await expect(page.locator('#enforcementWarning')).toContainText('מכשיר של הורה');
+    await page.locator('#enforcementWarning button').click(); // turning it OFF needs no confirm dialog
+    expect(await page.evaluate(() => window.__bridgeState.parent)).toBe(false);
+    await expect(page.locator('#enforcementWarning')).toBeHidden();
+  });
+
+  test('with usage access granted and parent mode off, nothing is shown anywhere', async ({ page }) => {
+    await enterLocalOnly(page);
+    await selectChild(page, 'אריאל');
+    await mockBridge(page, { usage: true });
+    await page.evaluate(() => go('home'));
+    await expect(page.locator('#enforcementHomeWrap .req-alert')).toHaveCount(0);
+    await openAdminWithPin(page);
+    await page.locator('[data-atab="settings"]').click();
+    await expect(page.locator('#enforcementWarning')).toBeHidden();
+  });
+
+  test('returning to the foreground re-arms the wall', async ({ page }) => {
+    await enterLocalOnly(page);
+    await selectChild(page, 'אריאל');
+    await mockBridge(page, { usage: true });
+    const calls = await page.evaluate(() => new Promise(resolve => {
+      let n = 0;
+      window.CoinQuestNative.setEnforcedPackages = () => { n++; };
+      Object.defineProperty(document, 'visibilityState', { value: 'visible', configurable: true });
+      document.dispatchEvent(new Event('visibilitychange'));
+      setTimeout(() => resolve(n), 50);
+    }));
+    expect(calls).toBeGreaterThanOrEqual(1);
+  });
+});
+
 test.describe('rewards shop', () => {
   test('an unaffordable reward explains how many coins are missing instead of swallowing the tap', async ({ page }) => {
     await enterLocalOnly(page);
